@@ -1,0 +1,158 @@
+{
+  "@@locale": "fr",
+  "appTitle": "MemoReader",
+  "library": "Bibliothèque",
+  "importEpub": "Importer EPUB",
+  "importing": "Importation...",
+  "importingEpub": "Importation de l'EPUB...",
+  "bookImportedSuccessfully": "Livre importé avec succès !",
+  "errorImportingBook": "Erreur lors de l'importation du livre : {error}",
+  "@errorImportingBook": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "errorLoadingBooks": "Erreur lors du chargement des livres : {error}",
+  "@errorLoadingBooks": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "noBooksInLibrary": "Aucun livre dans votre bibliothèque",
+  "tapToImportEpub": "Appuyez sur le bouton + pour importer un EPUB",
+  "deleteBook": "Supprimer le livre",
+  "confirmDeleteBook": "Êtes-vous sûr de vouloir supprimer \"{title}\" ?",
+  "@confirmDeleteBook": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "cancel": "Annuler",
+  "delete": "Supprimer",
+  "bookDeleted": "\"{title}\" supprimé",
+  "@bookDeleted": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "errorDeletingBook": "Erreur lors de la suppression du livre : {error}",
+  "@errorDeletingBook": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "refresh": "Actualiser",
+  "retry": "Réessayer",
+  "chapters": "Chapitres",
+  "chapter": "Chapitre {number}",
+  "@chapter": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "goToPage": "Aller à la page",
+  "summary": "Résumé",
+  "backToLibrary": "Retour à la bibliothèque",
+  "enterPageNumber": "Entrez le numéro de page (1-{max})",
+  "@enterPageNumber": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "page": "Page",
+  "go": "Aller",
+  "invalidPageNumber": "Veuillez entrer un numéro de page entre 1 et {max}",
+  "@invalidPageNumber": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "noPagesAvailable": "Aucune page disponible",
+  "noChaptersAvailable": "Aucun chapitre disponible",
+  "summaryFeatureComingSoon": "La fonctionnalité de résumé sera implémentée plus tard avec l'intégration LLM.",
+  "ok": "OK",
+  "errorLoadingBook": "Erreur lors du chargement du livre : {error}",
+  "@errorLoadingBook": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "loadingBook": "Chargement de {title}...",
+  "@loadingBook": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "errorLoadingBookTitle": "Erreur lors du chargement du livre",
+  "noContentAvailable": "Aucun contenu disponible dans ce livre.",
+  "endOfBookReached": "Fin du livre atteinte",
+  "beginningOfBook": "Début du livre",
+  "invalidChapterIndex": "Index de chapitre invalide",
+  "errorLoadingChapter": "Erreur lors du chargement du chapitre : {error}",
+  "@errorLoadingChapter": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chapterInfo": "Chapitre {current}/{total}",
+  "@chapterInfo": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "pageInfo": "Page {current}/{total}",
+  "@pageInfo": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "thisChapterHasPages": "Ce chapitre contient {count} page",
+  "@thisChapterHasPages": {
+    "placeholders": {
+      "count": {
+        "type": "Object"
+      }
+    }
+  },
+  "thisChapterHasPages_plural": "Ce chapitre contient {count} pages",
+  "@thisChapterHasPages_plural": {
+    "placeholders": {
+      "count": {
+        "type": "Object"
+      }
+    }
+  }
+}
+

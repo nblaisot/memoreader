@@ -1,0 +1,252 @@
+{
+  "@@locale": "en",
+  "appTitle": "MemoReader",
+  "@appTitle": {
+    "description": "The application title"
+  },
+  "library": "Library",
+  "@library": {
+    "description": "Library screen title"
+  },
+  "importEpub": "Import EPUB",
+  "@importEpub": {
+    "description": "Import EPUB button label"
+  },
+  "importing": "Importing...",
+  "@importing": {
+    "description": "Importing state label"
+  },
+  "importingEpub": "Importing EPUB...",
+  "@importingEpub": {
+    "description": "Importing EPUB message"
+  },
+  "bookImportedSuccessfully": "Book imported successfully!",
+  "@bookImportedSuccessfully": {
+    "description": "Success message after importing a book"
+  },
+  "errorImportingBook": "Error importing book: {error}",
+  "@errorImportingBook": {
+    "description": "Error message when importing fails",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "errorLoadingBooks": "Error loading books: {error}",
+  "@errorLoadingBooks": {
+    "description": "Error message when loading books fails",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "noBooksInLibrary": "No books in your library",
+  "@noBooksInLibrary": {
+    "description": "Message when library is empty"
+  },
+  "tapToImportEpub": "Tap the + button to import an EPUB",
+  "@tapToImportEpub": {
+    "description": "Instruction for importing EPUB"
+  },
+  "deleteBook": "Delete Book",
+  "@deleteBook": {
+    "description": "Delete book dialog title"
+  },
+  "confirmDeleteBook": "Are you sure you want to delete \"{title}\"?",
+  "@confirmDeleteBook": {
+    "description": "Delete confirmation message",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Cancel button label"
+  },
+  "delete": "Delete",
+  "@delete": {
+    "description": "Delete button label"
+  },
+  "bookDeleted": "\"{title}\" deleted",
+  "@bookDeleted": {
+    "description": "Message after book deletion",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "errorDeletingBook": "Error deleting book: {error}",
+  "@errorDeletingBook": {
+    "description": "Error message when deletion fails",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "refresh": "Refresh",
+  "@refresh": {
+    "description": "Refresh button tooltip"
+  },
+  "retry": "Retry",
+  "@retry": {
+    "description": "Retry button label"
+  },
+  "chapters": "Chapters",
+  "@chapters": {
+    "description": "Chapters menu item"
+  },
+  "chapter": "Chapter {number}",
+  "@chapter": {
+    "description": "Chapter label with number",
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "goToPage": "Go to Page",
+  "@goToPage": {
+    "description": "Go to page menu item"
+  },
+  "summary": "Summary",
+  "@summary": {
+    "description": "Summary menu item"
+  },
+  "backToLibrary": "Back to Library",
+  "@backToLibrary": {
+    "description": "Back to library menu item"
+  },
+  "enterPageNumber": "Enter page number (1-{max})",
+  "@enterPageNumber": {
+    "description": "Page number input helper",
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "page": "Page",
+  "@page": {
+    "description": "Page label"
+  },
+  "go": "Go",
+  "@go": {
+    "description": "Go button label"
+  },
+  "invalidPageNumber": "Please enter a page number between 1 and {max}",
+  "@invalidPageNumber": {
+    "description": "Invalid page number error",
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "noPagesAvailable": "No pages available",
+  "@noPagesAvailable": {
+    "description": "No pages error message"
+  },
+  "noChaptersAvailable": "No chapters available",
+  "@noChaptersAvailable": {
+    "description": "No chapters error message"
+  },
+  "summaryFeatureComingSoon": "Summary feature will be implemented later with LLM integration.",
+  "@summaryFeatureComingSoon": {
+    "description": "Summary feature placeholder message"
+  },
+  "ok": "OK",
+  "@ok": {
+    "description": "OK button label"
+  },
+  "errorLoadingBook": "Error loading book: {error}",
+  "@errorLoadingBook": {
+    "description": "Error message when loading book fails",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "loadingBook": "Loading {title}...",
+  "@loadingBook": {
+    "description": "Loading book message",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "errorLoadingBookTitle": "Error Loading Book",
+  "@errorLoadingBookTitle": {
+    "description": "Error loading book screen title"
+  },
+  "noContentAvailable": "No content available in this book.",
+  "@noContentAvailable": {
+    "description": "No content available message"
+  },
+  "endOfBookReached": "End of book reached",
+  "@endOfBookReached": {
+    "description": "End of book message"
+  },
+  "beginningOfBook": "Beginning of book",
+  "@beginningOfBook": {
+    "description": "Beginning of book message"
+  },
+  "invalidChapterIndex": "Invalid chapter index",
+  "@invalidChapterIndex": {
+    "description": "Invalid chapter index error"
+  },
+  "errorLoadingChapter": "Error loading chapter: {error}",
+  "@errorLoadingChapter": {
+    "description": "Error loading chapter message",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "chapterInfo": "Chapter {current}/{total}",
+  "@chapterInfo": {
+    "description": "Chapter information",
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "pageInfo": "Page {current}/{total}",
+  "@pageInfo": {
+    "description": "Page information",
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "thisChapterHasPages": "This chapter has {count} page",
+  "@thisChapterHasPages": {
+    "description": "Chapter page count message",
+    "placeholders": {
+      "count": {
+        "type": "Object"
+      }
+    }
+  },
+  "thisChapterHasPages_plural": "This chapter has {count} pages",
+  "@thisChapterHasPages_plural": {
+    "description": "Chapter page count message (plural)"
+  }
+}
+

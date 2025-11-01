@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:memoreader/l10n/app_localizations.dart';
 import 'package:epubx/epubx.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import '../models/book.dart';
@@ -91,13 +92,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _isLoading = false;
       });
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading book: $e'),
+            content: Text(l10n.errorLoadingBook(e.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 4),
             action: SnackBarAction(
-              label: 'Retry',
+              label: l10n.retry,
               textColor: Colors.white,
               onPressed: _loadBook,
             ),
@@ -310,10 +312,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
       } else {
         // Last page of last chapter
         if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('End of book reached'),
-              duration: Duration(seconds: 2),
+            SnackBar(
+              content: Text(l10n.endOfBookReached),
+              duration: const Duration(seconds: 2),
             ),
           );
         }
@@ -349,10 +352,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
       } else {
         // First page of first chapter
         if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Beginning of book'),
-              duration: Duration(seconds: 2),
+            SnackBar(
+              content: Text(l10n.beginningOfBook),
+              duration: const Duration(seconds: 2),
             ),
           );
         }
@@ -369,9 +373,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Future<void> _goToChapter(int chapterIndex) async {
     if (chapterIndex < 0 || chapterIndex >= _chapters.length) {
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Invalid chapter index'),
+          SnackBar(
+            content: Text(l10n.invalidChapterIndex),
             backgroundColor: Colors.red,
           ),
         );
@@ -397,9 +402,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _isLoading = false;
       });
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading chapter: $e'),
+            content: Text(l10n.errorLoadingChapter(e.toString())),
             backgroundColor: Colors.red,
           ),
         );
@@ -414,9 +420,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _showChapterList() {
+    final l10n = AppLocalizations.of(context)!;
     if (_chapters.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No chapters available')),
+        SnackBar(content: Text(l10n.noChaptersAvailable)),
       );
       return;
     }
@@ -443,7 +450,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               ),
             ),
             Text(
-              'Chapters',
+              l10n.chapters,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -463,7 +470,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                         fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
                       ),
                     ),
-                    subtitle: Text('Chapter ${index + 1}'),
+                    subtitle: Text(l10n.chapter(index + 1)),
                     selected: isCurrent,
                     selectedTileColor: Theme.of(context).colorScheme.primaryContainer,
                     leading: isCurrent
@@ -484,9 +491,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _showGoToPageDialog() {
+    final l10n = AppLocalizations.of(context)!;
     if (_pages.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No pages available')),
+        SnackBar(content: Text(l10n.noPagesAvailable)),
       );
       return;
     }
@@ -498,21 +506,23 @@ class _ReaderScreenState extends State<ReaderScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Go to Page'),
+        title: Text(l10n.goToPage),
         content: TextField(
           controller: controller,
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
-            hintText: 'Enter page number (1-${_pages.length})',
-            labelText: 'Page',
-            helperText: 'This chapter has ${_pages.length} page${_pages.length > 1 ? 's' : ''}',
+            hintText: l10n.enterPageNumber(_pages.length),
+            labelText: l10n.page,
+            helperText: _pages.length == 1 
+                ? l10n.thisChapterHasPages(_pages.length)
+                : l10n.thisChapterHasPages_plural(_pages.length),
           ),
           autofocus: true,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () {
@@ -527,15 +537,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   _showMenu = false;
                 });
               } else {
+                final l10n = AppLocalizations.of(context)!;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Please enter a page number between 1 and ${_pages.length}'),
+                    content: Text(l10n.invalidPageNumber(_pages.length)),
                     backgroundColor: Colors.red,
                   ),
                 );
               }
             },
-            child: const Text('Go'),
+            child: Text(l10n.go),
           ),
         ],
       ),
@@ -543,17 +554,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _showSummaryDialog() {
+    final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Summary'),
-        content: const Text(
-          'Summary feature will be implemented later with LLM integration.',
-        ),
+        title: Text(l10n.summary),
+        content: Text(l10n.summaryFeatureComingSoon),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
+            child: Text(l10n.ok),
           ),
         ],
       ),
@@ -562,6 +572,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     if (_isLoading && _errorMessage == null) {
       return Scaffold(
         body: Center(
@@ -571,7 +582,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               const CircularProgressIndicator(),
               const SizedBox(height: 16),
               Text(
-                'Loading ${widget.book.title}...',
+                l10n.loadingBook(widget.book.title),
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ],
@@ -594,7 +605,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
                 const SizedBox(height: 16),
                 Text(
-                  'Error Loading Book',
+                  l10n.errorLoadingBookTitle,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 8),
@@ -607,7 +618,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 ElevatedButton.icon(
                   onPressed: _loadBook,
                   icon: const Icon(Icons.refresh),
-                  label: const Text('Retry'),
+                  label: Text(l10n.retry),
                 ),
               ],
             ),
@@ -619,8 +630,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (_chapters.isEmpty || _pages.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: Text(widget.book.title)),
-        body: const Center(
-          child: Text('No content available in this book.'),
+        body: Center(
+          child: Text(l10n.noContentAvailable),
         ),
       );
     }
@@ -744,14 +755,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'Chapter ${_currentChapterIndex + 1}/${_chapters.length}',
+                                l10n.chapterInfo(_currentChapterIndex + 1, _chapters.length),
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   fontSize: 11,
                                   color: Colors.grey[600],
                                 ),
                               ),
                               Text(
-                                'Page ${_currentPageInChapter + 1}/${_pages.length}',
+                                l10n.pageInfo(_currentPageInChapter + 1, _pages.length),
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   fontSize: 11,
                                   color: Colors.grey[600],
@@ -790,7 +801,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                           children: [
                             ListTile(
                               leading: const Icon(Icons.list),
-                              title: const Text('Chapters'),
+                              title: Text(l10n.chapters),
                               onTap: () {
                                 setState(() {
                                   _showMenu = false;
@@ -800,7 +811,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             ),
                             ListTile(
                               leading: const Icon(Icons.pageview),
-                              title: const Text('Go to Page'),
+                              title: Text(l10n.goToPage),
                               onTap: () {
                                 setState(() {
                                   _showMenu = false;
@@ -810,7 +821,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             ),
                             ListTile(
                               leading: const Icon(Icons.summarize),
-                              title: const Text('Summary'),
+                              title: Text(l10n.summary),
                               onTap: () {
                                 setState(() {
                                   _showMenu = false;
@@ -821,7 +832,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             const Divider(),
                             ListTile(
                               leading: const Icon(Icons.arrow_back),
-                              title: const Text('Back to Library'),
+                              title: Text(l10n.backToLibrary),
                               onTap: () {
                                 Navigator.pop(context);
                               },

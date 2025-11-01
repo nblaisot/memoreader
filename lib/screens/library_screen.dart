@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:memoreader/l10n/app_localizations.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/book.dart';
 import '../models/reading_progress.dart';
@@ -73,9 +74,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
         _isLoading = false;
       });
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading books: $e'),
+            content: Text(l10n.errorLoadingBooks(e.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 4),
           ),
@@ -107,19 +109,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
         
         // Show progress indicator
         if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
           showDialog(
             context: context,
             barrierDismissible: false,
-            builder: (context) => const Center(
+            builder: (context) => Center(
               child: Card(
                 child: Padding(
-                  padding: EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(20),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Importing EPUB...'),
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text(l10n.importingEpub),
                     ],
                   ),
                 ),
@@ -132,12 +135,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
         await _bookService.importEpub(file);
 
         if (mounted) {
+          final l10n = AppLocalizations.of(context)!;
           Navigator.pop(context); // Close progress dialog
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Book imported successfully!'),
+            SnackBar(
+              content: Text(l10n.bookImportedSuccessfully),
               backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
+              duration: const Duration(seconds: 2),
             ),
           );
           _loadBooks();
@@ -145,10 +149,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         Navigator.pop(context); // Close progress dialog if open
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error importing book: ${e.toString()}'),
+            content: Text(l10n.errorImportingBook(e.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 4),
           ),
@@ -174,20 +179,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   void _showDeleteDialog(Book book, int index) {
+    final l10n = AppLocalizations.of(context)!;
     showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Book'),
-        content: Text('Are you sure you want to delete "${book.title}"?'),
+        title: Text(l10n.deleteBook),
+        content: Text(l10n.confirmDeleteBook(book.title)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(l10n.delete),
           ),
         ],
       ),
@@ -196,9 +202,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
         try {
           await _bookService.deleteBook(book);
           if (mounted) {
+            final l10n = AppLocalizations.of(context)!;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('"${book.title}" deleted'),
+                content: Text(l10n.bookDeleted(book.title)),
                 duration: const Duration(seconds: 2),
               ),
             );
@@ -206,9 +213,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
           }
         } catch (e) {
           if (mounted) {
+            final l10n = AppLocalizations.of(context)!;
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Error deleting book: $e'),
+                content: Text(l10n.errorDeletingBook(e.toString())),
                 backgroundColor: Colors.red,
               ),
             );
@@ -220,16 +228,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Library'),
+        title: Text(l10n.library),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           if (_books.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.refresh),
               onPressed: _loadBooks,
-              tooltip: 'Refresh',
+              tooltip: l10n.refresh,
             ),
         ],
       ),
@@ -250,7 +259,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: _loadBooks,
-                        child: const Text('Retry'),
+                        child: Text(l10n.retry),
                       ),
                     ],
                   ),
@@ -267,7 +276,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            'No books in your library',
+                            l10n.noBooksInLibrary,
                             style: TextStyle(
                               fontSize: 20,
                               color: Colors.grey[700],
@@ -276,7 +285,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'Tap the + button to import an EPUB',
+                            l10n.tapToImportEpub,
                             style: TextStyle(
                               fontSize: 14,
                               color: Colors.grey[500],
@@ -318,9 +327,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                               }).catchError((e) {
                                 if (mounted) {
                                   final messenger = ScaffoldMessenger.of(context);
+                                  final l10n = AppLocalizations.of(context)!;
                                   messenger.showSnackBar(
                                     SnackBar(
-                                      content: Text('Error deleting book: $e'),
+                                      content: Text(l10n.errorDeletingBook(e.toString())),
                                       backgroundColor: Colors.red,
                                     ),
                                   );
@@ -328,20 +338,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
                               });
                             },
                             confirmDismiss: (direction) async {
+                              final l10n = AppLocalizations.of(context)!;
                               final result = await showDialog<bool>(
                                 context: context,
                                 builder: (context) => AlertDialog(
-                                  title: const Text('Delete Book'),
-                                  content: Text('Are you sure you want to delete "${book.title}"?'),
+                                  title: Text(l10n.deleteBook),
+                                  content: Text(l10n.confirmDeleteBook(book.title)),
                                   actions: [
                                     TextButton(
                                       onPressed: () => Navigator.pop(context, false),
-                                      child: const Text('Cancel'),
+                                      child: Text(l10n.cancel),
                                     ),
                                     TextButton(
                                       onPressed: () => Navigator.pop(context, true),
                                       style: TextButton.styleFrom(foregroundColor: Colors.red),
-                                      child: const Text('Delete'),
+                                      child: Text(l10n.delete),
                                     ),
                                   ],
                                 ),
@@ -350,10 +361,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                 try {
                                   await _bookService.deleteBook(book);
                                   if (mounted) {
+                                    final l10n = AppLocalizations.of(context)!;
                                     final messenger = ScaffoldMessenger.of(context);
                                     messenger.showSnackBar(
                                       SnackBar(
-                                        content: Text('"${book.title}" deleted'),
+                                        content: Text(l10n.bookDeleted(book.title)),
                                         duration: const Duration(seconds: 2),
                                       ),
                                     );
@@ -361,10 +373,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                   }
                                 } catch (e) {
                                   if (mounted) {
+                                    final l10n = AppLocalizations.of(context)!;
                                     final messenger = ScaffoldMessenger.of(context);
                                     messenger.showSnackBar(
                                       SnackBar(
-                                        content: Text('Error deleting book: $e'),
+                                        content: Text(l10n.errorDeletingBook(e.toString())),
                                         backgroundColor: Colors.red,
                                       ),
                                     );
@@ -457,7 +470,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _isImporting ? null : _importEpub,
-        tooltip: 'Import EPUB',
+        tooltip: l10n.importEpub,
         icon: _isImporting
             ? const SizedBox(
                 width: 20,
@@ -468,7 +481,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               )
             : const Icon(Icons.add),
-        label: Text(_isImporting ? 'Importing...' : 'Import EPUB'),
+        label: Text(_isImporting ? l10n.importing : l10n.importEpub),
       ),
     );
   }
