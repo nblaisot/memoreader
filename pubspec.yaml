@@ -34,6 +34,22 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  
+  # EPUB parsing and reading
+  epubx: ^4.0.0
+  
+  # File picker for importing EPUB files
+  file_picker: ^8.1.2
+  
+  # Local storage for files and preferences
+  path_provider: ^2.1.2
+  shared_preferences: ^2.2.3
+  
+  # HTML rendering for EPUB content
+  flutter_widget_from_html: ^0.15.2
+  
+  # UUID for book identification
+  uuid: ^4.3.3
 
 dev_dependencies:
   flutter_test:
