@@ -167,4 +167,127 @@ class AppLocalizationsEn extends AppLocalizations {
   String thisChapterHasPages_plural(Object count) {
     return 'This chapter has $count pages';
   }
+
+  @override
+  String get settings => 'Settings';
+
+  @override
+  String get language => 'Language';
+
+  @override
+  String get languageDescription =>
+      'Choose your preferred language. Changes require app restart.';
+
+  @override
+  String get languageSystemDefault => 'System Default';
+
+  @override
+  String get languageSystemDefaultDescription => 'Use device language settings';
+
+  @override
+  String get languageChangedRestart =>
+      'Language preference saved. Please restart the app for changes to take effect.';
+
+  @override
+  String get fontSize => 'Font Size';
+
+  @override
+  String get fontSizeDescription => 'Adjust the size of the text when reading';
+
+  @override
+  String get fontSizeExample => 'This is an example of text size';
+
+  @override
+  String get textSize => 'Text size';
+
+  @override
+  String get deleteBookConfirm =>
+      'This will delete the book from the library. Are you sure?';
+
+  @override
+  String get confirm => 'Confirm';
+
+  @override
+  String get openaiApiKey => 'OpenAI API Key';
+
+  @override
+  String get openaiApiKeyDescription =>
+      'Enter your OpenAI API key to enable AI-powered book summaries. Get your key at https://platform.openai.com/api-keys';
+
+  @override
+  String get apiKeySaved => 'API key saved successfully';
+
+  @override
+  String get generatingSummary => 'Generating summary...';
+
+  @override
+  String get summaryUpToPosition => 'Summary up to your current position';
+
+  @override
+  String errorGeneratingSummary(String error) {
+    return 'Error generating summary: $error';
+  }
+
+  @override
+  String get apiKeyNotConfigured =>
+      'OpenAI API key not configured. Please set it in settings.';
+
+  @override
+  String get enterApiKey => 'Enter OpenAI API Key';
+
+  @override
+  String get save => 'Save';
+
+  @override
+  String get summaryFromBeginning => 'Summary from the beginning';
+
+  @override
+  String get summarySinceLastTime => 'Summary since last time';
+
+  @override
+  String get summaryCharacters => 'Characters';
+
+  @override
+  String get importantWords => 'Important Words';
+
+  @override
+  String get generatingImportantWords => 'Generating important words...';
+
+  @override
+  String errorLoadingImportantWords(String error) {
+    return 'Error loading important words: $error';
+  }
+
+  @override
+  String get whatIsApiKey => 'What is that?';
+
+  @override
+  String get apiKeyExplanation =>
+      'An OpenAI API key is required to use the AI-powered features like automatic summaries and important words. You can get your API key from OpenAI\'s platform. After creating an account, go to API Keys section and create a new key. Keep it secure and never share it publicly.';
+
+  @override
+  String get getApiKeyFromOpenAI => 'Get API Key from OpenAI';
+
+  @override
+  String get apiKeyCostInfo =>
+      'Typical costs: For an average novel like Lord of the Flies, generating summaries costs approximately 10-50 cents (USD) for the entire book.';
+
+  @override
+  String get apiCostLabel => 'Estimated API Cost';
+
+  @override
+  String get apiCostDescription =>
+      'This shows the cumulative cost of all API calls made in this app. Costs are calculated based on actual token usage from OpenAI responses.';
+
+  @override
+  String get resetApiCost => 'Reset Cost Counter';
+
+  @override
+  String get apiCostReset => 'API cost counter has been reset.';
+
+  @override
+  String get next => 'Next';
+
+  @override
+  String get close => 'Close';
 }

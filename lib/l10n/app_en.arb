@@ -247,6 +247,164 @@
   "thisChapterHasPages_plural": "This chapter has {count} pages",
   "@thisChapterHasPages_plural": {
     "description": "Chapter page count message (plural)"
+  },
+  "settings": "Settings",
+  "@settings": {
+    "description": "Settings screen title"
+  },
+  "language": "Language",
+  "@language": {
+    "description": "Language setting label"
+  },
+  "languageDescription": "Choose your preferred language. Changes require app restart.",
+  "@languageDescription": {
+    "description": "Language setting description"
+  },
+  "languageSystemDefault": "System Default",
+  "@languageSystemDefault": {
+    "description": "System default language option"
+  },
+  "languageSystemDefaultDescription": "Use device language settings",
+  "@languageSystemDefaultDescription": {
+    "description": "System default language description"
+  },
+  "languageChangedRestart": "Language preference saved. Please restart the app for changes to take effect.",
+  "@languageChangedRestart": {
+    "description": "Message shown when language is changed"
+  },
+  "fontSize": "Font Size",
+  "@fontSize": {
+    "description": "Font size setting label"
+  },
+  "fontSizeDescription": "Adjust the size of the text when reading",
+  "@fontSizeDescription": {
+    "description": "Font size setting description"
+  },
+  "fontSizeExample": "This is an example of text size",
+  "@fontSizeExample": {
+    "description": "Example text shown in font size preview"
+  },
+  "textSize": "Text size",
+  "@textSize": {
+    "description": "Text size label in reader menu"
+  },
+  "deleteBookConfirm": "This will delete the book from the library. Are you sure?",
+  "@deleteBookConfirm": {
+    "description": "Confirmation message when deleting a book"
+  },
+  "confirm": "Confirm",
+  "@confirm": {
+    "description": "Confirm button label"
+  },
+  "openaiApiKey": "OpenAI API Key",
+  "@openaiApiKey": {
+    "description": "OpenAI API key setting label"
+  },
+  "openaiApiKeyDescription": "Enter your OpenAI API key to enable AI-powered book summaries. Get your key at https://platform.openai.com/api-keys",
+  "@openaiApiKeyDescription": {
+    "description": "OpenAI API key setting description"
+  },
+  "apiKeySaved": "API key saved successfully",
+  "@apiKeySaved": {
+    "description": "Message when API key is saved"
+  },
+  "generatingSummary": "Generating summary...",
+  "@generatingSummary": {
+    "description": "Loading message when generating summary"
+  },
+  "summaryUpToPosition": "Summary up to your current position",
+  "@summaryUpToPosition": {
+    "description": "Summary dialog title"
+  },
+  "errorGeneratingSummary": "Error generating summary: {error}",
+  "@errorGeneratingSummary": {
+    "description": "Error message when summary generation fails",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiKeyNotConfigured": "OpenAI API key not configured. Please set it in settings.",
+  "@apiKeyNotConfigured": {
+    "description": "Error when API key is not set"
+  },
+  "enterApiKey": "Enter OpenAI API Key",
+  "@enterApiKey": {
+    "description": "Dialog title for entering API key"
+  },
+  "save": "Save",
+  "@save": {
+    "description": "Save button label"
+  },
+  "summaryFromBeginning": "Summary from the beginning",
+  "@summaryFromBeginning": {
+    "description": "Summary type option - from beginning"
+  },
+  "summarySinceLastTime": "Summary since last time",
+  "@summarySinceLastTime": {
+    "description": "Summary type option - since last time"
+  },
+  "summaryCharacters": "Characters",
+  "@summaryCharacters": {
+    "description": "Summary type option - characters"
+  },
+  "importantWords": "Important Words",
+  "@importantWords": {
+    "description": "Important Words menu item"
+  },
+  "generatingImportantWords": "Generating important words...",
+  "@generatingImportantWords": {
+    "description": "Loading message when generating important words"
+  },
+  "errorLoadingImportantWords": "Error loading important words: {error}",
+  "@errorLoadingImportantWords": {
+    "description": "Error message when loading important words fails",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "whatIsApiKey": "What is that?",
+  "@whatIsApiKey": {
+    "description": "Link text to explain what API key is"
+  },
+  "apiKeyExplanation": "An OpenAI API key is required to use the AI-powered features like automatic summaries and important words. You can get your API key from OpenAI's platform. After creating an account, go to API Keys section and create a new key. Keep it secure and never share it publicly.",
+  "@apiKeyExplanation": {
+    "description": "Explanation of what an API key is and how to get it"
+  },
+  "getApiKeyFromOpenAI": "Get API Key from OpenAI",
+  "@getApiKeyFromOpenAI": {
+    "description": "Button text to open OpenAI website"
+  },
+  "apiKeyCostInfo": "Typical costs: For an average novel like Lord of the Flies, generating summaries costs approximately 10-50 cents (USD) for the entire book.",
+  "@apiKeyCostInfo": {
+    "description": "Information about typical API costs"
+  },
+  "apiCostLabel": "Estimated API Cost",
+  "@apiCostLabel": {
+    "description": "Label for API cost display"
+  },
+  "apiCostDescription": "This shows the cumulative cost of all API calls made in this app. Costs are calculated based on actual token usage from OpenAI responses.",
+  "@apiCostDescription": {
+    "description": "Description of API cost tracking"
+  },
+  "resetApiCost": "Reset Cost Counter",
+  "@resetApiCost": {
+    "description": "Button text to reset API cost counter"
+  },
+  "apiCostReset": "API cost counter has been reset.",
+  "@apiCostReset": {
+    "description": "Message shown when API cost counter is reset"
+  },
+  "next": "Next",
+  "@next": {
+    "description": "Next button label"
+  },
+  "close": "Close",
+  "@close": {
+    "description": "Close button label"
   }
 }
 

@@ -1,3 +1,6 @@
+/// Book model representing a book in the library
+/// 
+/// Supports multiple formats: EPUB and TXT
 class Book {
   final String id;
   final String title;
@@ -5,6 +8,7 @@ class Book {
   final String? coverImagePath;
   final String filePath;
   final DateTime dateAdded;
+  final String format; // 'epub' or 'txt'
 
   Book({
     required this.id,
@@ -13,6 +17,7 @@ class Book {
     this.coverImagePath,
     required this.filePath,
     required this.dateAdded,
+    required this.format,
   });
 
   Map<String, dynamic> toJson() {
@@ -23,6 +28,7 @@ class Book {
       'coverImagePath': coverImagePath,
       'filePath': filePath,
       'dateAdded': dateAdded.toIso8601String(),
+      'format': format,
     };
   }
 
@@ -34,6 +40,8 @@ class Book {
       coverImagePath: json['coverImagePath'] as String?,
       filePath: json['filePath'] as String,
       dateAdded: DateTime.parse(json['dateAdded'] as String),
+      // Default to 'epub' for backward compatibility with existing books
+      format: json['format'] as String? ?? 'epub',
     );
   }
 }

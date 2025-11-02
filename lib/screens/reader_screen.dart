@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/services.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
 import 'package:epubx/epubx.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
@@ -7,7 +8,24 @@ import '../models/book.dart';
 import '../models/chapter.dart';
 import '../models/reading_progress.dart';
 import '../services/book_service.dart';
+import '../services/book_loader_service.dart';
+import '../services/settings_service.dart';
+import '../services/summary_service.dart';
+import '../services/summary_database_service.dart';
+import '../services/important_words_service.dart';
+import 'summary_screen.dart';
+import 'important_words_screen.dart';
+import '../widgets/reader_helpers.dart';
 
+/// Main screen for reading EPUB books
+/// 
+/// This screen provides:
+/// - Page-by-page reading with tap navigation (left/right)
+/// - Chapter navigation
+/// - Font size adjustment
+/// - Reading progress tracking
+/// - Access to summaries and important words
+/// - Menu overlay for additional options
 class ReaderScreen extends StatefulWidget {
   final Book book;
 
@@ -17,30 +35,121 @@ class ReaderScreen extends StatefulWidget {
   State<ReaderScreen> createState() => _ReaderScreenState();
 }
 
-class _ReaderScreenState extends State<ReaderScreen> {
+class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver {
   final BookService _bookService = BookService();
-  EpubBook? _epubBook;
+  final SettingsService _settingsService = SettingsService();
+  final SummaryService _summaryService = SummaryService();
+  final SummaryDatabaseService _summaryDbService = SummaryDatabaseService();
+  final ImportantWordsService _importantWordsService = ImportantWordsService();
   List<Chapter> _chapters = [];
   int _currentChapterIndex = 0;
   int _currentPageInChapter = 0;
   bool _isLoading = true;
   bool _showMenu = false;
+  bool _showProgress = false; // Control progress bar visibility
   List<String> _pages = []; // Pages for current chapter
   Map<int, int> _chapterPageCounts = {}; // Track page counts per chapter
   String? _errorMessage;
   final PageController _pageController = PageController();
   bool _isProcessingPageChange = false;
+  double _fontSize = 18.0;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadFontSize();
     _loadBook();
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reload font size when screen becomes visible (e.g., returning from settings)
+    _loadFontSize();
+  }
+
+  Future<void> _loadFontSize() async {
+    final fontSize = await _settingsService.getFontSize();
+    if (mounted && _fontSize != fontSize) {
+      setState(() {
+        _fontSize = fontSize;
+      });
+    }
+  }
+
+  @override
   void dispose() {
+    // Save reading stop position when leaving reader screen
+    _saveReadingStop();
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
+  }
+
+  /// Toggle progress bar visibility when user taps bottom of screen
+  void _toggleProgress() {
+    setState(() {
+      _showProgress = !_showProgress;
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    // Save reading stop when app goes to background or is terminated
+    if (state == AppLifecycleState.paused || 
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _saveReadingStop();
+    }
+  }
+
+  Future<void> _saveReadingStop() async {
+    try {
+      // Save where user stopped reading (for reading session tracking)
+      await _summaryService.updateLastReadingStop(
+        widget.book.id,
+        _currentChapterIndex,
+      );
+    } catch (e) {
+      debugPrint('Error saving reading stop position: $e');
+      // Don't show error - this is best effort
+    }
+  }
+
+  Future<void> _checkNewReadingSession(int previousChapterIndex) async {
+    try {
+      // When user opens reader, check if they've progressed past last reading stop
+      // This indicates they've started a new reading session
+      final cache = await _summaryDbService.getSummaryCache(widget.book.id);
+      final lastReadingStop = cache?.lastReadingStopChunkIndex;
+      
+      // If user is at a position beyond where they last stopped, they're in a new session
+      // The reading stop will be updated when they leave (dispose)
+      if (lastReadingStop != null && _currentChapterIndex > lastReadingStop) {
+        // New session started - the "since last time" will correctly show content from 
+        // lastReadingStop to currentChunkIndex when summary is generated
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+  }
+
+  Future<void> _checkAndSaveReadingSessionStart() async {
+    try {
+      // When user navigates forward, check if they've entered a new session
+      // This helps track session boundaries during reading
+      final cache = await _summaryDbService.getSummaryCache(widget.book.id);
+      final lastReadingStop = cache?.lastReadingStopChunkIndex;
+      
+      if (lastReadingStop != null && _currentChapterIndex > lastReadingStop) {
+        // User is reading new content beyond last stop - new session
+        // Stop position will be saved when they leave
+      }
+    } catch (e) {
+      // Ignore errors
+    }
   }
 
   Future<void> _loadBook() async {
@@ -62,8 +171,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
         throw Exception('Failed to load EPUB file');
       }
       
-      // Parse chapters
-      _chapters = _parseChapters(_epubBook!);
+      // Parse chapters using helper
+      _chapters = ReaderHelpers.parseChapters(_epubBook!);
       
       if (_chapters.isEmpty) {
         throw Exception('No chapters found in this book');
@@ -86,6 +195,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       setState(() {
         _isLoading = false;
       });
+
     } catch (e) {
       setState(() {
         _errorMessage = e.toString();
@@ -109,41 +219,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
-  List<Chapter> _parseChapters(EpubBook epubBook) {
-    final chapters = <Chapter>[];
-    
-    try {
-      final epubChapters = epubBook.Chapters;
-      if (epubChapters == null || epubChapters.isEmpty) {
-        return chapters;
-      }
-      
-      for (int i = 0; i < epubChapters.length; i++) {
-        try {
-          final epubChapter = epubChapters[i];
-          final title = epubChapter.Title?.isNotEmpty == true
-              ? epubChapter.Title!
-              : 'Chapter ${i + 1}';
-          final htmlContent = epubChapter.HtmlContent ?? '';
-          
-          if (htmlContent.isNotEmpty) {
-            chapters.add(Chapter(
-              index: i,
-              title: title,
-              htmlContent: htmlContent,
-            ));
-          }
-        } catch (e) {
-          // Skip corrupted chapters
-          debugPrint('Error parsing chapter $i: $e');
-        }
-      }
-    } catch (e) {
-      debugPrint('Error parsing chapters: $e');
-    }
-    
-    return chapters.isEmpty ? [] : chapters;
-  }
 
   Future<void> _loadCurrentChapterPages() async {
     if (_chapters.isEmpty) {
@@ -160,8 +235,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
       }
       
       final chapter = _chapters[_currentChapterIndex];
-      // Improved pagination based on screen size
-      final pages = await _splitIntoPages(chapter.htmlContent);
+      // Split chapter into pages using helper with current font size
+      final pages = await ReaderHelpers.splitIntoPages(
+        context,
+        chapter.htmlContent,
+        fontSize: _fontSize,
+        lineHeight: 1.6,
+      );
       
       setState(() {
         _pages = pages.isNotEmpty ? pages : [chapter.htmlContent];
@@ -186,97 +266,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
+  /// Calculate overall reading progress
+  /// 
+  /// Returns a value between 0.0 and 1.0 representing how much of the book
+  /// has been read based on chapters and pages within chapters.
   double _calculateOverallProgress() {
     if (_chapters.isEmpty || _pages.isEmpty) return 0.0;
-    
-    // Calculate progress based on chapters and pages
-    // Approximate: each chapter contributes equally, and within a chapter progress is based on pages
-    final chaptersRead = _currentChapterIndex.toDouble();
-    final currentChapterProgress = _pages.isNotEmpty
-        ? (_currentPageInChapter + 1) / _pages.length
-        : 0.0;
-    
-    final totalChapters = _chapters.length.toDouble();
-    final overallProgress = (chaptersRead + currentChapterProgress) / totalChapters;
-    
-    return overallProgress.clamp(0.0, 1.0);
-  }
 
-  Future<List<String>> _splitIntoPages(String htmlContent) async {
-    if (htmlContent.isEmpty) {
-      return ['<p>No content available.</p>'];
-    }
-
-    try {
-      // Get screen dimensions for better pagination
-      final mediaQuery = MediaQuery.of(context);
-      final screenHeight = mediaQuery.size.height - 
-                          mediaQuery.padding.top - 
-                          mediaQuery.padding.bottom - 
-                          200; // Account for padding and footer
-      final screenWidth = mediaQuery.size.width - 32; // Account for padding
-
-      // Estimate characters per page based on screen size
-      // Rough estimate: ~50 characters per line, ~30 lines per page
-      final estimatedCharsPerPage = ((screenWidth / 10) * (screenHeight / 20)).round();
-      final charsPerPage = estimatedCharsPerPage > 500 ? estimatedCharsPerPage : 1500;
-
-      // Split HTML by paragraphs while preserving structure
-      final pages = <String>[];
-      String currentPage = '';
-      
-      // Split by paragraphs
-      final paragraphRegex = RegExp(r'<p[^>]*>.*?</p>', dotAll: true);
-      final divRegex = RegExp(r'<div[^>]*>.*?</div>', dotAll: true);
-      
-      // Extract all content blocks
-      final allMatches = <String>[];
-      
-      // Find all paragraphs
-      paragraphRegex.allMatches(htmlContent).forEach((match) {
-        allMatches.add(match.group(0)!);
-      });
-      
-      // Find all divs that aren't already captured
-      divRegex.allMatches(htmlContent).forEach((match) {
-        final divContent = match.group(0)!;
-        if (!allMatches.any((p) => p.contains(divContent))) {
-          allMatches.add(divContent);
-        }
-      });
-      
-      // If no structured content, split by approximate page size
-      if (allMatches.isEmpty) {
-        for (int i = 0; i < htmlContent.length; i += charsPerPage) {
-          final end = (i + charsPerPage < htmlContent.length) 
-              ? i + charsPerPage 
-              : htmlContent.length;
-          pages.add(htmlContent.substring(i, end));
-        }
-        return pages.isEmpty ? [htmlContent] : pages;
-      }
-      
-      // Build pages from content blocks
-      for (final block in allMatches) {
-        final blockLength = block.length;
-        
-        if (currentPage.length + blockLength > charsPerPage && currentPage.isNotEmpty) {
-          pages.add(currentPage);
-          currentPage = block;
-        } else {
-          currentPage += block;
-        }
-      }
-      
-      if (currentPage.isNotEmpty) {
-        pages.add(currentPage);
-      }
-      
-      return pages.isEmpty ? [htmlContent] : pages;
-    } catch (e) {
-      debugPrint('Error splitting pages: $e');
-      return [htmlContent];
-    }
+    return ReaderHelpers.calculateOverallProgress(
+      currentChapterIndex: _currentChapterIndex,
+      currentPageInChapter: _currentPageInChapter,
+      totalChapters: _chapters.length,
+      pagesInCurrentChapter: _pages.length,
+    );
   }
 
   Future<void> _saveProgress() async {
@@ -307,6 +309,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           _currentPageInChapter++;
         });
         _saveProgress();
+        _checkAndSaveReadingSessionStart();
       } else if (_currentChapterIndex < _chapters.length - 1) {
         _goToChapter(_currentChapterIndex + 1);
       } else {
@@ -490,6 +493,73 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
+  void _showSummaryDialog() async {
+    try {
+      // Get current reading progress
+      final progress = ReadingProgress(
+        bookId: widget.book.id,
+        currentChapterIndex: _currentChapterIndex,
+        currentPageInChapter: _currentPageInChapter,
+        lastRead: DateTime.now(),
+      );
+
+      // Navigate to full-screen summary screen (it handles loading internally)
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => SummaryScreen(
+              book: widget.book,
+              progress: progress,
+              summaryService: _summaryService,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // Show error
+      if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.errorGeneratingSummary(e.toString())),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showImportantWordsDialog() async {
+    try {
+      // Navigate to full-screen important words screen (it handles loading internally)
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ImportantWordsScreen(
+              book: widget.book,
+              importantWordsService: _importantWordsService,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // Show error
+      if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.errorLoadingImportantWords(e.toString())),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
   void _showGoToPageDialog() {
     final l10n = AppLocalizations.of(context)!;
     if (_pages.isEmpty) {
@@ -553,22 +623,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  void _showSummaryDialog() {
-    final l10n = AppLocalizations.of(context)!;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.summary),
-        content: Text(l10n.summaryFeatureComingSoon),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(l10n.ok),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -636,6 +690,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
       );
     }
 
+    // Calculate height of 5 lines of text (font size 18, line height 1.6)
+    final lineHeight = 18.0 * 1.6;
+    final fiveLinesHeight = lineHeight * 5;
+    // Menu clickable area height (top margin 10px + first 5 lines)
+    final clickableMenuHeight = 10.0 + fiveLinesHeight;
+    
     return Scaffold(
       body: Stack(
         children: [
@@ -643,15 +703,25 @@ class _ReaderScreenState extends State<ReaderScreen> {
           GestureDetector(
             onTapDown: (details) {
               final screenWidth = MediaQuery.of(context).size.width;
+              final screenHeight = MediaQuery.of(context).size.height;
               final tapX = details.globalPosition.dx;
               final tapY = details.globalPosition.dy;
               
-              // Top area for menu (first 80px)
-              if (tapY < 80) {
-                _toggleMenu();
+              // Close menu if clicking outside (tap handling for menu is done by overlay)
+              if (_showMenu) {
+                setState(() {
+                  _showMenu = false;
+                });
                 return;
               }
-              
+
+              // Check if tap is in bottom 10% of screen (progress bar area)
+              final isBottomTap = tapY > screenHeight * 0.9;
+              if (isBottomTap) {
+                _toggleProgress();
+                return;
+              }
+
               // Left half for previous page
               if (tapX < screenWidth / 2) {
                 _previousPage();
@@ -662,186 +732,297 @@ class _ReaderScreenState extends State<ReaderScreen> {
             },
             child: Container(
               color: Theme.of(context).scaffoldBackgroundColor,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: SafeArea(
                 child: Column(
                   children: [
-                    // Header with book info
-                    AnimatedContainer(
+                    // Page content with 10px margins at top and bottom (like a book)
+                    // Using ClipRect to prevent overflow and ensure content fits
+                    Expanded(
+                      child: ClipRect(
+                        child: Container(
+                          padding: const EdgeInsets.only(
+                            top: 10.0, // 10px top margin
+                            bottom: 10.0, // 10px bottom margin
+                          ),
+                          child: HtmlWidget(
+                            _pages[_currentPageInChapter],
+                            textStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              fontSize: _fontSize,
+                              height: 1.6,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Footer with progress bar and page info (toggleable - click to hide)
+                    AnimatedSize(
                       duration: const Duration(milliseconds: 200),
-                      height: _showMenu ? 60 : 0,
-                      child: _showMenu
-                          ? Container(
-                              color: Theme.of(context).colorScheme.surface,
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      widget.book.title,
-                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
+                      child: _showProgress
+                          ? GestureDetector(
+                              onTap: _toggleProgress, // Click footer to hide it
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).scaffoldBackgroundColor,
+                                  border: Border(
+                                    top: BorderSide(
+                                      color: Colors.grey[300]!,
+                                      width: 1,
                                     ),
                                   ),
-                                  IconButton(
-                                    icon: const Icon(Icons.close),
-                                    onPressed: _toggleMenu,
-                                  ),
-                                ],
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // Progress bar
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(2),
+                                            child: LinearProgressIndicator(
+                                              value: _calculateOverallProgress(),
+                                              minHeight: 4,
+                                              backgroundColor: Colors.grey[200],
+                                              valueColor: AlwaysStoppedAnimation<Color>(
+                                                Theme.of(context).colorScheme.primary,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '${(_calculateOverallProgress() * 100).toStringAsFixed(0)}%',
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    // Chapter and page info
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          l10n.chapterInfo(_currentChapterIndex + 1, _chapters.length),
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            fontSize: 11,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                        Text(
+                                          l10n.pageInfo(_currentPageInChapter + 1, _pages.length),
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            fontSize: 11,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                             )
                           : const SizedBox.shrink(),
-                    ),
-                    // Page content
-                    Expanded(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        child: HtmlWidget(
-                          _pages[_currentPageInChapter],
-                          textStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontSize: 18,
-                            height: 1.6,
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Footer with progress bar and page info
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          top: BorderSide(
-                            color: Colors.grey[300]!,
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Progress bar
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(2),
-                                  child: LinearProgressIndicator(
-                                    value: _calculateOverallProgress(),
-                                    minHeight: 4,
-                                    backgroundColor: Colors.grey[200],
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Theme.of(context).colorScheme.primary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '${(_calculateOverallProgress() * 100).toStringAsFixed(0)}%',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.grey[700],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          // Chapter and page info
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                l10n.chapterInfo(_currentChapterIndex + 1, _chapters.length),
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              Text(
-                                l10n.pageInfo(_currentPageInChapter + 1, _pages.length),
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  fontSize: 11,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
                     ),
                   ],
                 ),
               ),
             ),
           ),
-          // Menu overlay
+          // Invisible clickable overlay for menu (top padding + first 5 lines)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: GestureDetector(
+                onTapDown: (_) {
+                  _toggleMenu();
+                },
+                child: Container(
+                  height: clickableMenuHeight,
+                  color: Colors.transparent, // Invisible but clickable
+                ),
+              ),
+            ),
+          ),
+          // Menu overlay (dropdown)
           if (_showMenu)
             Positioned.fill(
               child: GestureDetector(
-                onTap: _toggleMenu,
-                child: Container(
-                  color: Colors.black54,
-                  child: SafeArea(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 80),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface,
-                          borderRadius: const BorderRadius.vertical(
-                            bottom: Radius.circular(20),
+                onTap: () {
+                  setState(() {
+                    _showMenu = false;
+                  });
+                },
+                child: Stack(
+                  children: [
+                    // Semi-transparent backdrop
+                    Container(
+                      color: Colors.black54,
+                    ),
+                    // Dropdown menu
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: SafeArea(
+                        bottom: false,
+                        child: GestureDetector(
+                          onTap: () {
+                            // Prevent closing menu when tapping on menu itself
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surface,
+                              borderRadius: const BorderRadius.vertical(
+                                bottom: Radius.circular(20),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Text size slider as first entry
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16.0,
+                                    vertical: 8.0,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.text_fields),
+                                          const SizedBox(width: 16),
+                                          Expanded(
+                                            child: Text(
+                                              l10n.textSize,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleMedium
+                                                  ?.copyWith(
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                            ),
+                                          ),
+                                          Text(
+                                            _fontSize.toStringAsFixed(0),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                      Slider(
+                                        value: _fontSize,
+                                        min: _settingsService.minFontSize,
+                                        max: _settingsService.maxFontSize,
+                                        divisions: 20,
+                                        onChanged: (value) async {
+                                          // Save current page index and old page count to maintain position
+                                          final previousPageIndex = _currentPageInChapter;
+                                          final oldPageCount = _pages.length;
+                                          
+                                          setState(() {
+                                            _fontSize = value;
+                                          });
+                                          await _settingsService.saveFontSize(value);
+                                          
+                                          // Recalculate pages with new font size
+                                          await _loadCurrentChapterPages();
+                                          
+                                          // Try to maintain approximate position after recalculation
+                                          if (mounted && _pages.isNotEmpty && oldPageCount > 0) {
+                                            // Adjust page index proportionally based on old vs new page count
+                                            final progressRatio = (previousPageIndex + 1) / oldPageCount;
+                                            final newPageIndex = (progressRatio * _pages.length - 1)
+                                                .round()
+                                                .clamp(0, _pages.length - 1);
+                                            setState(() {
+                                              _currentPageInChapter = newPageIndex;
+                                            });
+                                            await _saveProgress();
+                                          }
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const Divider(),
+                                ListTile(
+                                  leading: const Icon(Icons.summarize),
+                                  title: Text(l10n.summary),
+                                  onTap: () {
+                                    setState(() {
+                                      _showMenu = false;
+                                    });
+                                    _showSummaryDialog();
+                                  },
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.text_fields),
+                                  title: Text(l10n.importantWords),
+                                  onTap: () {
+                                    setState(() {
+                                      _showMenu = false;
+                                    });
+                                    _showImportantWordsDialog();
+                                  },
+                                ),
+                                const Divider(),
+                                ListTile(
+                                  leading: const Icon(Icons.list),
+                                  title: Text(l10n.chapters),
+                                  onTap: () {
+                                    setState(() {
+                                      _showMenu = false;
+                                    });
+                                    _showChapterList();
+                                  },
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.pageview),
+                                  title: Text(l10n.goToPage),
+                                  onTap: () {
+                                    setState(() {
+                                      _showMenu = false;
+                                    });
+                                    _showGoToPageDialog();
+                                  },
+                                ),
+                                const Divider(),
+                                ListTile(
+                                  leading: const Icon(Icons.arrow_back),
+                                  title: Text(l10n.backToLibrary),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ListTile(
-                              leading: const Icon(Icons.list),
-                              title: Text(l10n.chapters),
-                              onTap: () {
-                                setState(() {
-                                  _showMenu = false;
-                                });
-                                _showChapterList();
-                              },
-                            ),
-                            ListTile(
-                              leading: const Icon(Icons.pageview),
-                              title: Text(l10n.goToPage),
-                              onTap: () {
-                                setState(() {
-                                  _showMenu = false;
-                                });
-                                _showGoToPageDialog();
-                              },
-                            ),
-                            ListTile(
-                              leading: const Icon(Icons.summarize),
-                              title: Text(l10n.summary),
-                              onTap: () {
-                                setState(() {
-                                  _showMenu = false;
-                                });
-                                _showSummaryDialog();
-                              },
-                            ),
-                            const Divider(),
-                            ListTile(
-                              leading: const Icon(Icons.arrow_back),
-                              title: Text(l10n.backToLibrary),
-                              onTap: () {
-                                Navigator.pop(context);
-                              },
-                            ),
-                          ],
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),

@@ -153,6 +153,128 @@
         "type": "Object"
       }
     }
+  },
+  "settings": "Paramètres",
+  "language": "Langue",
+  "languageDescription": "Choisissez votre langue préférée. Les modifications nécessitent un redémarrage de l'application.",
+  "languageSystemDefault": "Par défaut (système)",
+  "languageSystemDefaultDescription": "Utiliser les paramètres de langue de l'appareil",
+  "languageChangedRestart": "Préférence de langue enregistrée. Veuillez redémarrer l'application pour que les modifications prennent effet.",
+  "fontSize": "Taille de la police",
+  "fontSizeDescription": "Ajustez la taille du texte lors de la lecture",
+  "fontSizeExample": "Ceci est un exemple de taille de texte",
+  "textSize": "Taille du texte",
+  "deleteBookConfirm": "Cela supprimera le livre de la bibliothèque. Êtes-vous sûr ?",
+  "confirm": "Confirmer",
+  "openaiApiKey": "Clé API OpenAI",
+  "@openaiApiKey": {
+    "description": "Label du paramètre de clé API OpenAI"
+  },
+  "openaiApiKeyDescription": "Entrez votre clé API OpenAI pour activer les résumés de livres alimentés par l'IA. Obtenez votre clé sur https://platform.openai.com/api-keys",
+  "@openaiApiKeyDescription": {
+    "description": "Description du paramètre de clé API OpenAI"
+  },
+  "apiKeySaved": "Clé API enregistrée avec succès",
+  "@apiKeySaved": {
+    "description": "Message lorsque la clé API est enregistrée"
+  },
+  "generatingSummary": "Génération du résumé...",
+  "@generatingSummary": {
+    "description": "Message de chargement lors de la génération du résumé"
+  },
+  "summaryUpToPosition": "Résumé jusqu'à votre position actuelle",
+  "@summaryUpToPosition": {
+    "description": "Titre de la boîte de dialogue du résumé"
+  },
+  "errorGeneratingSummary": "Erreur lors de la génération du résumé : {error}",
+  "@errorGeneratingSummary": {
+    "description": "Message d'erreur lorsque la génération du résumé échoue",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "apiKeyNotConfigured": "Clé API OpenAI non configurée. Veuillez la définir dans les paramètres.",
+  "@apiKeyNotConfigured": {
+    "description": "Erreur lorsque la clé API n'est pas définie"
+  },
+  "enterApiKey": "Entrez la clé API OpenAI",
+  "@enterApiKey": {
+    "description": "Titre de la boîte de dialogue pour entrer la clé API"
+  },
+  "save": "Enregistrer",
+  "@save": {
+    "description": "Label du bouton Enregistrer"
+  },
+  "summaryFromBeginning": "Résumé depuis le début",
+  "@summaryFromBeginning": {
+    "description": "Option de type de résumé - depuis le début"
+  },
+  "summarySinceLastTime": "Résumé depuis la dernière fois",
+  "@summarySinceLastTime": {
+    "description": "Option de type de résumé - depuis la dernière fois"
+  },
+  "summaryCharacters": "Personnages",
+  "@summaryCharacters": {
+    "description": "Option de type de résumé - personnages"
+  },
+  "importantWords": "Mots importants",
+  "@importantWords": {
+    "description": "Élément de menu Mots importants"
+  },
+  "generatingImportantWords": "Génération des mots importants...",
+  "@generatingImportantWords": {
+    "description": "Message de chargement lors de la génération des mots importants"
+  },
+  "errorLoadingImportantWords": "Erreur lors du chargement des mots importants : {error}",
+  "@errorLoadingImportantWords": {
+    "description": "Message d'erreur lorsque le chargement des mots importants échoue",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "whatIsApiKey": "Qu'est-ce que c'est ?",
+  "@whatIsApiKey": {
+    "description": "Texte du lien pour expliquer ce qu'est une clé API"
+  },
+  "apiKeyExplanation": "Une clé API OpenAI est requise pour utiliser les fonctionnalités alimentées par l'IA comme les résumés automatiques et les mots importants. Vous pouvez obtenir votre clé API depuis la plateforme OpenAI. Après avoir créé un compte, allez dans la section Clés API et créez une nouvelle clé. Gardez-la sécurisée et ne la partagez jamais publiquement.",
+  "@apiKeyExplanation": {
+    "description": "Explication de ce qu'est une clé API et comment l'obtenir"
+  },
+  "getApiKeyFromOpenAI": "Obtenir une clé API depuis OpenAI",
+  "@getApiKeyFromOpenAI": {
+    "description": "Texte du bouton pour ouvrir le site web OpenAI"
+  },
+  "apiKeyCostInfo": "Coûts typiques : Pour un roman moyen comme Sa Majesté des mouches, la génération de résumés coûte environ 10 à 50 centimes (USD) pour l'ensemble du livre.",
+  "@apiKeyCostInfo": {
+    "description": "Informations sur les coûts typiques de l'API"
+  },
+  "apiCostLabel": "Coût estimé de l'API",
+  "@apiCostLabel": {
+    "description": "Label pour l'affichage du coût de l'API"
+  },
+  "apiCostDescription": "Ceci affiche le coût cumulatif de tous les appels API effectués dans cette application. Les coûts sont calculés en fonction de l'utilisation réelle des tokens des réponses OpenAI.",
+  "@apiCostDescription": {
+    "description": "Description du suivi des coûts de l'API"
+  },
+  "resetApiCost": "Réinitialiser le compteur de coût",
+  "@resetApiCost": {
+    "description": "Texte du bouton pour réinitialiser le compteur de coût de l'API"
+  },
+  "apiCostReset": "Le compteur de coût de l'API a été réinitialisé.",
+  "@apiCostReset": {
+    "description": "Message affiché lorsque le compteur de coût de l'API est réinitialisé"
+  },
+  "next": "Suivant",
+  "@next": {
+    "description": "Label du bouton Suivant"
+  },
+  "close": "Fermer",
+  "@close": {
+    "description": "Label du bouton Fermer"
   }
 }
 

@@ -1,12 +1,13 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:epubx/epubx.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
-import 'dart:convert';
 import '../models/book.dart';
 import '../models/reading_progress.dart';
+import 'summary_database_service.dart';
 
 class BookService {
   static const String _booksKey = 'books';
@@ -27,21 +28,105 @@ class BookService {
     }
   }
 
-  Future<String> copyEpubFile(File sourceFile) async {
+  /// Copy a file to app storage with the given extension
+  /// 
+  /// Used for EPUB and TXT files
+  Future<String> copyFile(File sourceFile, String extension) async {
     try {
       if (!await sourceFile.exists()) {
         throw Exception('Source file does not exist');
       }
       final booksDir = await getBooksDirectory();
-      final fileName = '${_uuid.v4()}.epub';
+      final fileName = '${_uuid.v4()}.$extension';
       final destFile = File('$booksDir/$fileName');
       await sourceFile.copy(destFile.path);
       return destFile.path;
     } catch (e) {
-      throw Exception('Failed to copy EPUB file: $e');
+      throw Exception('Failed to copy file: $e');
     }
   }
 
+  /// Copy an EPUB file to app storage (backward compatibility)
+  /// 
+  /// @deprecated Use copyFile() instead
+  Future<String> copyEpubFile(File sourceFile) async {
+    return copyFile(sourceFile, 'epub');
+  }
+
+  /// Import a book file (EPUB or TXT)
+  /// 
+  /// Automatically detects the file format and extracts metadata accordingly
+  Future<Book> importBook(File file) async {
+    try {
+      if (!await file.exists()) {
+        throw Exception('File does not exist');
+      }
+      
+      final extension = file.path.split('.').last.toLowerCase();
+      String format;
+      String? title;
+      String? author;
+      
+      switch (extension) {
+        case 'epub':
+          format = 'epub';
+          // Parse the EPUB to get metadata
+          final epub = await EpubReader.readBook(await file.readAsBytes());
+          title = epub.Title?.isNotEmpty == true ? epub.Title! : null;
+          author = epub.Author?.isNotEmpty == true ? epub.Author! : null;
+          break;
+          
+        case 'txt':
+          format = 'txt';
+          // For TXT, read first few lines to try to extract title
+          try {
+            final content = await file.readAsString(encoding: utf8);
+            final lines = content.split('\n')
+                .where((l) => l.trim().isNotEmpty)
+                .take(5)
+                .toList();
+            if (lines.isNotEmpty) {
+              title = lines.first.trim();
+              // If title looks like it might be a heading, use it
+              if (title.length > 100) {
+                title = null; // Probably not a title if too long
+              }
+            }
+            author = null;
+          } catch (e) {
+            debugPrint('Failed to read TXT file for metadata: $e');
+          }
+          break;
+          
+        default:
+          throw Exception('Unsupported file format: $extension');
+      }
+      
+      // Copy the file to app storage
+      final storedPath = await copyFile(file, extension);
+      
+      final book = Book(
+        id: _uuid.v4(),
+        title: title?.isNotEmpty == true ? title! : 'Unknown Title',
+        author: author?.isNotEmpty == true ? author! : 'Unknown Author',
+        filePath: storedPath,
+        dateAdded: DateTime.now(),
+        format: format,
+      );
+
+      // Save book to preferences
+      await _saveBook(book);
+      
+      return book;
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Failed to import book: $e');
+    }
+  }
+
+  /// Import an EPUB file (backward compatibility)
+  /// 
+  /// @deprecated Use importBook() instead
   Future<Book> importEpub(File epubFile) async {
     try {
       if (!await epubFile.exists()) {
@@ -49,7 +134,7 @@ class BookService {
       }
       
       // Copy the file to app storage
-      final storedPath = await copyEpubFile(epubFile);
+      final storedPath = await copyFile(epubFile, 'epub');
       
       // Parse the EPUB to get metadata
       final epub = await EpubReader.readBook(await epubFile.readAsBytes());
@@ -60,6 +145,7 @@ class BookService {
         author: epub.Author?.isNotEmpty == true ? epub.Author! : 'Unknown Author',
         filePath: storedPath,
         dateAdded: DateTime.now(),
+        format: 'epub',
       );
 
       // Save book to preferences
@@ -175,6 +261,10 @@ class BookService {
       
       // Delete reading progress
       await prefs.remove('$_progressKey${book.id}');
+      
+      // Delete summaries
+      final summaryDb = SummaryDatabaseService();
+      await summaryDb.deleteBookSummaries(book.id);
     } catch (e) {
       throw Exception('Failed to delete book: $e');
     }

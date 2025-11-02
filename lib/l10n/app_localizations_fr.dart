@@ -167,4 +167,130 @@ class AppLocalizationsFr extends AppLocalizations {
   String thisChapterHasPages_plural(Object count) {
     return 'Ce chapitre contient $count pages';
   }
+
+  @override
+  String get settings => 'Paramètres';
+
+  @override
+  String get language => 'Langue';
+
+  @override
+  String get languageDescription =>
+      'Choisissez votre langue préférée. Les modifications nécessitent un redémarrage de l\'application.';
+
+  @override
+  String get languageSystemDefault => 'Par défaut (système)';
+
+  @override
+  String get languageSystemDefaultDescription =>
+      'Utiliser les paramètres de langue de l\'appareil';
+
+  @override
+  String get languageChangedRestart =>
+      'Préférence de langue enregistrée. Veuillez redémarrer l\'application pour que les modifications prennent effet.';
+
+  @override
+  String get fontSize => 'Taille de la police';
+
+  @override
+  String get fontSizeDescription =>
+      'Ajustez la taille du texte lors de la lecture';
+
+  @override
+  String get fontSizeExample => 'Ceci est un exemple de taille de texte';
+
+  @override
+  String get textSize => 'Taille du texte';
+
+  @override
+  String get deleteBookConfirm =>
+      'Cela supprimera le livre de la bibliothèque. Êtes-vous sûr ?';
+
+  @override
+  String get confirm => 'Confirmer';
+
+  @override
+  String get openaiApiKey => 'Clé API OpenAI';
+
+  @override
+  String get openaiApiKeyDescription =>
+      'Entrez votre clé API OpenAI pour activer les résumés de livres alimentés par l\'IA. Obtenez votre clé sur https://platform.openai.com/api-keys';
+
+  @override
+  String get apiKeySaved => 'Clé API enregistrée avec succès';
+
+  @override
+  String get generatingSummary => 'Génération du résumé...';
+
+  @override
+  String get summaryUpToPosition => 'Résumé jusqu\'à votre position actuelle';
+
+  @override
+  String errorGeneratingSummary(String error) {
+    return 'Erreur lors de la génération du résumé : $error';
+  }
+
+  @override
+  String get apiKeyNotConfigured =>
+      'Clé API OpenAI non configurée. Veuillez la définir dans les paramètres.';
+
+  @override
+  String get enterApiKey => 'Entrez la clé API OpenAI';
+
+  @override
+  String get save => 'Enregistrer';
+
+  @override
+  String get summaryFromBeginning => 'Résumé depuis le début';
+
+  @override
+  String get summarySinceLastTime => 'Résumé depuis la dernière fois';
+
+  @override
+  String get summaryCharacters => 'Personnages';
+
+  @override
+  String get importantWords => 'Mots importants';
+
+  @override
+  String get generatingImportantWords => 'Génération des mots importants...';
+
+  @override
+  String errorLoadingImportantWords(String error) {
+    return 'Erreur lors du chargement des mots importants : $error';
+  }
+
+  @override
+  String get whatIsApiKey => 'Qu\'est-ce que c\'est ?';
+
+  @override
+  String get apiKeyExplanation =>
+      'Une clé API OpenAI est requise pour utiliser les fonctionnalités alimentées par l\'IA comme les résumés automatiques et les mots importants. Vous pouvez obtenir votre clé API depuis la plateforme OpenAI. Après avoir créé un compte, allez dans la section Clés API et créez une nouvelle clé. Gardez-la sécurisée et ne la partagez jamais publiquement.';
+
+  @override
+  String get getApiKeyFromOpenAI => 'Obtenir une clé API depuis OpenAI';
+
+  @override
+  String get apiKeyCostInfo =>
+      'Coûts typiques : Pour un roman moyen comme Sa Majesté des mouches, la génération de résumés coûte environ 10 à 50 centimes (USD) pour l\'ensemble du livre.';
+
+  @override
+  String get apiCostLabel => 'Coût estimé de l\'API';
+
+  @override
+  String get apiCostDescription =>
+      'Ceci affiche le coût cumulatif de tous les appels API effectués dans cette application. Les coûts sont calculés en fonction de l\'utilisation réelle des tokens des réponses OpenAI.';
+
+  @override
+  String get resetApiCost => 'Réinitialiser le compteur de coût';
+
+  @override
+  String get apiCostReset =>
+      'Le compteur de coût de l\'API a été réinitialisé.';
+
+  @override
+  String get next => 'Suivant';
+
+  @override
+  String get close => 'Fermer';
 }
