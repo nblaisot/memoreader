@@ -136,7 +136,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _isLoading = false;
       });
 
-      final initialCharIndex = progress?.currentWordIndex ?? 0; // Reusing field for character index
+      final initialCharIndex =
+          progress?.currentCharacterIndex ?? progress?.currentWordIndex ?? 0;
       _scheduleRepagination(initialCharIndex: initialCharIndex);
     } catch (e) {
       setState(() {
@@ -157,7 +158,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       } else if (initialCharIndex != null) {
         targetCharIndex = initialCharIndex;
       } else {
-        targetCharIndex = _savedProgress?.currentWordIndex ?? 0;
+        targetCharIndex =
+            _savedProgress?.currentCharacterIndex ?? _savedProgress?.currentWordIndex ?? 0;
       }
       _rebuildPagination(targetCharIndex, actualSize: actualSize);
     });
@@ -176,6 +178,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       baseTextStyle: metrics.baseTextStyle,
       maxWidth: metrics.maxWidth,
       maxHeight: metrics.maxHeight,
+      textHeightBehavior: metrics.textHeightBehavior,
     );
 
     final totalPages = engine.totalPages;
@@ -227,6 +230,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
     final theme = Theme.of(context);
     final baseColor = theme.colorScheme.onSurface;
+    final textHeightBehavior = DefaultTextHeightBehavior.of(context);
     final baseStyle = theme.textTheme.bodyMedium?.copyWith(
           fontSize: _fontSize,
           height: 1.6,
@@ -242,6 +246,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       maxWidth: maxWidth,
       maxHeight: maxHeight,
       baseTextStyle: baseStyle,
+      textHeightBehavior: textHeightBehavior,
     );
   }
 
@@ -254,6 +259,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       maxWidth: adjustedWidth,
       maxHeight: adjustedHeight,
       baseTextStyle: metrics.baseTextStyle,
+      textHeightBehavior: metrics.textHeightBehavior,
     );
   }
 
@@ -314,7 +320,8 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         bookId: widget.book.id,
         currentChapterIndex: page.chapterIndex,
         currentPageInChapter: null,
-        currentWordIndex: page.startCharIndex, // Using character index for progress
+        currentWordIndex: page.startWordIndex,
+        currentCharacterIndex: page.startCharIndex,
         progress: _progress,
         lastRead: DateTime.now(),
       );
@@ -381,11 +388,12 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                 baseStyle: currentMetrics.baseTextStyle,
                 maxWidth: currentMetrics.maxWidth,
                 maxHeight: currentMetrics.maxHeight,
+                textHeightBehavior: currentMetrics.textHeightBehavior,
               )) {
             _scheduleRepagination(retainCurrentPage: true, actualSize: actualSize);
           }
         });
-        
+
         return _buildReaderContent(context, actualSize, metrics);
       },
     );
@@ -571,11 +579,21 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     }
 
     // Center the page content with proper constraints
-    return Center(
-      child: _PageContentView(
-        content: page,
-        maxWidth: metrics.maxWidth,
-        maxHeight: metrics.maxHeight,
+    return SizedBox.expand(
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: _horizontalPadding,
+          vertical: _verticalPadding,
+        ),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: _PageContentView(
+            content: page,
+            maxWidth: metrics.maxWidth,
+            maxHeight: metrics.maxHeight,
+            textHeightBehavior: metrics.textHeightBehavior,
+          ),
+        ),
       ),
     );
   }
@@ -755,7 +773,8 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     
     final progress = ReadingProgress(
       bookId: widget.book.id,
-      currentWordIndex: currentPage.startCharIndex,
+      currentWordIndex: currentPage.startWordIndex,
+      currentCharacterIndex: currentPage.startCharIndex,
       currentChapterIndex: currentPage.chapterIndex,
       currentPageInChapter: null,
       lastRead: DateTime.now(),
@@ -1020,11 +1039,13 @@ class _PageMetrics {
     required this.maxWidth,
     required this.maxHeight,
     required this.baseTextStyle,
+    required this.textHeightBehavior,
   });
 
   final double maxWidth;
   final double maxHeight;
   final TextStyle baseTextStyle;
+  final TextHeightBehavior textHeightBehavior;
 }
 
 class _PageContentView extends StatelessWidget {
@@ -1032,11 +1053,13 @@ class _PageContentView extends StatelessWidget {
     required this.content,
     required this.maxWidth,
     required this.maxHeight,
+    required this.textHeightBehavior,
   });
 
   final PageContent content;
   final double maxWidth;
   final double maxHeight;
+  final TextHeightBehavior textHeightBehavior;
 
   @override
   Widget build(BuildContext context) {
@@ -1054,6 +1077,7 @@ class _PageContentView extends StatelessWidget {
             style: block.style,
             textAlign: block.textAlign,
             softWrap: true,
+            textHeightBehavior: textHeightBehavior,
           ),
         );
       } else if (block is ImagePageBlock) {
@@ -1082,6 +1106,7 @@ class _PageContentView extends StatelessWidget {
         height: maxHeight,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisAlignment: MainAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: children,
         ),

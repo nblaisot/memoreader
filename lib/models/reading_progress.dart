@@ -7,6 +7,7 @@ class ReadingProgress {
   final String? contentCfi;
   final double? progress;
   final int? currentWordIndex; // First word of current page for lazy pagination
+  final int? currentCharacterIndex; // Exact character position for pagination engine
 
   ReadingProgress({
     required this.bookId,
@@ -17,6 +18,7 @@ class ReadingProgress {
     this.contentCfi,
     this.progress,
     this.currentWordIndex,
+    this.currentCharacterIndex,
   });
 
   Map<String, dynamic> toJson() {
@@ -29,6 +31,7 @@ class ReadingProgress {
       'contentCfi': contentCfi,
       'progress': progress,
       'currentWordIndex': currentWordIndex,
+      'currentCharacterIndex': currentCharacterIndex,
     };
   }
 
@@ -42,6 +45,8 @@ class ReadingProgress {
       contentCfi: json['contentCfi'] as String?,
       progress: (json['progress'] as num?)?.toDouble(),
       currentWordIndex: json['currentWordIndex'] as int?,
+      currentCharacterIndex: (json['currentCharacterIndex'] as int?) ??
+          json['currentWordIndex'] as int?,
     );
   }
 
@@ -54,6 +59,7 @@ class ReadingProgress {
     String? contentCfi,
     double? progress,
     int? currentWordIndex,
+    int? currentCharacterIndex,
   }) {
     return ReadingProgress(
       bookId: bookId ?? this.bookId,
@@ -64,6 +70,7 @@ class ReadingProgress {
       contentCfi: contentCfi ?? this.contentCfi,
       progress: progress ?? this.progress,
       currentWordIndex: currentWordIndex ?? this.currentWordIndex,
+      currentCharacterIndex: currentCharacterIndex ?? this.currentCharacterIndex,
     );
   }
 }

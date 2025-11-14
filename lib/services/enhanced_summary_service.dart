@@ -17,6 +17,7 @@ import 'book_service.dart';
 import 'summary_service.dart';
 import 'openai_summary_service.dart';
 import 'prompt_config_service.dart';
+import '../utils/text_tokenizer.dart';
 
 /// Represents text extracted from a chapter, possibly truncated.
 class ChapterText {
@@ -157,12 +158,6 @@ class EnhancedSummaryService {
     }
   }
 
-  /// Split text into words (same logic as reader_screen.dart)
-  List<String> _splitIntoWords(String text) {
-    final matches = RegExp(r'\S+|\s+').allMatches(text);
-    return matches.map((m) => m.group(0)!).toList();
-  }
-
   /// Extract text from book from beginning up to a specific word index.
   /// Returns a list of chapter texts, where the last chapter may be truncated.
   Future<List<ChapterText>> _extractTextUpToWordIndex(
@@ -185,7 +180,7 @@ class EnhancedSummaryService {
       
       if (plainText.isEmpty) continue;
 
-      final words = _splitIntoWords(plainText);
+      final words = tokenizePreservingWhitespace(plainText);
       final chapterWordCount = words.length;
 
       if (currentWordCount + chapterWordCount <= targetWordIndex) {
@@ -786,7 +781,7 @@ class EnhancedSummaryService {
       
       int wordOffset = 0;
       for (final chapterText in chapterTexts) {
-        final chapterWords = _splitIntoWords(chapterText.text);
+        final chapterWords = tokenizePreservingWhitespace(chapterText.text);
         final chapterWordCount = chapterWords.length;
         final chapterStartWordIndex = wordOffset;
         final chapterEndWordIndex = wordOffset + chapterWordCount - 1;
@@ -1023,7 +1018,7 @@ class EnhancedSummaryService {
       int wordOffset = 0;
       
       for (final chapterText in sessionEndTexts) {
-        final chapterWords = _splitIntoWords(chapterText.text);
+        final chapterWords = tokenizePreservingWhitespace(chapterText.text);
         final chapterWordCount = chapterWords.length;
         final chapterStartWordIndex = wordOffset;
         final chapterEndWordIndex = wordOffset + chapterWordCount - 1;
@@ -1177,7 +1172,7 @@ class EnhancedSummaryService {
       // Process chapters that haven't been processed yet
       int wordOffset = 0;
       for (final chapterText in chapterTexts) {
-        final chapterWords = _splitIntoWords(chapterText.text);
+        final chapterWords = tokenizePreservingWhitespace(chapterText.text);
         final chapterWordCount = chapterWords.length;
         final chapterStartWordIndex = wordOffset;
         final chapterEndWordIndex = wordOffset + chapterWordCount - 1;
