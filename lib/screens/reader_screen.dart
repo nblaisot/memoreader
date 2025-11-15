@@ -19,6 +19,7 @@ import '../services/settings_service.dart';
 import '../utils/html_text_extractor.dart';
 import 'reader/document_model.dart';
 import 'reader/line_metrics_pagination_engine.dart';
+import 'reader/pagination_cache.dart';
 import 'reader/tap_zones.dart';
 import 'settings_screen.dart';
 import 'summary_screen.dart';
@@ -40,6 +41,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   final BookService _bookService = BookService();
   final SettingsService _settingsService = SettingsService();
+  final PaginationCacheManager _paginationCacheManager =
+      const PaginationCacheManager();
   EnhancedSummaryService? _summaryService;
   final PageController _pageController = PageController(initialPage: 1);
   
@@ -105,6 +108,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _engine?.removeListener(_handleEngineUpdate);
     _pageController.dispose();
     _progressDebounce?.cancel();
     super.dispose();
@@ -162,48 +166,43 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         targetCharIndex =
             _savedProgress?.currentCharacterIndex ?? _savedProgress?.currentWordIndex ?? 0;
       }
-      _rebuildPagination(targetCharIndex, actualSize: actualSize);
+      unawaited(_rebuildPagination(targetCharIndex, actualSize: actualSize));
     });
   }
 
-  void _rebuildPagination(int startCharIndex, {Size? actualSize}) {
+  Future<void> _rebuildPagination(int startCharIndex, {Size? actualSize}) async {
     if (!mounted || _docBlocks.isEmpty) return;
 
     Size? sizeForMetrics = actualSize ?? _lastActualSize;
     sizeForMetrics ??= MediaQuery.of(context).size;
     final baseMetrics = _computePageMetrics(context, sizeForMetrics);
     final metrics = _adjustForUserPadding(baseMetrics);
-    
-    final engine = LineMetricsPaginationEngine(
+
+    final previousEngine = _engine;
+    previousEngine?.removeListener(_handleEngineUpdate);
+
+    final engine = await LineMetricsPaginationEngine.create(
+      bookId: widget.book.id,
       blocks: _docBlocks,
       baseTextStyle: metrics.baseTextStyle,
       maxWidth: metrics.maxWidth,
       maxHeight: metrics.maxHeight,
       textHeightBehavior: metrics.textHeightBehavior,
       textScaler: metrics.textScaler,
+      cacheManager: _paginationCacheManager,
     );
 
-    final totalPages = engine.totalPages;
-    if (totalPages == 0) {
-      setState(() {
-        _engine = engine;
-        _totalPages = 0;
-        _currentPageIndex = 0;
-        _progress = 0;
-      });
-      return;
-    }
-
-    // Find the page that contains the target character index
-    final totalChars = engine.totalCharacters;
-    final clampedStart = totalChars > 0 ? startCharIndex.clamp(0, totalChars - 1) : 0;
-    int targetPageIndex = engine.findPageByCharacterIndex(clampedStart);
+    final targetPageIndex =
+        await engine.ensurePageForCharacter(startCharIndex, windowRadius: 1);
+    engine.addListener(_handleEngineUpdate);
+    unawaited(engine.ensureWindow(targetPageIndex, radius: 1));
+    unawaited(engine.startBackgroundPagination());
 
     setState(() {
       _engine = engine;
-      _totalPages = totalPages;
+      _totalPages = engine.estimatedTotalPages;
       _currentPageIndex = targetPageIndex;
-      _progress = totalPages > 0 ? (targetPageIndex + 1) / totalPages : 0;
+      _progress = _totalPages > 0 ? (_currentPageIndex + 1) / _totalPages : 0;
       _showProgressBar = false;
     });
 
@@ -294,21 +293,44 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         });
         break;
       case ReaderTapAction.nextPage:
-        if (_currentPageIndex < _totalPages - 1 && _pageController.hasClients) {
-          _pageController.animateToPage(
-            2,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-          );
-        }
+        () async {
+          if (_engine == null) return;
+          if (!_engine!.hasNextPage(_currentPageIndex)) return;
+          await _engine!.ensureWindow(_currentPageIndex + 1, radius: 1);
+          if (!mounted) return;
+          setState(() {
+            _currentPageIndex++;
+            _progress = _totalPages > 0
+                ? (_currentPageIndex + 1) / _totalPages
+                : _progress;
+            _showProgressBar = false;
+          });
+          unawaited(_engine!.ensureWindow(_currentPageIndex, radius: 1));
+          unawaited(_engine!.startBackgroundPagination());
+          _scheduleProgressSave();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_pageController.hasClients) {
+              _pageController.jumpToPage(1);
+            }
+          });
+        }();
         break;
       case ReaderTapAction.previousPage:
-        if (_currentPageIndex > 0 && _pageController.hasClients) {
-          _pageController.animateToPage(
-            0,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-          );
+        if (_currentPageIndex > 0) {
+          setState(() {
+            _currentPageIndex--;
+            _progress = _totalPages > 0
+                ? (_currentPageIndex + 1) / _totalPages
+                : _progress;
+            _showProgressBar = false;
+          });
+          unawaited(_engine?.ensureWindow(_currentPageIndex, radius: 1));
+          _scheduleProgressSave();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_pageController.hasClients) {
+              _pageController.jumpToPage(1);
+            }
+          });
         }
         break;
       case ReaderTapAction.dismissOverlays:
@@ -348,13 +370,14 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   void _handlePageChanged(int pageIndex) {
     if (pageIndex == 1) return;
 
-    if (pageIndex == 2 && _currentPageIndex < _totalPages - 1) {
-      // Next page
+    if (pageIndex == 2 && _engine?.hasNextPage(_currentPageIndex) == true) {
       setState(() {
         _currentPageIndex++;
         _progress = _totalPages > 0 ? (_currentPageIndex + 1) / _totalPages : 0;
         _showProgressBar = false;
       });
+      unawaited(_engine?.ensureWindow(_currentPageIndex, radius: 1));
+      unawaited(_engine?.startBackgroundPagination());
       _scheduleProgressSave();
     } else if (pageIndex == 0 && _currentPageIndex > 0) {
       // Previous page
@@ -363,6 +386,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         _progress = _totalPages > 0 ? (_currentPageIndex + 1) / _totalPages : 0;
         _showProgressBar = false;
       });
+      unawaited(_engine?.ensureWindow(_currentPageIndex, radius: 1));
       _scheduleProgressSave();
     }
 
@@ -437,13 +461,9 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     }
 
     // Build three pages: previous, current, and next
-    final previousPage = _currentPageIndex > 0 && _engine != null
-        ? _engine!.getPage(_currentPageIndex - 1)
-        : null;
+    final previousPage = _engine?.getPage(_currentPageIndex - 1);
     final currentPage = _engine?.getPage(_currentPageIndex);
-    final nextPage = _currentPageIndex < _totalPages - 1 && _engine != null
-        ? _engine!.getPage(_currentPageIndex + 1)
-        : null;
+    final nextPage = _engine?.getPage(_currentPageIndex + 1);
 
     final pages = <Widget>[
       _buildPageContent(previousPage, metrics),
@@ -479,20 +499,28 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                     });
                     break;
                   case ReaderTapAction.nextPage:
-                    if (_currentPageIndex < _totalPages - 1) {
+                    () async {
+                      if (_engine == null) return;
+                      if (!_engine!.hasNextPage(_currentPageIndex)) return;
+                      await _engine!.ensureWindow(_currentPageIndex + 1, radius: 1);
+                      if (!mounted) return;
                       setState(() {
                         _currentPageIndex++;
-                        _progress = _totalPages > 0 ? (_currentPageIndex + 1) / _totalPages : 0;
+                        _progress = _totalPages > 0
+                            ? (_currentPageIndex + 1) / _totalPages
+                            : _progress;
                         _showProgressBar = false;
                       });
+                      unawaited(
+                          _engine!.ensureWindow(_currentPageIndex, radius: 1));
+                      unawaited(_engine!.startBackgroundPagination());
                       _scheduleProgressSave();
-                      // Reset PageView to middle page after state update
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (_pageController.hasClients) {
                           _pageController.jumpToPage(1);
                         }
                       });
-                    }
+                    }();
                     break;
                   case ReaderTapAction.previousPage:
                     if (_currentPageIndex > 0) {
@@ -502,6 +530,8 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                         _showProgressBar = false;
                       });
                       _scheduleProgressSave();
+                      unawaited(
+                          _engine?.ensureWindow(_currentPageIndex, radius: 1));
                       // Reset PageView to middle page after state update
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (_pageController.hasClients) {
@@ -720,16 +750,25 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
 
   void _goToChapter(int chapterIndex) {
     if (_engine == null) return;
-    
+
     // Find the first page of this chapter
     final pageIndex = _engine!.findPageForChapter(chapterIndex);
     if (pageIndex == null) return;
-    
+
     // Get that page and navigate to it
     final page = _engine!.getPage(pageIndex);
     if (page != null) {
       _scheduleRepagination(initialCharIndex: page.startCharIndex);
     }
+  }
+
+  void _handleEngineUpdate() {
+    if (!mounted || _engine == null) return;
+    final estimated = _engine!.estimatedTotalPages;
+    setState(() {
+      _totalPages = estimated;
+      _progress = estimated > 0 ? (_currentPageIndex + 1) / estimated : 0;
+    });
   }
 
   void _openSummaries() async {
