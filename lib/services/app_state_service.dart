@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// needs to persist across launches, such as the last opened book.
 class AppStateService {
   static const String _lastOpenedBookKey = 'last_opened_book_id';
+  static const String _libraryViewModeKey = 'library_view_mode_is_list';
 
   /// Save the identifier of the book that is currently being read.
   Future<void> setLastOpenedBook(String bookId) async {
@@ -26,5 +27,17 @@ class AppStateService {
       return null;
     }
     return bookId;
+  }
+
+  /// Persist the preferred layout for the library screen.
+  Future<void> setLibraryViewIsList(bool isListView) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_libraryViewModeKey, isListView);
+  }
+
+  /// Retrieve the preferred layout for the library screen.
+  Future<bool> getLibraryViewIsList() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_libraryViewModeKey) ?? false;
   }
 }

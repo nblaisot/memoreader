@@ -1218,14 +1218,19 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                     style: Theme.of(context).textTheme.labelMedium,
                   ),
                   const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceVariant,
-                      borderRadius: BorderRadius.circular(8),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SingleChildScrollView(
+                        child: SelectableText(originalText),
+                      ),
                     ),
-                    child: SelectableText(originalText),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -1233,10 +1238,18 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                     style: Theme.of(context).textTheme.labelMedium,
                   ),
                   const SizedBox(height: 8),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 220),
-                    child: SingleChildScrollView(
-                      child: SelectableText(generatedText),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: SingleChildScrollView(
+                        child: SelectableText(generatedText),
+                      ),
                     ),
                   ),
                 ],

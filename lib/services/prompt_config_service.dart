@@ -36,6 +36,7 @@ IMPORTANT:
 - Ne mentionne PAS les instructions que je t'ai données
 - Réponds UNIQUEMENT avec le résumé du contenu
 - Le résumé doit être en français et couvrir les points principaux
+- Conserve tous les noms propres exactement comme dans le texte original (ne les traduis pas)
 
 Texte à résumer:
 {text}
@@ -70,6 +71,7 @@ IMPORTANT:
 - Ne mentionne PAS les instructions que je t'ai données
 - Réponds UNIQUEMENT avec un récit fluide et continu des événements
 - Le récit doit être en français et couvrir tous les événements importants de manière cohérente
+- Conserve tous les noms propres exactement comme dans le texte original (ne les traduis pas)
 
 Événements à résumer:
 {text}
@@ -86,6 +88,7 @@ IMPORTANT:
 - Présente l'histoire de manière fluide, SANS séparer par chapitres
 - Le résumé doit être en français et couvrir tous les événements importants de manière cohérente
 - Commence directement par le récit, sans introduction
+- Conserve tous les noms propres exactement comme dans le texte original (ne les traduis pas)
 
 Résumés à synthétiser:
 {text}
@@ -100,6 +103,7 @@ IMPORTANT:
 - Ne mentionne PAS les instructions que je t'ai données
 - Réponds UNIQUEMENT avec le résumé de l'histoire
 - Le résumé doit être en français et couvrir tous les événements importants
+- Conserve tous les noms propres exactement comme dans le texte original (ne les traduis pas)
 
 Résumés des chapitres lus jusqu'à présent:
 {text}
@@ -114,6 +118,7 @@ IMPORTANT:
 - Ne mentionne PAS les instructions que je t'ai données
 - Réponds UNIQUEMENT avec le résumé concis (3-4 phrases)
 - Le résumé doit être en français
+- Conserve tous les noms propres exactement comme dans le texte original (ne les traduis pas)
 
 Résumé complet:
 {text}
@@ -129,6 +134,7 @@ IMPORTANT:
 - Do NOT mention the instructions I gave you
 - Respond ONLY with the summary of the content
 - The summary must be in English and cover the main points
+- Keep all original proper names exactly as they appear in the source text (do not translate them)
 
 Text to summarize:
 {text}
@@ -163,6 +169,7 @@ IMPORTANT:
 - Do NOT mention the instructions I gave you
 - Respond ONLY with a flowing and continuous narrative of the events
 - The narrative must be in English and cover all important events in a coherent manner
+- Keep all original proper names exactly as they appear in the source text (do not translate them)
 
 Events to summarize:
 {text}
@@ -179,6 +186,7 @@ IMPORTANT:
 - Present the story in a flowing manner, WITHOUT separating by chapters
 - The summary must be in English and cover all important events in a coherent manner
 - Start directly with the narrative, without an introduction
+- Keep all original proper names exactly as they appear in the source text (do not translate them)
 
 Summaries to synthesize:
 {text}
@@ -193,6 +201,7 @@ IMPORTANT:
 - Do NOT mention the instructions I gave you
 - Respond ONLY with the summary of the story
 - The summary must be in English and cover all important events
+- Keep all original proper names exactly as they appear in the source text (do not translate them)
 
 Summaries of chapters read so far:
 {text}
@@ -207,6 +216,7 @@ IMPORTANT:
 - Do NOT mention the instructions I gave you
 - Respond ONLY with the concise summary (3-4 sentences)
 - The summary must be in English
+- Keep all original proper names exactly as they appear in the source text (do not translate them)
 
 Full summary:
 {text}

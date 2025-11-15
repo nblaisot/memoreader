@@ -566,11 +566,11 @@
   "@languageFrench": {
     "description": "French language option"
   },
-  "summaryFromBeginning": "Summary from the beginning",
+  "summaryFromBeginning": "From the Beginning",
   "@summaryFromBeginning": {
     "description": "Summary type option - from beginning"
   },
-  "summarySinceLastTime": "Summary since last time",
+  "summarySinceLastTime": "Last Reading",
   "@summarySinceLastTime": {
     "description": "Summary type option - since last time"
   },

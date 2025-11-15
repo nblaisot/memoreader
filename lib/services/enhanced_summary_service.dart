@@ -832,8 +832,8 @@ class EnhancedSummaryService {
       final cache = await _dbService.getSummaryCache(book.id);
       final cachedCharacterIndex = cache?.lastProcessedCharacterIndex ?? -1;
       
-      if (cache != null && 
-          cachedCharacterIndex >= currentCharacterIndex &&
+      if (cache != null &&
+          cachedCharacterIndex == currentCharacterIndex &&
           cache.cumulativeSummary.isNotEmpty) {
         // Return cached summary if it covers the current position
         return cache.cumulativeSummary;
@@ -1009,12 +1009,11 @@ class EnhancedSummaryService {
       final lastReadingStopTimestamp = cache?.lastReadingStopTimestamp;
       final previousReadingStopCharacterIndex = cache?.previousReadingStopCharacterIndex ??
           (cache?.previousReadingStopWordIndex != null ? _estimateCharacterIndexFromWordIndex(cache!.previousReadingStopWordIndex!, book) : null);
-      final previousReadingStopTimestamp = cache?.previousReadingStopTimestamp;
 
       // Check if we have a cached "since last time" summary that's still valid
       final cachedSinceLastTimeCharacterIndex = cache?.summarySinceLastTimeCharacterIndex ??
           (cache?.summarySinceLastTimeWordIndex != null ? _estimateCharacterIndexFromWordIndex(cache!.summarySinceLastTimeWordIndex!, book) : null);
-      if (cache != null && 
+      if (cache != null &&
           cache.summarySinceLastTime != null &&
           cachedSinceLastTimeCharacterIndex == currentCharacterIndex &&
           lastReadingStopCharacterIndex == cache.lastReadingStopCharacterIndex) {
@@ -1028,58 +1027,110 @@ class EnhancedSummaryService {
       final sessionStartCharacterIndex = previousReadingStopCharacterIndex ?? 0;
       final sessionEndCharacterIndex = lastReadingStopCharacterIndex;
 
+      Future<String> buildConciseBeginningSection(int endIndex) async {
+        final heading = language == 'fr'
+            ? 'Résumé concis depuis le début:'
+            : 'Concise summary from the beginning:';
+        if (endIndex <= 0) {
+          final noContent = language == 'fr'
+              ? 'Aucun contenu précédent à résumer.'
+              : 'No previous content to summarize.';
+          return '$heading\n\n$noContent';
+        }
+
+        try {
+          final beginningTexts = await _extractTextUpToCharacterIndex(book, endIndex);
+          if (beginningTexts.isEmpty) {
+            final fallback = language == 'fr'
+                ? 'Impossible de générer un résumé concis du début.'
+                : 'Unable to generate a concise beginning summary.';
+            return '$heading\n\n$fallback';
+          }
+
+          final beginningText = beginningTexts.map((ct) => ct.text).join('\n\n');
+          if (beginningText.trim().isEmpty) {
+            final fallback = language == 'fr'
+                ? 'Impossible de générer un résumé concis du début.'
+                : 'Unable to generate a concise beginning summary.';
+            return '$heading\n\n$fallback';
+          }
+
+          final beginningSummary = await _generateChunkSummary(beginningText, null, language);
+          final conciseBeginning = await _generateConciseSummary(beginningSummary, book.title, language);
+          final trimmed = conciseBeginning.trim();
+          if (trimmed.isEmpty) {
+            final fallback = language == 'fr'
+                ? 'Impossible de générer un résumé concis du début.'
+                : 'Unable to generate a concise beginning summary.';
+            return '$heading\n\n$fallback';
+          }
+          return '$heading\n\n$trimmed';
+        } catch (e) {
+          debugPrint('Error generating concise beginning summary: $e');
+          final fallback = language == 'fr'
+              ? 'Impossible de générer un résumé concis du début.'
+              : 'Unable to generate a concise beginning summary.';
+          return '$heading\n\n$fallback';
+        }
+      }
+
+      String buildSinceLastTimeHeader(String? timestampText) {
+        final base = language == 'fr' ? 'Dernière lecture' : 'Last reading';
+        if (timestampText != null && timestampText.isNotEmpty) {
+          return '$base ($timestampText):';
+        }
+        return '$base:';
+      }
+
+      String noCompletedSessionMessage() {
+        return language == 'fr'
+            ? "Aucune session de lecture terminée pour l'instant."
+            : 'No completed reading session yet.';
+      }
+
+      String noSessionContentMessage() {
+        return language == 'fr'
+            ? 'Aucun contenu pour cette session.'
+            : 'No content in this session.';
+      }
+
+      String noNewContentMessage() {
+        return language == 'fr'
+            ? 'Aucun nouveau contenu.'
+            : 'No new content.';
+      }
+
       // If no reading stops recorded, or user hasn't completed a session yet
-      if (lastReadingStopCharacterIndex == null || 
-          sessionEndCharacterIndex == null || 
+      if (lastReadingStopCharacterIndex == null ||
+          sessionEndCharacterIndex == null ||
           sessionEndCharacterIndex >= currentCharacterIndex) {
         // First reading session or no new content - show what they've read so far
-        // Get concise beginning summary
-        String conciseBeginning = '';
-        if (currentCharacterIndex > 0) {
-          final beginningTexts = await _extractTextUpToCharacterIndex(book, currentCharacterIndex);
-          if (beginningTexts.isNotEmpty) {
-            final beginningText = beginningTexts.map((ct) => ct.text).join('\n\n');
-            final beginningSummary = await _generateChunkSummary(beginningText, null, language);
-            conciseBeginning = await _generateConciseSummary(beginningSummary, book.title, language);
-          } else {
-            conciseBeginning = 'Beginning of story.';
-          }
-        }
-        
+        final conciseBeginningSection =
+            await buildConciseBeginningSection(currentCharacterIndex);
+
         String timestampText = '';
         if (lastReadingStopTimestamp != null) {
           timestampText = _formatTimestamp(lastReadingStopTimestamp, languageCode);
         }
-        final sinceLastTimeHeader = timestampText.isNotEmpty
-            ? 'Since last time ($timestampText):'
-            : 'Since last time:';
-        return '$conciseBeginning\n\n$sinceLastTimeHeader\n\nNo completed reading session yet.';
+        final sinceLastTimeHeader = buildSinceLastTimeHeader(timestampText);
+        return '${conciseBeginningSection.trim()}\n\n$sinceLastTimeHeader\n\n${noCompletedSessionMessage()}';
       }
 
       if (sessionStartCharacterIndex >= sessionEndCharacterIndex) {
-        // No content in the session
+        final conciseBeginningSection =
+            await buildConciseBeginningSection(sessionStartCharacterIndex);
+
         String timestampText = '';
         if (lastReadingStopTimestamp != null) {
           timestampText = _formatTimestamp(lastReadingStopTimestamp, languageCode);
         }
-        final sinceLastTimeHeader = timestampText.isNotEmpty
-            ? 'Since last time ($timestampText):'
-            : 'Since last time:';
-        return 'Beginning of story.\n\n$sinceLastTimeHeader\n\nNo content in this session.';
+        final sinceLastTimeHeader = buildSinceLastTimeHeader(timestampText);
+        return '${conciseBeginningSection.trim()}\n\n$sinceLastTimeHeader\n\n${noSessionContentMessage()}';
       }
 
       // Get concise summary of beginning (up to sessionStartCharacterIndex) for context
-      String conciseBeginning = '';
-      if (sessionStartCharacterIndex > 0) {
-        final beginningTexts = await _extractTextUpToCharacterIndex(book, sessionStartCharacterIndex);
-        if (beginningTexts.isNotEmpty) {
-          final beginningText = beginningTexts.map((ct) => ct.text).join('\n\n');
-          final beginningSummary = await _generateChunkSummary(beginningText, null, language);
-          conciseBeginning = await _generateConciseSummary(beginningSummary, book.title, language);
-        } else {
-          conciseBeginning = 'Beginning of story.';
-        }
-      }
+      final conciseBeginningSection =
+          await buildConciseBeginningSection(sessionStartCharacterIndex);
 
       // Extract text for the session (from sessionStartCharacterIndex to sessionEndCharacterIndex)
       final sessionEndTexts = await _extractTextUpToCharacterIndex(book, sessionEndCharacterIndex);
@@ -1123,10 +1174,8 @@ class EnhancedSummaryService {
         if (lastReadingStopTimestamp != null) {
           timestampText = _formatTimestamp(lastReadingStopTimestamp, languageCode);
         }
-        final sinceLastTimeHeader = timestampText.isNotEmpty
-            ? 'Since last time ($timestampText):'
-            : 'Since last time:';
-        return '$conciseBeginning\n\n$sinceLastTimeHeader\n\nNo new content.';
+        final sinceLastTimeHeader = buildSinceLastTimeHeader(timestampText);
+        return '${conciseBeginningSection.trim()}\n\n$sinceLastTimeHeader\n\n${noNewContentMessage()}';
       }
 
       // Generate summary of the session text
@@ -1158,10 +1207,8 @@ class EnhancedSummaryService {
         if (lastReadingStopTimestamp != null) {
           timestampText = _formatTimestamp(lastReadingStopTimestamp, languageCode);
         }
-        final sinceLastTimeHeader = timestampText.isNotEmpty
-            ? 'Since last time ($timestampText):'
-            : 'Since last time:';
-        return '$conciseBeginning\n\n$sinceLastTimeHeader\n\nNo new content.';
+        final sinceLastTimeHeader = buildSinceLastTimeHeader(timestampText);
+        return '${conciseBeginningSection.trim()}\n\n$sinceLastTimeHeader\n\n${noNewContentMessage()}';
       }
 
       // Format timestamp for display
@@ -1171,10 +1218,9 @@ class EnhancedSummaryService {
       }
 
       // Combine: concise beginning + "Since last time:" + session summary
-      final sinceLastTimeHeader = timestampText.isNotEmpty
-          ? 'Since last time ($timestampText):'
-          : 'Since last time:';
-      final fullSummary = '$conciseBeginning\n\n$sinceLastTimeHeader\n\n$combinedSummary';
+      final sinceLastTimeHeader = buildSinceLastTimeHeader(timestampText);
+      final fullSummary =
+          '${conciseBeginningSection.trim()}\n\n$sinceLastTimeHeader\n\n$combinedSummary';
       
       // Cache the generated summary
       final maxChapterIndex = sessionEndTexts.isNotEmpty 
@@ -1234,9 +1280,9 @@ class EnhancedSummaryService {
       final lastCharacterProcessedCharacterIndex = cache?.charactersSummaryCharacterIndex ?? -1;
 
       // Check if we have a cached summary that's up to date
-      if (cache != null && 
+      if (cache != null &&
           cache.charactersSummary != null &&
-          lastCharacterProcessedCharacterIndex >= currentCharacterIndex) {
+          lastCharacterProcessedCharacterIndex == currentCharacterIndex) {
         return cache.charactersSummary!;
       }
 

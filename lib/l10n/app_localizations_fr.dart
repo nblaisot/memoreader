@@ -425,10 +425,10 @@ class AppLocalizationsFr extends AppLocalizations {
   String get languageFrench => 'Français';
 
   @override
-  String get summaryFromBeginning => 'Résumé depuis le début';
+  String get summaryFromBeginning => 'Depuis le début';
 
   @override
-  String get summarySinceLastTime => 'Résumé depuis la dernière fois';
+  String get summarySinceLastTime => 'Dernière lecture';
 
   @override
   String get horizontalPaddingSaved =>

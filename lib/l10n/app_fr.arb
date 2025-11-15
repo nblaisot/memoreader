@@ -263,8 +263,8 @@
   "languageChangedRestart": "Préférence de langue enregistrée. Veuillez redémarrer l'application pour que les modifications prennent effet.",
   "languageEnglish": "Anglais",
   "languageFrench": "Français",
-  "summaryFromBeginning": "Résumé depuis le début",
-  "summarySinceLastTime": "Résumé depuis la dernière fois",
+  "summaryFromBeginning": "Depuis le début",
+  "summarySinceLastTime": "Dernière lecture",
   "summaryCharacters": "Personnages",
   "horizontalPaddingSaved": "Padding horizontal enregistré. Les modifications s'appliqueront lors de la réouverture d'un livre.",
   "verticalPaddingSaved": "Padding vertical enregistré. Les modifications s'appliqueront lors de la réouverture d'un livre."

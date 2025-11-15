@@ -32,8 +32,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(_loadLibraryViewPreference());
     _loadBooks();
     unawaited(_appStateService.clearLastOpenedBook());
+  }
+
+  Future<void> _loadLibraryViewPreference() async {
+    final isList = await _appStateService.getLibraryViewIsList();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _isListView = isList;
+    });
   }
 
   Future<void> _loadBooks() async {
@@ -708,6 +719,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 setState(() {
                   _isListView = !_isListView;
                 });
+                unawaited(
+                  _appStateService.setLibraryViewIsList(_isListView),
+                );
               },
               tooltip: _isListView ? l10n.libraryShowGrid : l10n.libraryShowList,
             ),

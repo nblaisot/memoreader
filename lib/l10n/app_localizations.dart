@@ -821,13 +821,13 @@ abstract class AppLocalizations {
   /// Summary type option - from beginning
   ///
   /// In en, this message translates to:
-  /// **'Summary from the beginning'**
+  /// **'From the Beginning'**
   String get summaryFromBeginning;
 
   /// Summary type option - since last time
   ///
   /// In en, this message translates to:
-  /// **'Summary since last time'**
+  /// **'Last Reading'**
   String get summarySinceLastTime;
 
   /// Message shown when horizontal padding is saved
