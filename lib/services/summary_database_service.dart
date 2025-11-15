@@ -9,6 +9,7 @@ class SummaryDatabaseService {
   SummaryDatabaseService._internal();
 
   Database? _database;
+  Set<String>? _summaryCacheColumns;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -319,6 +320,31 @@ class SummaryDatabaseService {
     );
   }
 
+  Future<Set<String>> _getSummaryCacheColumns(Database db) async {
+    if (_summaryCacheColumns != null) {
+      return _summaryCacheColumns!;
+    }
+
+    final columnsInfo = await db.rawQuery('PRAGMA table_info(summary_cache)');
+    final columns = columnsInfo
+        .map((row) => row['name'])
+        .whereType<String>()
+        .toSet();
+
+    _summaryCacheColumns = columns;
+    return columns;
+  }
+
+  Future<Map<String, dynamic>> _filterDataForSummaryCache(
+    Database db,
+    Map<String, dynamic> data,
+  ) async {
+    final columns = await _getSummaryCacheColumns(db);
+    return Map<String, dynamic>.fromEntries(
+      data.entries.where((entry) => columns.contains(entry.key)),
+    );
+  }
+
   // Summary Chunk operations
   Future<void> saveSummaryChunk(BookSummaryChunk chunk) async {
     final db = await database;
@@ -380,9 +406,11 @@ class SummaryDatabaseService {
   // Summary Cache operations
   Future<void> saveSummaryCache(BookSummaryCache cache) async {
     final db = await database;
+    final filteredData = await _filterDataForSummaryCache(db, cache.toJson());
+
     await db.insert(
       'summary_cache',
-      cache.toJson(),
+      filteredData,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
