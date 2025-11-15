@@ -16,11 +16,13 @@ import '../services/book_service.dart';
 import '../services/enhanced_summary_service.dart';
 import '../services/summary_config_service.dart';
 import '../services/settings_service.dart';
+import '../services/summary_database_service.dart';
 import '../utils/html_text_extractor.dart';
 import 'reader/document_model.dart';
 import 'reader/line_metrics_pagination_engine.dart';
 import 'reader/pagination_cache.dart';
 import 'reader/tap_zones.dart';
+import 'reader/reader_menu.dart';
 import 'settings_screen.dart';
 import 'summary_screen.dart';
 
@@ -56,10 +58,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   List<_ChapterEntry> _chapterEntries = [];
 
   LineMetricsPaginationEngine? _engine;
-  
+  final SummaryDatabaseService _summaryDatabase = SummaryDatabaseService();
+
   int _currentPageIndex = 0;
   int _totalPages = 0;
   double _progress = 0;
+  int _totalCharacterCount = 0;
+  int _currentCharacterIndex = 0;
 
   bool _isLoading = true;
   String? _errorMessage;
@@ -137,6 +142,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _epubBook = epub;
         _docBlocks = extraction.blocks;
         _chapterEntries = extraction.chapters;
+        _totalCharacterCount = extraction.totalCharacters;
         _savedProgress = progress;
         _isLoading = false;
       });
@@ -198,19 +204,26 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     unawaited(engine.ensureWindow(targetPageIndex, radius: 1));
     unawaited(engine.startBackgroundPagination());
 
+    final initialPage = engine.getPage(targetPageIndex);
+    final updatedTotalChars = math.max(_totalCharacterCount, engine.totalCharacters);
+
     setState(() {
       _engine = engine;
       _totalPages = engine.estimatedTotalPages;
       _currentPageIndex = targetPageIndex;
-      _progress = _totalPages > 0 ? (_currentPageIndex + 1) / _totalPages : 0;
+      _totalCharacterCount = updatedTotalChars;
+      if (initialPage != null) {
+        _currentCharacterIndex = initialPage.startCharIndex;
+        _progress =
+            _calculateProgressForPage(initialPage, totalChars: updatedTotalChars);
+      } else {
+        _currentCharacterIndex = 0;
+        _progress = 0;
+      }
       _showProgressBar = false;
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_pageController.hasClients) {
-        _pageController.jumpToPage(1);
-      }
-    });
+    _resetPagerToCurrent();
 
     _scheduleProgressSave();
   }
@@ -293,45 +306,10 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         });
         break;
       case ReaderTapAction.nextPage:
-        () async {
-          if (_engine == null) return;
-          if (!_engine!.hasNextPage(_currentPageIndex)) return;
-          await _engine!.ensureWindow(_currentPageIndex + 1, radius: 1);
-          if (!mounted) return;
-          setState(() {
-            _currentPageIndex++;
-            _progress = _totalPages > 0
-                ? (_currentPageIndex + 1) / _totalPages
-                : _progress;
-            _showProgressBar = false;
-          });
-          unawaited(_engine!.ensureWindow(_currentPageIndex, radius: 1));
-          unawaited(_engine!.startBackgroundPagination());
-          _scheduleProgressSave();
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_pageController.hasClients) {
-              _pageController.jumpToPage(1);
-            }
-          });
-        }();
+        unawaited(_goToNextPage());
         break;
       case ReaderTapAction.previousPage:
-        if (_currentPageIndex > 0) {
-          setState(() {
-            _currentPageIndex--;
-            _progress = _totalPages > 0
-                ? (_currentPageIndex + 1) / _totalPages
-                : _progress;
-            _showProgressBar = false;
-          });
-          unawaited(_engine?.ensureWindow(_currentPageIndex, radius: 1));
-          _scheduleProgressSave();
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_pageController.hasClients) {
-              _pageController.jumpToPage(1);
-            }
-          });
-        }
+        _goToPreviousPage();
         break;
       case ReaderTapAction.dismissOverlays:
         if (_showProgressBar) {
@@ -345,16 +323,31 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
 
   Future<void> _saveProgress(PageContent page) async {
     try {
+      final pageProgress = _calculateProgressForPage(page);
       final progress = ReadingProgress(
         bookId: widget.book.id,
         currentChapterIndex: page.chapterIndex,
         currentPageInChapter: null,
         currentWordIndex: page.startWordIndex,
         currentCharacterIndex: page.startCharIndex,
-        progress: _progress,
+        progress: pageProgress,
         lastRead: DateTime.now(),
       );
       await _bookService.saveReadingProgress(progress);
+      unawaited(_summaryDatabase.updateLastReadingStop(
+        widget.book.id,
+        chunkIndex: page.chapterIndex,
+        characterIndex: page.startCharIndex,
+        wordIndex: page.startWordIndex,
+      ));
+      if (_summaryService != null) {
+        unawaited(_summaryService!.updateLastReadingStop(
+          widget.book.id,
+          chunkIndex: page.chapterIndex,
+          characterIndex: page.startCharIndex,
+          wordIndex: page.startWordIndex,
+        ));
+      }
     } catch (_) {
       // Saving progress is best-effort; ignore failures.
     }
@@ -367,35 +360,201 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     _scheduleRepagination(retainCurrentPage: true);
   }
 
-  void _handlePageChanged(int pageIndex) {
-    if (pageIndex == 1) return;
-
-    if (pageIndex == 2 && _engine?.hasNextPage(_currentPageIndex) == true) {
-      setState(() {
-        _currentPageIndex++;
-        _progress = _totalPages > 0 ? (_currentPageIndex + 1) / _totalPages : 0;
-        _showProgressBar = false;
-      });
-      unawaited(_engine?.ensureWindow(_currentPageIndex, radius: 1));
-      unawaited(_engine?.startBackgroundPagination());
-      _scheduleProgressSave();
-    } else if (pageIndex == 0 && _currentPageIndex > 0) {
-      // Previous page
-      setState(() {
-        _currentPageIndex--;
-        _progress = _totalPages > 0 ? (_currentPageIndex + 1) / _totalPages : 0;
-        _showProgressBar = false;
-      });
-      unawaited(_engine?.ensureWindow(_currentPageIndex, radius: 1));
-      _scheduleProgressSave();
+  Future<bool> _goToNextPage({bool resetPager = true}) async {
+    final engine = _engine;
+    if (engine == null) {
+      return false;
+    }
+    if (!engine.hasNextPage(_currentPageIndex)) {
+      return false;
     }
 
-    // Reset controller to keep current page in the middle.
+    await engine.ensureWindow(_currentPageIndex + 1, radius: 1);
+    if (!mounted) {
+      return false;
+    }
+
+    setState(() {
+      _currentPageIndex++;
+      _showProgressBar = false;
+      final page = engine.getPage(_currentPageIndex);
+      if (page != null) {
+        _currentCharacterIndex = page.startCharIndex;
+        _progress = _calculateProgressForPage(page);
+      } else {
+        _currentCharacterIndex = 0;
+        _progress = 0;
+      }
+    });
+
+    unawaited(engine.ensureWindow(_currentPageIndex, radius: 1));
+    unawaited(engine.startBackgroundPagination());
+    _scheduleProgressSave();
+
+    if (resetPager) {
+      _resetPagerToCurrent();
+    }
+
+    return true;
+  }
+
+  bool _goToPreviousPage({bool resetPager = true}) {
+    if (_currentPageIndex <= 0) {
+      if (_showProgressBar) {
+        setState(() {
+          _showProgressBar = false;
+        });
+      }
+      return false;
+    }
+
+    setState(() {
+      _currentPageIndex--;
+      _showProgressBar = false;
+      final page = _engine?.getPage(_currentPageIndex);
+      if (page != null) {
+        _currentCharacterIndex = page.startCharIndex;
+        _progress = _calculateProgressForPage(page);
+      } else {
+        _currentCharacterIndex = 0;
+        _progress = 0;
+      }
+    });
+
+    unawaited(_engine?.ensureWindow(_currentPageIndex, radius: 1));
+    unawaited(_engine?.startBackgroundPagination());
+    _scheduleProgressSave();
+
+    if (resetPager) {
+      _resetPagerToCurrent();
+    }
+
+    return true;
+  }
+
+  void _resetPagerToCurrent() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_pageController.hasClients) {
         _pageController.jumpToPage(1);
       }
     });
+  }
+
+  double _calculateProgressForPage(PageContent? page, {int? totalChars}) {
+    final effectiveTotal = totalChars ?? _totalCharacterCount;
+    if (page == null || effectiveTotal <= 0) {
+      return 0;
+    }
+    final completed = math.min(
+      effectiveTotal,
+      math.max(0, page.endCharIndex + 1),
+    );
+    return completed / effectiveTotal;
+  }
+
+  Future<void> _showGoToPercentageDialog() async {
+    if (_totalCharacterCount <= 0) {
+      return;
+    }
+
+    final controller = TextEditingController(
+      text: (_progress * 100).clamp(0, 100).toStringAsFixed(1),
+    );
+    String? errorText;
+
+    final result = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            void submit() {
+              final input = controller.text.trim().replaceAll(',', '.');
+              final value = double.tryParse(input);
+              if (value == null) {
+                setState(() {
+                  errorText = 'Veuillez entrer un nombre valide';
+                });
+                return;
+              }
+              if (value < 0 || value > 100) {
+                setState(() {
+                  errorText = 'Entrez une valeur entre 0 et 100';
+                });
+                return;
+              }
+              Navigator.of(context).pop(value);
+            }
+
+            return AlertDialog(
+              title: const Text('Aller à un pourcentage'),
+              content: TextField(
+                controller: controller,
+                autofocus: true,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Pourcentage',
+                  suffixText: '%',
+                  errorText: errorText,
+                ),
+                onSubmitted: (_) => submit(),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Annuler'),
+                ),
+                TextButton(
+                  onPressed: submit,
+                  child: const Text('Aller'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+
+    if (result != null) {
+      _jumpToPercentage(result);
+    }
+  }
+
+  void _jumpToPercentage(double percentage) {
+    final totalChars = _totalCharacterCount;
+    if (totalChars <= 0) {
+      return;
+    }
+
+    if (totalChars == 1) {
+      _scheduleRepagination(initialCharIndex: 0);
+      return;
+    }
+
+    final normalized = percentage.clamp(0.0, 100.0);
+    final target = (normalized / 100.0) * (totalChars - 1);
+    final rounded = target.round();
+    final clamped = rounded < 0
+        ? 0
+        : (rounded >= totalChars ? totalChars - 1 : rounded);
+    _scheduleRepagination(initialCharIndex: clamped);
+  }
+
+  void _handlePageChanged(int pageIndex) {
+    if (pageIndex == 1) return;
+
+    if (pageIndex == 2) {
+      unawaited(
+        _goToNextPage(resetPager: false).whenComplete(_resetPagerToCurrent),
+      );
+    } else if (pageIndex == 0) {
+      _goToPreviousPage(resetPager: false);
+      _resetPagerToCurrent();
+    } else {
+      _resetPagerToCurrent();
+    }
   }
 
   @override
@@ -485,70 +644,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
-              onTapDown: (details) {
-                final size = MediaQuery.of(context).size;
-                final action = determineTapAction(details.globalPosition, size);
-                
-                switch (action) {
-                  case ReaderTapAction.showMenu:
-                    _openReadingMenu();
-                    break;
-                  case ReaderTapAction.showProgress:
-                    setState(() {
-                      _showProgressBar = !_showProgressBar;
-                    });
-                    break;
-                  case ReaderTapAction.nextPage:
-                    () async {
-                      if (_engine == null) return;
-                      if (!_engine!.hasNextPage(_currentPageIndex)) return;
-                      await _engine!.ensureWindow(_currentPageIndex + 1, radius: 1);
-                      if (!mounted) return;
-                      setState(() {
-                        _currentPageIndex++;
-                        _progress = _totalPages > 0
-                            ? (_currentPageIndex + 1) / _totalPages
-                            : _progress;
-                        _showProgressBar = false;
-                      });
-                      unawaited(
-                          _engine!.ensureWindow(_currentPageIndex, radius: 1));
-                      unawaited(_engine!.startBackgroundPagination());
-                      _scheduleProgressSave();
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (_pageController.hasClients) {
-                          _pageController.jumpToPage(1);
-                        }
-                      });
-                    }();
-                    break;
-                  case ReaderTapAction.previousPage:
-                    if (_currentPageIndex > 0) {
-                      setState(() {
-                        _currentPageIndex--;
-                        _progress = _totalPages > 0 ? (_currentPageIndex + 1) / _totalPages : 0;
-                        _showProgressBar = false;
-                      });
-                      _scheduleProgressSave();
-                      unawaited(
-                          _engine?.ensureWindow(_currentPageIndex, radius: 1));
-                      // Reset PageView to middle page after state update
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (_pageController.hasClients) {
-                          _pageController.jumpToPage(1);
-                        }
-                      });
-                    }
-                    break;
-                  case ReaderTapAction.dismissOverlays:
-                    if (_showProgressBar) {
-                      setState(() {
-                        _showProgressBar = false;
-                      });
-                    }
-                    break;
-                }
-              },
+              onTapDown: _handleTapDown,
               child: Container(color: Colors.transparent),
             ),
           ),
@@ -624,7 +720,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
           vertical: _verticalPadding,
         ),
         child: Align(
-          alignment: Alignment.topCenter,
+          alignment: Alignment.center,
           child: _PageContentView(
             content: page,
             maxWidth: metrics.maxWidth,
@@ -638,76 +734,16 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   }
 
   void _openReadingMenu() {
-    showModalBottomSheet<void>(
+    unawaited(showReaderMenu(
       context: context,
-      isScrollControlled: true,
-      useRootNavigator: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Options de lecture',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                    ),
-                    const SizedBox(height: 20),
-                    // Font size slider
-                    Text('Taille du texte : ${_fontSize.toStringAsFixed(0)} pt'),
-                    Slider(
-                      min: 14,
-                      max: 30,
-                      divisions: 16,
-                      value: _fontSize,
-                      label: '${_fontSize.toStringAsFixed(0)} pt',
-                      onChanged: (value) {
-                        setState(() => _fontSize = value);
-                        _changeFontSize(value);
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    // Navigation to chapter
-                    if (_chapterEntries.isNotEmpty)
-                      ListTile(
-                        leading: const Icon(Icons.list),
-                        title: const Text('Aller au chapitre'),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _showChapterSelector();
-                        },
-                      ),
-                    // Summaries
-                    ListTile(
-                      leading: const Icon(Icons.summarize),
-                      title: const Text('Résumés'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _openSummaries();
-                      },
-                    ),
-                    // Back to library
-                    ListTile(
-                      leading: const Icon(Icons.arrow_back),
-                      title: const Text('Retour à la librairie'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.pop(context);
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
+      fontSize: _fontSize,
+      onFontSizeChanged: _changeFontSize,
+      hasChapters: _chapterEntries.isNotEmpty,
+      onGoToChapter: _showChapterSelector,
+      onGoToPercentage: _showGoToPercentageDialog,
+      onShowSummaries: _openSummaries,
+      onReturnToLibrary: () => Navigator.of(context).pop(),
+    ));
   }
 
   void _showChapterSelector() {
@@ -764,10 +800,19 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
 
   void _handleEngineUpdate() {
     if (!mounted || _engine == null) return;
-    final estimated = _engine!.estimatedTotalPages;
+    final engine = _engine!;
+    final estimated = engine.estimatedTotalPages;
+    final updatedTotalChars = math.max(_totalCharacterCount, engine.totalCharacters);
+    final currentPage = engine.getPage(_currentPageIndex);
+
     setState(() {
       _totalPages = estimated;
-      _progress = estimated > 0 ? (_currentPageIndex + 1) / estimated : 0;
+      _totalCharacterCount = updatedTotalChars;
+      if (currentPage != null) {
+        _currentCharacterIndex = currentPage.startCharIndex;
+        _progress =
+            _calculateProgressForPage(currentPage, totalChars: updatedTotalChars);
+      }
     });
   }
 
@@ -882,7 +927,25 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       chapters.add(_ChapterEntry(index: 0, title: widget.book.title));
     }
 
-    return _DocumentExtractionResult(blocks: blocks, chapters: chapters);
+    final totalCharacters = _countTotalCharacters(blocks);
+
+    return _DocumentExtractionResult(
+      blocks: blocks,
+      chapters: chapters,
+      totalCharacters: totalCharacters,
+    );
+  }
+
+  int _countTotalCharacters(List<DocumentBlock> blocks) {
+    var total = 0;
+    for (final block in blocks) {
+      if (block is TextDocumentBlock) {
+        total += block.text.length;
+      } else if (block is ImageDocumentBlock) {
+        total += 1;
+      }
+    }
+    return total;
   }
 
   List<DocumentBlock> _buildBlocksFromHtml(
@@ -1053,10 +1116,12 @@ class _DocumentExtractionResult {
   const _DocumentExtractionResult({
     required this.blocks,
     required this.chapters,
+    required this.totalCharacters,
   });
 
   final List<DocumentBlock> blocks;
   final List<_ChapterEntry> chapters;
+  final int totalCharacters;
 }
 
 class _ChapterEntry {
@@ -1143,8 +1208,8 @@ class _PageContentView extends StatelessWidget {
         height: maxHeight,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisAlignment: MainAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.max,
           children: children,
         ),
       ),
