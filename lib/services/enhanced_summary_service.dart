@@ -1210,7 +1210,7 @@ class EnhancedSummaryService {
             return '$heading\n\n$fallback';
           }
 
-          final trimmed = _cleanUpSummaryText(combined);
+          final trimmed = combined.trim();
           if (trimmed.isEmpty) {
             final fallback = language == 'fr'
                 ? 'Impossible de générer un résumé concis du début.'
