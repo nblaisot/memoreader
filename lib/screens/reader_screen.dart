@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:epubx/epubx.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart' show SelectWordSelectionEvent, SelectionContainer;
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:image/image.dart' as img show decodeImage;
@@ -81,6 +82,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   Timer? _progressDebounce;
   bool _hasActiveSelection = false;
   bool _isProcessingSelection = false;
+  TapDownDetails? _lastTapDownDetails;
   String? _selectionActionLabel;
   String? _selectionActionPrompt;
   Locale? _lastLocale;
@@ -351,8 +353,16 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   }
 
   void _handleTapDown(TapDownDetails details) {
+    _lastTapDownDetails = details;
+  }
+
+  void _handleTapUp(TapUpDetails details) {
+    final position = (_lastTapDownDetails ??
+            TapDownDetails(globalPosition: details.globalPosition))
+        .globalPosition;
+    _lastTapDownDetails = null;
+
     if (_hasActiveSelection) {
-      // Clear selection by deselecting
       setState(() {
         _hasActiveSelection = false;
       });
@@ -360,7 +370,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     }
 
     final size = MediaQuery.of(context).size;
-    final action = determineTapAction(details.globalPosition, size);
+    final action = determineTapAction(position, size);
 
     switch (action) {
       case ReaderTapAction.showMenu:
@@ -720,6 +730,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onTapDown: _handleTapDown,
+              onTapUp: _handleTapUp,
               child: Container(color: Colors.transparent),
             ),
           ),
@@ -1440,6 +1451,23 @@ class _PageContentView extends StatefulWidget {
 
 class _PageContentViewState extends State<_PageContentView> {
   String _selectedText = '';
+  final GlobalKey _selectionAreaKey = GlobalKey(debugLabel: 'readerSelectionArea');
+
+  void _handleLongPressStart(LongPressStartDetails details) {
+    final selectionContext = _selectionAreaKey.currentContext;
+    if (selectionContext == null) {
+      return;
+    }
+
+    final container = SelectionContainer.maybeOf(selectionContext);
+    if (container == null) {
+      return;
+    }
+
+    container.dispatchSelectionEvent(
+      SelectWordSelectionEvent(globalPosition: details.globalPosition),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1452,11 +1480,10 @@ class _PageContentViewState extends State<_PageContentView> {
 
       if (block is TextPageBlock) {
         children.add(
-          Text(
+          SelectableText(
             block.text,
             style: block.style,
             textAlign: block.textAlign,
-            softWrap: true,
             textHeightBehavior: widget.textHeightBehavior,
             textScaler: widget.textScaler,
           ),
@@ -1483,6 +1510,7 @@ class _PageContentViewState extends State<_PageContentView> {
       width: widget.maxWidth,
       height: widget.maxHeight,
       child: SelectionArea(
+        key: _selectionAreaKey,
         contextMenuBuilder: (context, delegate) {
           final items = delegate.contextMenuButtonItems.toList();
           final trimmedText = _selectedText.trim();
@@ -1510,11 +1538,15 @@ class _PageContentViewState extends State<_PageContentView> {
           });
           widget.onSelectionChanged?.call(selected.trim().isNotEmpty);
         },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.max,
-          children: children,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onLongPressStart: _handleLongPressStart,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.max,
+            children: children,
+          ),
         ),
       ),
     );
