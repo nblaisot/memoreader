@@ -13,8 +13,6 @@ Future<void> showReaderMenu({
   required VoidCallback onShowSummaries,
   required VoidCallback onReturnToLibrary,
 }) {
-  final rootNavigator = Navigator.of(context);
-
   return showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
@@ -22,26 +20,23 @@ Future<void> showReaderMenu({
     barrierColor: Colors.black54,
     transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
+      void closeMenu() {
+        Navigator.of(dialogContext).pop();
+      }
+
+      void handleAction(VoidCallback action) {
+        closeMenu();
+        Future.microtask(action);
+      }
+
       return _ReaderMenuDialog(
         fontSize: fontSize,
         onFontSizeChanged: onFontSizeChanged,
         hasChapters: hasChapters,
-        onGoToChapter: () {
-          rootNavigator.pop();
-          Future.microtask(onGoToChapter);
-        },
-        onGoToPercentage: () {
-          rootNavigator.pop();
-          Future.microtask(onGoToPercentage);
-        },
-        onShowSummaries: () {
-          rootNavigator.pop();
-          Future.microtask(onShowSummaries);
-        },
-        onReturnToLibrary: () {
-          rootNavigator.pop();
-          Future.microtask(onReturnToLibrary);
-        },
+        onGoToChapter: () => handleAction(onGoToChapter),
+        onGoToPercentage: () => handleAction(onGoToPercentage),
+        onShowSummaries: () => handleAction(onShowSummaries),
+        onReturnToLibrary: () => handleAction(onReturnToLibrary),
       );
     },
     transitionBuilder: (context, animation, secondaryAnimation, child) {

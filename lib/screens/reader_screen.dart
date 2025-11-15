@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:epubx/epubx.dart';
+import 'package:flutter/gestures.dart' show PointerDownEvent, kPrimaryButton, kTouchSlop;
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/material.dart';
 import 'package:html/dom.dart' as dom;
@@ -86,6 +88,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   String? _selectionActionLabel;
   String? _selectionActionPrompt;
   Locale? _lastLocale;
+  int? _activeTapPointer;
+  Offset? _activeTapDownPosition;
+  bool _activeTapExceededSlop = false;
 
   @override
   void initState() {
@@ -350,6 +355,26 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       if (page == null) return;
       _saveProgress(page);
     });
+  }
+
+  bool _shouldTrackPointer(PointerDownEvent event) {
+    switch (event.kind) {
+      case PointerDeviceKind.mouse:
+        return (event.buttons & kPrimaryButton) != 0;
+      case PointerDeviceKind.touch:
+      case PointerDeviceKind.stylus:
+      case PointerDeviceKind.invertedStylus:
+      case PointerDeviceKind.unknown:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  void _resetTapTracking() {
+    _activeTapPointer = null;
+    _activeTapDownPosition = null;
+    _activeTapExceededSlop = false;
   }
 
   void _handleTapUp(TapUpDetails details) {
@@ -746,10 +771,43 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
           // Actions are dispatched on tap up so the entire single-tap gesture
           // completes before navigation/menu toggles run.
           Positioned.fill(
-            child: GestureDetector(
+            child: Listener(
               behavior: HitTestBehavior.translucent,
-              onTapUp: _handleTapUp,
-              child: Container(color: Colors.transparent),
+              onPointerDown: (event) {
+                if (_activeTapPointer != null) return;
+                if (!_shouldTrackPointer(event)) return;
+                _activeTapPointer = event.pointer;
+                _activeTapDownPosition = event.position;
+                _activeTapExceededSlop = false;
+              },
+              onPointerMove: (event) {
+                if (event.pointer != _activeTapPointer) return;
+                final downPosition = _activeTapDownPosition;
+                if (downPosition == null) return;
+                if (!_activeTapExceededSlop &&
+                    (event.position - downPosition).distance > kTouchSlop) {
+                  _activeTapExceededSlop = true;
+                }
+              },
+              onPointerCancel: (event) {
+                if (event.pointer == _activeTapPointer) {
+                  _resetTapTracking();
+                }
+              },
+              onPointerUp: (event) {
+                if (event.pointer == _activeTapPointer) {
+                  if (!_activeTapExceededSlop) {
+                    _handleTapUp(
+                      TapUpDetails(
+                        globalPosition: event.position,
+                        localPosition: event.localPosition,
+                      ),
+                    );
+                  }
+                  _resetTapTracking();
+                }
+              },
+              child: const SizedBox.expand(),
             ),
           ),
           if (_showProgressBar)
