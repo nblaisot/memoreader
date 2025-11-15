@@ -96,25 +96,53 @@ class BackgroundSummaryService {
   Future<bool> _needsGeneration(Book book, ReadingProgress progress) async {
     try {
       final currentChunkIndex = progress.currentChapterIndex ?? 0;
-      
+      final currentCharIndex = progress.currentCharacterIndex;
+      final currentWordIndex = progress.currentWordIndex;
+
+      final hasProgress = (currentCharIndex != null && currentCharIndex > 0) ||
+          (currentWordIndex != null && currentWordIndex > 0) ||
+          currentChunkIndex > 0;
+
       // If no progress, no generation needed
-      if (currentChunkIndex <= 0) {
+      if (!hasProgress) {
         return false;
       }
-      
+
       // Check if we have up-to-date summaries
       final cache = await _dbService.getSummaryCache(book.id);
       if (cache != null) {
-        // Check if cumulative summary is up to date
-        final summaryUpToDate = cache.lastProcessedChunkIndex >= currentChunkIndex &&
-            cache.cumulativeSummary.isNotEmpty;
-        
-        // Check if characters summary is up to date
-        final charactersUpToDate = cache.charactersSummaryChunkIndex != null &&
-            cache.charactersSummaryChunkIndex! >= currentChunkIndex &&
-            cache.charactersSummary != null &&
-            cache.charactersSummary!.isNotEmpty;
-        
+        bool summaryUpToDate;
+        if (currentCharIndex != null) {
+          summaryUpToDate = cache.lastProcessedCharacterIndex != null &&
+              cache.lastProcessedCharacterIndex! >= currentCharIndex &&
+              cache.cumulativeSummary.isNotEmpty;
+        } else if (currentWordIndex != null) {
+          summaryUpToDate = cache.lastProcessedWordIndex != null &&
+              cache.lastProcessedWordIndex! >= currentWordIndex &&
+              cache.cumulativeSummary.isNotEmpty;
+        } else {
+          summaryUpToDate = cache.lastProcessedChunkIndex >= currentChunkIndex &&
+              cache.cumulativeSummary.isNotEmpty;
+        }
+
+        bool charactersUpToDate;
+        if (currentCharIndex != null) {
+          charactersUpToDate = cache.charactersSummaryCharacterIndex != null &&
+              cache.charactersSummaryCharacterIndex! >= currentCharIndex &&
+              cache.charactersSummary != null &&
+              cache.charactersSummary!.isNotEmpty;
+        } else if (currentWordIndex != null) {
+          charactersUpToDate = cache.charactersSummaryWordIndex != null &&
+              cache.charactersSummaryWordIndex! >= currentWordIndex &&
+              cache.charactersSummary != null &&
+              cache.charactersSummary!.isNotEmpty;
+        } else {
+          charactersUpToDate = cache.charactersSummaryChunkIndex != null &&
+              cache.charactersSummaryChunkIndex! >= currentChunkIndex &&
+              cache.charactersSummary != null &&
+              cache.charactersSummary!.isNotEmpty;
+        }
+
         // If both are up to date, no generation needed
         if (summaryUpToDate && charactersUpToDate) {
           return false;

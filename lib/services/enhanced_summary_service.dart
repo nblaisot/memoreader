@@ -1707,8 +1707,18 @@ class EnhancedSummaryService {
   }
 
   /// Update the last reading stop position (when user stops reading)
-  Future<void> updateLastReadingStop(String bookId, int chunkIndex) async {
-    await _dbService.updateLastReadingStop(bookId, chunkIndex);
+  Future<void> updateLastReadingStop(
+    String bookId, {
+    required int chunkIndex,
+    required int characterIndex,
+    int? wordIndex,
+  }) async {
+    await _dbService.updateLastReadingStop(
+      bookId,
+      chunkIndex: chunkIndex,
+      characterIndex: characterIndex,
+      wordIndex: wordIndex,
+    );
   }
 
   /// Delete all summaries for a book
