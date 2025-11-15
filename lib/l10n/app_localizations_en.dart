@@ -220,8 +220,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get textSelectionActionSettings => 'Text selection action';
 
   @override
-  String get textSelectionActionDescription =>
-      'Customize the action displayed when selecting text. You can use {text} for the selected text and {language} for the application language.';
+  String textSelectionActionDescription(Object language, Object text) {
+    return 'Customize the action displayed when selecting text. You can use $text for the selected text and $language for the application language.';
+  }
 
   @override
   String get textSelectionActionLabelFr => 'Action label (French)';

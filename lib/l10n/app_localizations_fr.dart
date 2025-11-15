@@ -221,8 +221,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get textSelectionActionSettings => 'Action de sélection de texte';
 
   @override
-  String get textSelectionActionDescription =>
-      'Personnalisez l\'action affichée lors de la sélection de texte. Vous pouvez utiliser {text} pour le texte sélectionné et {language} pour la langue de l\'application.';
+  String textSelectionActionDescription(Object language, Object text) {
+    return 'Personnalisez l\'action affichée lors de la sélection de texte. Vous pouvez utiliser $text pour le texte sélectionné et $language pour la langue de l\'application.';
+  }
 
   @override
   String get textSelectionActionLabelFr => 'Libellé de l\'action (français)';
@@ -240,7 +241,8 @@ class AppLocalizationsFr extends AppLocalizations {
   String get textSelectionActionProcessing => 'Traitement de la sélection...';
 
   @override
-  String get textSelectionActionError => 'Impossible de traiter le texte sélectionné.';
+  String get textSelectionActionError =>
+      'Impossible de traiter le texte sélectionné.';
 
   @override
   String get textSelectionSelectedTextLabel => 'Texte sélectionné';

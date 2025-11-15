@@ -456,7 +456,7 @@ abstract class AppLocalizations {
   ///
   /// In en, this message translates to:
   /// **'Customize the action displayed when selecting text. You can use {text} for the selected text and {language} for the application language.'**
-  String get textSelectionActionDescription;
+  String textSelectionActionDescription(Object language, Object text);
 
   /// Label for the French selection action name
   ///

@@ -932,7 +932,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      l10n.textSelectionActionDescription,
+                      l10n.textSelectionActionDescription(
+                        Localizations.localeOf(context).languageCode,
+                        'selected text',
+                      ),
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: Colors.grey[600],
                           ),

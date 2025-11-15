@@ -352,7 +352,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
 
   void _handleTapDown(TapDownDetails details) {
     if (_hasActiveSelection) {
-      SelectionContainer.maybeOf(context)?.clearSelection();
+      // Clear selection by deselecting
       setState(() {
         _hasActiveSelection = false;
       });
@@ -987,7 +987,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       return;
     }
 
-    SelectionContainer.maybeOf(context)?.clearSelection();
+    // Clear selection state
     setState(() {
       _isProcessingSelection = true;
       _hasActiveSelection = false;
@@ -1411,7 +1411,7 @@ class _PageMetrics {
   final TextScaler textScaler;
 }
 
-class _PageContentView extends StatelessWidget {
+class _PageContentView extends StatefulWidget {
   const _PageContentView({
     required this.content,
     required this.maxWidth,
@@ -1435,10 +1435,17 @@ class _PageContentView extends StatelessWidget {
   final bool isProcessingAction;
 
   @override
+  State<_PageContentView> createState() => _PageContentViewState();
+}
+
+class _PageContentViewState extends State<_PageContentView> {
+  String _selectedText = '';
+
+  @override
   Widget build(BuildContext context) {
     final children = <Widget>[];
 
-    for (final block in content.blocks) {
+    for (final block in widget.content.blocks) {
       if (block.spacingBefore > 0) {
         children.add(SizedBox(height: block.spacingBefore));
       }
@@ -1450,15 +1457,15 @@ class _PageContentView extends StatelessWidget {
             style: block.style,
             textAlign: block.textAlign,
             softWrap: true,
-            textHeightBehavior: textHeightBehavior,
-            textScaler: textScaler,
+            textHeightBehavior: widget.textHeightBehavior,
+            textScaler: widget.textScaler,
           ),
         );
       } else if (block is ImagePageBlock) {
         children.add(
           SizedBox(
             height: block.height,
-            width: maxWidth,
+            width: widget.maxWidth,
             child: material.Image.memory(
               block.bytes,
               fit: BoxFit.contain,
@@ -1473,20 +1480,20 @@ class _PageContentView extends StatelessWidget {
     }
 
     return SizedBox(
-      width: maxWidth,
-      height: maxHeight,
+      width: widget.maxWidth,
+      height: widget.maxHeight,
       child: SelectionArea(
         contextMenuBuilder: (context, delegate) {
           final items = delegate.contextMenuButtonItems.toList();
-          final selectedText = delegate.selectedText.trim();
-          if (selectedText.isNotEmpty && onSelectionAction != null && !isProcessingAction) {
+          final trimmedText = _selectedText.trim();
+          if (trimmedText.isNotEmpty && widget.onSelectionAction != null && !widget.isProcessingAction) {
             items.add(
               ContextMenuButtonItem(
                 onPressed: () {
                   delegate.hideToolbar();
-                  onSelectionAction?.call(delegate.selectedText);
+                  widget.onSelectionAction?.call(trimmedText);
                 },
-                label: actionLabel,
+                label: widget.actionLabel,
               ),
             );
           }
@@ -1496,8 +1503,12 @@ class _PageContentView extends StatelessWidget {
           );
         },
         onSelectionChanged: (selection) {
-          final selected = selection.selectedContent?.plainText ?? '';
-          onSelectionChanged?.call(selected.trim().isNotEmpty);
+          // Get plain text from selection - selection is a SelectedContent?
+          final selected = selection?.plainText ?? '';
+          setState(() {
+            _selectedText = selected;
+          });
+          widget.onSelectionChanged?.call(selected.trim().isNotEmpty);
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
