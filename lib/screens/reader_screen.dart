@@ -81,6 +81,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   Timer? _progressDebounce;
   bool _hasActiveSelection = false;
   bool _isProcessingSelection = false;
+  VoidCallback? _clearSelectionCallback;
   String? _selectionActionLabel;
   String? _selectionActionPrompt;
   Locale? _lastLocale;
@@ -358,6 +359,8 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       setState(() {
         _hasActiveSelection = false;
       });
+      _clearSelectionCallback?.call();
+      _clearSelectionCallback = null;
       return;
     }
 
@@ -389,7 +392,13 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     }
   }
 
-  void _handleSelectionChanged(bool hasSelection) {
+  void _handleSelectionChanged(bool hasSelection, VoidCallback clearSelection) {
+    if (hasSelection) {
+      _clearSelectionCallback = clearSelection;
+    } else {
+      _clearSelectionCallback = null;
+    }
+
     if (_hasActiveSelection != hasSelection) {
       setState(() {
         _hasActiveSelection = hasSelection;
@@ -1434,7 +1443,8 @@ class _PageContentView extends StatefulWidget {
   final TextScaler textScaler;
   final String actionLabel;
   final ValueChanged<String>? onSelectionAction;
-  final ValueChanged<bool>? onSelectionChanged;
+  final void Function(bool hasSelection, VoidCallback clearSelection)?
+      onSelectionChanged;
   final bool isProcessingAction;
 
   @override
@@ -1443,6 +1453,18 @@ class _PageContentView extends StatefulWidget {
 
 class _PageContentViewState extends State<_PageContentView> {
   String _selectedText = '';
+  final ContextMenuController _contextMenuController = ContextMenuController();
+  int _selectionGeneration = 0;
+
+  void _clearSelection() {
+    if (_contextMenuController.isShown) {
+      _contextMenuController.hide();
+    }
+    setState(() {
+      _selectedText = '';
+      _selectionGeneration++;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1486,6 +1508,8 @@ class _PageContentViewState extends State<_PageContentView> {
       width: widget.maxWidth,
       height: widget.maxHeight,
       child: SelectionArea(
+        key: ValueKey(_selectionGeneration),
+        contextMenuController: _contextMenuController,
         contextMenuBuilder: (context, delegate) {
           final items = delegate.contextMenuButtonItems.toList();
           final trimmedText = _selectedText.trim();
@@ -1495,6 +1519,7 @@ class _PageContentViewState extends State<_PageContentView> {
                 onPressed: () {
                   delegate.hideToolbar();
                   widget.onSelectionAction?.call(trimmedText);
+                  _clearSelection();
                 },
                 label: widget.actionLabel,
               ),
@@ -1511,7 +1536,13 @@ class _PageContentViewState extends State<_PageContentView> {
           setState(() {
             _selectedText = selected;
           });
-          widget.onSelectionChanged?.call(selected.trim().isNotEmpty);
+          final hasSelection = selected.trim().isNotEmpty;
+          if (hasSelection && !_contextMenuController.isShown) {
+            _contextMenuController.show(context: context);
+          } else if (!hasSelection && _contextMenuController.isShown) {
+            _contextMenuController.hide();
+          }
+          widget.onSelectionChanged?.call(hasSelection, _clearSelection);
         },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
