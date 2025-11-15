@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:html/parser.dart' as html_parser;
 import 'package:intl/intl.dart';
 import 'package:epubx/epubx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,6 +16,7 @@ import 'book_service.dart';
 import 'summary_service.dart';
 import 'openai_summary_service.dart';
 import 'prompt_config_service.dart';
+import '../utils/html_text_extractor.dart';
 import '../utils/text_tokenizer.dart';
 
 /// Represents text extracted from a chapter, possibly truncated.
@@ -146,15 +146,14 @@ class EnhancedSummaryService {
   /// Extract plain text from HTML content
   String _extractTextFromHtml(String htmlContent) {
     try {
-      final document = html_parser.parse(htmlContent);
-      return document.body?.text ?? '';
+      return HtmlTextExtractor.extract(htmlContent);
     } catch (e) {
       debugPrint('Error parsing HTML: $e');
-      // Fallback: remove HTML tags using regex
-      return htmlContent
+      final fallback = htmlContent
           .replaceAll(RegExp(r'<[^>]+>'), ' ')
           .replaceAll(RegExp(r'\s+'), ' ')
           .trim();
+      return normalizeWhitespace(fallback);
     }
   }
 

@@ -16,6 +16,7 @@ import '../services/book_service.dart';
 import '../services/enhanced_summary_service.dart';
 import '../services/summary_config_service.dart';
 import '../services/settings_service.dart';
+import '../utils/html_text_extractor.dart';
 import 'reader/document_model.dart';
 import 'reader/line_metrics_pagination_engine.dart';
 import 'reader/tap_zones.dart';
@@ -863,7 +864,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       double spacingBefore = _paragraphSpacing / 2,
       double spacingAfter = _paragraphSpacing,
     }) {
-      final normalized = _normalizeWhitespace(text);
+      final normalized = normalizeWhitespace(text);
       if (normalized.isEmpty) return;
       blocks.add(
         TextDocumentBlock(
@@ -945,7 +946,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
             final ordered = name == 'ol';
             int counter = 1;
             for (final child in node.children.where((n) => n.localName == 'li')) {
-              final text = _normalizeWhitespace(child.text);
+              final text = normalizeWhitespace(child.text);
               if (text.isEmpty) continue;
               final bullet = ordered ? '$counter. ' : '• ';
               addTextBlock(
@@ -1002,22 +1003,6 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     return null;
   }
 
-  /// Normalize whitespace while preserving line breaks and paragraph structure.
-  /// Multiple spaces are collapsed to single spaces, but line breaks are preserved.
-  String _normalizeWhitespace(String text) {
-    // First, normalize line breaks to \n
-    var normalized = text.replaceAll(RegExp(r'\r\n'), '\n');
-    normalized = normalized.replaceAll(RegExp(r'\r'), '\n');
-    
-    // Collapse multiple spaces within a line (but preserve single spaces)
-    normalized = normalized.replaceAll(RegExp(r'[ \t]+'), ' ');
-    
-    // Collapse multiple line breaks to maximum 2 (paragraph break)
-    normalized = normalized.replaceAll(RegExp(r'\n{3,}'), '\n\n');
-    
-    // Trim leading/trailing whitespace but preserve internal structure
-    return normalized.trim();
-  }
 }
 
 class _DocumentExtractionResult {
