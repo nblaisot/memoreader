@@ -406,7 +406,7 @@ class LineMetricsPaginationEngine {
     required TextStyle textStyle,
     required TextAlign textAlign,
     required double availableHeight,
-    required List<TextTokenSpan> tokenSpans,
+    required List<TokenSpan> tokenSpans,
   }) {
     int currentEndOffset = endOffset;
     int currentEndTokenPointerExclusive = endTokenPointerExclusive;
@@ -473,7 +473,7 @@ class LineMetricsPaginationEngine {
     }
     totalHeight += spacingAfter;
 
-    final roundedHeight = math.ceil(totalHeight).toDouble();
+    final roundedHeight = totalHeight.ceilToDouble();
     return roundedHeight <= availableHeight;
   }
 
