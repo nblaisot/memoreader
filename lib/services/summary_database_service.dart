@@ -23,7 +23,7 @@ class SummaryDatabaseService {
 
     return await openDatabase(
       dbFile,
-      version: 10,  // Increment version to add characterIndex columns
+      version: 11,  // Increment version for chunk hash tracking
       onCreate: (db, version) async {
         // Create summary_chunks table
         await db.execute('''
@@ -37,6 +37,9 @@ class SummaryDatabaseService {
             createdAt TEXT NOT NULL,
             eventsJson TEXT,
             characterNotesJson TEXT,
+            startCharacterIndex INTEGER,
+            endCharacterIndex INTEGER,
+            contentHash TEXT,
             UNIQUE(bookId, chunkIndex)
           )
         ''');
@@ -236,7 +239,7 @@ class SummaryDatabaseService {
           // Add wordIndex columns (legacy support) if they don't exist
           try {
             await db.execute('''
-              ALTER TABLE summary_cache 
+              ALTER TABLE summary_cache
               ADD COLUMN lastProcessedWordIndex INTEGER
             ''');
           } catch (e) {
@@ -309,8 +312,34 @@ class SummaryDatabaseService {
           }
           try {
             await db.execute('''
-              ALTER TABLE summary_cache 
+              ALTER TABLE summary_cache
               ADD COLUMN charactersSummaryCharacterIndex INTEGER
+            ''');
+          } catch (e) {
+            // Column might already exist, ignore
+          }
+        }
+        if (oldVersion < 11) {
+          try {
+            await db.execute('''
+              ALTER TABLE summary_chunks
+              ADD COLUMN startCharacterIndex INTEGER
+            ''');
+          } catch (e) {
+            // Column might already exist, ignore
+          }
+          try {
+            await db.execute('''
+              ALTER TABLE summary_chunks
+              ADD COLUMN endCharacterIndex INTEGER
+            ''');
+          } catch (e) {
+            // Column might already exist, ignore
+          }
+          try {
+            await db.execute('''
+              ALTER TABLE summary_chunks
+              ADD COLUMN contentHash TEXT
             ''');
           } catch (e) {
             // Column might already exist, ignore

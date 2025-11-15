@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:epubx/epubx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:crypto/crypto.dart';
 
 import '../models/book.dart';
 import '../models/chapter.dart';
@@ -32,6 +34,32 @@ class ChapterText {
   final String title;
   final String text;
   final bool isComplete;
+}
+
+class _ChunkDefinition {
+  const _ChunkDefinition({
+    required this.index,
+    required this.start,
+    required this.end,
+    required this.text,
+    required this.hash,
+  });
+
+  final int index;
+  final int start;
+  final int end;
+  final String text;
+  final String hash;
+}
+
+class _PreparedTextData {
+  const _PreparedTextData({
+    required this.fullText,
+    required this.chunks,
+  });
+
+  final String fullText;
+  final List<_ChunkDefinition> chunks;
 }
 
 /// Configuration for chunking and batching text for summary generation.
@@ -85,10 +113,10 @@ class ChunkingConfig {
       // OpenAI: Generous limits, efficient batch processing
       // Context size: 8K-128K tokens depending on model
       return const ChunkingConfig(
-        maxChunkTokens: 12000,
-        overlapTokens: 260,
+        maxChunkTokens: 3000,
+        overlapTokens: 200,
         maxChunksPerBatch: 6,
-        maxAggregateTokens: 65000,
+        maxAggregateTokens: 15000,
         safetyFactor: 0.85,  // High safety factor
       );
     }
@@ -100,10 +128,10 @@ class ChunkingConfig {
       // Mistral: Similar to OpenAI, good context windows
       // Context size: 8K-32K tokens depending on model (mistral-small: 32K)
       return const ChunkingConfig(
-        maxChunkTokens: 12000,
-        overlapTokens: 260,
+        maxChunkTokens: 28000,
+        overlapTokens: 400,
         maxChunksPerBatch: 6,
-        maxAggregateTokens: 30000,  // Slightly more conservative than OpenAI
+        maxAggregateTokens: 60000,  // Keep well below full context
         safetyFactor: 0.85,  // High safety factor
       );
     }
@@ -133,15 +161,39 @@ class EnhancedSummaryService {
   final ChunkingConfig _chunkConfig;
   final PromptConfigService _promptConfigService;
 
+  static const int _charactersPerToken = 4;
+
   int get _maxTokensPerChunk => _chunkConfig.maxChunkTokens;
   int get _chunkOverlapTokens => _chunkConfig.overlapTokens;
   int get _maxChunksPerBatch => _chunkConfig.maxChunksPerBatch;
   int get _maxCumulativeTokens => _chunkConfig.maxAggregateTokens;
   int get _safeChunkTokens => _chunkConfig.safeChunkTokens;
+  int get _chunkCharacterSize => math.max(_charactersPerToken, _safeChunkTokens * _charactersPerToken);
+  int get _chunkOverlapCharacters => math.max(0, _chunkOverlapTokens * _charactersPerToken);
 
   EnhancedSummaryService(this._baseSummaryService, SharedPreferences prefs)
       : _chunkConfig = ChunkingConfig.resolve(_baseSummaryService),
         _promptConfigService = PromptConfigService(prefs);
+
+  static int _computeChunkIndex(int characterIndex, int chunkCharacterSize) {
+    if (characterIndex <= 0) {
+      return 0;
+    }
+    final safeSize = math.max(1, chunkCharacterSize);
+    final normalizedIndex = math.max(0, characterIndex - 1);
+    return normalizedIndex ~/ safeSize;
+  }
+
+  int estimateChunkIndexForCharacter(int characterIndex) {
+    return _computeChunkIndex(characterIndex, _chunkCharacterSize);
+  }
+
+  static int computeChunkIndexForCharacterStatic(int characterIndex) {
+    const defaultSafeChunkTokens = 2550;
+    final defaultChunkCharacters =
+        math.max(1, defaultSafeChunkTokens * _charactersPerToken);
+    return _computeChunkIndex(characterIndex, defaultChunkCharacters);
+  }
 
   Future<String> runCustomPrompt(String prompt, String languageCode) async {
     return await _baseSummaryService.generateSummary(prompt, languageCode);
@@ -270,6 +322,170 @@ class EnhancedSummaryService {
   /// Estimate token count (rough approximation: 1 token ≈ 4 characters)
   int _estimateTokenCount(String text) {
     return (text.length / 4).round();
+  }
+
+  String _hashText(String text) {
+    final bytes = utf8.encode(text);
+    return sha256.convert(bytes).toString();
+  }
+
+  List<_ChunkDefinition> _buildChunksFromText(String text) {
+    if (text.isEmpty) {
+      return <_ChunkDefinition>[];
+    }
+
+    final chunks = <_ChunkDefinition>[];
+    final int chunkSize = _chunkCharacterSize;
+    final int overlapSize = math.min(_chunkOverlapCharacters, chunkSize ~/ 2);
+
+    int start = 0;
+    while (start < text.length) {
+      int end = math.min(start + chunkSize, text.length);
+
+      if (end < text.length) {
+        final searchWindowStart = math.max(start, end - 800);
+        final window = text.substring(searchWindowStart, end);
+        int breakOffset = window.lastIndexOf('\n\n');
+        breakOffset = breakOffset >= 0 ? breakOffset : window.lastIndexOf('\n');
+        breakOffset = breakOffset >= 0 ? breakOffset : window.lastIndexOf('. ');
+        if (breakOffset >= 0) {
+          final candidate = searchWindowStart + breakOffset + 1;
+          if (candidate > start + 400) {
+            end = candidate;
+          }
+        }
+      }
+
+      if (end <= start) {
+        end = math.min(start + chunkSize, text.length);
+      }
+
+      final chunkText = text.substring(start, end);
+      final hash = _hashText(chunkText);
+      chunks.add(_ChunkDefinition(
+        index: chunks.length,
+        start: start,
+        end: end,
+        text: chunkText,
+        hash: hash,
+      ));
+
+      if (end >= text.length) {
+        break;
+      }
+
+      final nextStart = end - overlapSize;
+      if (nextStart <= start) {
+        start = end;
+      } else {
+        start = nextStart;
+      }
+    }
+
+    return chunks;
+  }
+
+  Future<_PreparedTextData> _prepareTextData(
+    Book book,
+    int targetCharacterIndex,
+    String language, {
+    bool ensureChunkSummaries = true,
+  }
+  ) async {
+    final chapterTexts = await _extractTextUpToCharacterIndex(
+      book,
+      targetCharacterIndex,
+    );
+
+    if (chapterTexts.isEmpty) {
+      return const _PreparedTextData(
+        fullText: '',
+        chunks: <_ChunkDefinition>[],
+      );
+    }
+
+    final buffer = StringBuffer();
+    for (final chapterText in chapterTexts) {
+      buffer.write(chapterText.text);
+    }
+    final fullText = buffer.toString();
+
+    final chunks = _buildChunksFromText(fullText);
+
+    if (ensureChunkSummaries && chunks.isNotEmpty) {
+      await _ensureChunkSummaries(book, chunks, language);
+    }
+
+    return _PreparedTextData(
+      fullText: fullText,
+      chunks: chunks,
+    );
+  }
+
+  Future<void> _ensureChunkSummaries(
+    Book book,
+    List<_ChunkDefinition> chunks,
+    String language,
+  ) async {
+    for (final chunk in chunks) {
+      final existing = await _dbService.getSummaryChunk(book.id, chunk.index);
+
+      if (existing != null && existing.contentHash == chunk.hash) {
+        if (existing.startCharacterIndex != chunk.start ||
+            existing.endCharacterIndex != chunk.end) {
+          final updatedChunk = BookSummaryChunk(
+            bookId: existing.bookId,
+            chunkIndex: existing.chunkIndex,
+            chunkType: ChunkType.fixedBlock,
+            summaryText: existing.summaryText,
+            tokenCount: existing.tokenCount ?? _estimateTokenCount(chunk.text),
+            createdAt: existing.createdAt,
+            eventsJson: existing.eventsJson,
+            characterNotesJson: existing.characterNotesJson,
+            startCharacterIndex: chunk.start,
+            endCharacterIndex: chunk.end,
+            contentHash: existing.contentHash,
+            events: existing.events,
+            characterNotes: existing.characterNotes,
+          );
+          await _dbService.saveSummaryChunk(updatedChunk);
+        }
+        continue;
+      }
+
+      final chunkText = chunk.text.trim();
+      if (chunkText.isEmpty) {
+        continue;
+      }
+
+      try {
+        final summary = await _generateChunkSummary(chunkText, null, language);
+
+        if (summary.trim().isEmpty ||
+            summary.contains('[Unable to generate') ||
+            summary.contains('[Summary generation failed') ||
+            summary.contains('Exception:')) {
+          debugPrint('Invalid summary generated for chunk ${chunk.index}, skipping cache');
+          continue;
+        }
+
+        final summaryChunk = BookSummaryChunk(
+          bookId: book.id,
+          chunkIndex: chunk.index,
+          chunkType: ChunkType.fixedBlock,
+          summaryText: summary,
+          tokenCount: _estimateTokenCount(chunk.text),
+          createdAt: DateTime.now(),
+          startCharacterIndex: chunk.start,
+          endCharacterIndex: chunk.end,
+          contentHash: chunk.hash,
+        );
+
+        await _dbService.saveSummaryChunk(summaryChunk);
+      } catch (e) {
+        debugPrint('Error generating summary for chunk ${chunk.index}: $e');
+      }
+    }
   }
 
   /// Estimate character index from word index (for backward compatibility)
@@ -813,127 +1029,41 @@ class EnhancedSummaryService {
   ) async {
     try {
       // Use currentCharacterIndex if available, fallback to currentWordIndex for backward compatibility
-      final currentCharacterIndex = progress.currentCharacterIndex ?? 
+      final currentCharacterIndex = progress.currentCharacterIndex ??
           (progress.currentWordIndex != null ? _estimateCharacterIndexFromWordIndex(progress.currentWordIndex!, book) : 0);
       final language = _getLanguage(languageCode);
-      
+
       if (currentCharacterIndex <= 0) {
         return 'No content read yet.';
       }
 
-      // Extract text up to the exact character index
-      final chapterTexts = await _extractTextUpToCharacterIndex(book, currentCharacterIndex);
-      
-      if (chapterTexts.isEmpty) {
+      final prepared = await _prepareTextData(
+        book,
+        currentCharacterIndex,
+        language,
+        ensureChunkSummaries: false,
+      );
+
+      if (prepared.fullText.isEmpty) {
         throw Exception('No content found in book');
       }
 
-      // Check cache - we need to check if cached summary covers at least currentCharacterIndex
       final cache = await _dbService.getSummaryCache(book.id);
       final cachedCharacterIndex = cache?.lastProcessedCharacterIndex ?? -1;
-      
+
       if (cache != null &&
           cachedCharacterIndex == currentCharacterIndex &&
           cache.cumulativeSummary.isNotEmpty) {
-        // Return cached summary if it covers the current position
         return cache.cumulativeSummary;
       }
 
-      // Process chapters that haven't been processed yet
-      final lastProcessedCharacterIndex = cachedCharacterIndex;
-      final chaptersToProcess = <ChapterText>[];
-      
-      int characterOffset = 0;
-      for (final chapterText in chapterTexts) {
-        final chapterCharacterCount = chapterText.text.length;
-        final chapterStartCharacterIndex = characterOffset;
-        final chapterEndCharacterIndex = characterOffset + chapterCharacterCount - 1;
-        
-        if (chapterEndCharacterIndex > lastProcessedCharacterIndex) {
-          // This chapter needs processing (or re-processing if partially processed)
-          if (chapterStartCharacterIndex <= lastProcessedCharacterIndex) {
-            // Partial chapter - extract only the new part
-            final processedCharacters = lastProcessedCharacterIndex - chapterStartCharacterIndex + 1;
-            if (processedCharacters < chapterText.text.length) {
-              final newText = chapterText.text.substring(processedCharacters);
-              if (newText.trim().isNotEmpty) {
-                chaptersToProcess.add(ChapterText(
-                  chapterIndex: chapterText.chapterIndex,
-                  title: chapterText.title,
-                  text: newText,
-                  isComplete: chapterText.isComplete,
-                ));
-              }
-            }
-          } else {
-            // Entire chapter needs processing
-            chaptersToProcess.add(chapterText);
-          }
-        }
-        
-        characterOffset += chapterCharacterCount;
-      }
-
-      // Process new chapters
-      for (final chapterText in chaptersToProcess) {
-        final plainText = chapterText.text;
-        if (plainText.isEmpty) continue;
-
-        try {
-          // Check if text is too large and needs splitting
-          final safeMaxTokens = _maxTokensPerChunk ~/ 2;
-          final textChunks = _splitTextIntoChunks(plainText, safeMaxTokens);
-          
-          String combinedSummary = '';
-          for (int j = 0; j < textChunks.length; j++) {
-            try {
-              final chunkText = textChunks[j];
-              final chunkTitle = (j == 0) ? chapterText.title : null;
-              final summary = await _generateChunkSummary(chunkText, chunkTitle, language);
-              
-              if (summary.trim().isNotEmpty && 
-                  !summary.contains('[Unable to generate') &&
-                  !summary.contains('[Summary generation failed') &&
-                  !summary.contains('Exception:')) {
-                if (combinedSummary.isEmpty) {
-                  combinedSummary = summary;
-                } else {
-                  combinedSummary = '$combinedSummary\n\n$summary';
-                }
-              }
-            } catch (e) {
-              debugPrint('Error processing chunk $j of chapter ${chapterText.chapterIndex}: $e');
-            }
-          }
-          
-          if (combinedSummary.isEmpty) {
-            debugPrint('No valid summary generated for chapter ${chapterText.title}, skipping');
-            continue;
-          }
-
-          // Save chunk summary using chapter index as chunk index
-          final tokenCount = _estimateTokenCount(plainText);
-          final summaryChunk = BookSummaryChunk(
-            bookId: book.id,
-            chunkIndex: chapterText.chapterIndex,
-            chunkType: ChunkType.chapter,
-            summaryText: combinedSummary,
-            tokenCount: tokenCount,
-            createdAt: DateTime.now(),
-          );
-
-          await _dbService.saveSummaryChunk(summaryChunk);
-        } catch (e) {
-          debugPrint('Error processing chapter ${chapterText.chapterIndex}: $e');
-        }
-      }
-
-      // Get all chunk summaries up to current position
-      // We need to get summaries for all chapters up to the last chapter in chapterTexts
-      final maxChapterIndex = chapterTexts.isNotEmpty 
-          ? chapterTexts.last.chapterIndex 
-          : 0;
-      final allChunkSummaries = await _dbService.getSummaryChunks(book.id, maxChapterIndex);
+      final maxChunkIndex = prepared.chunks.isNotEmpty
+          ? prepared.chunks.last.index
+          : -1;
+      final allChunkSummaries = await _dbService.getSummaryChunks(
+        book.id,
+        maxChunkIndex,
+      );
       
       // Filter out invalid cached summaries
       final validChunkSummaries = allChunkSummaries.where((chunk) {
@@ -961,23 +1091,24 @@ class EnhancedSummaryService {
         book.title,
         language,
       );
-      
+
       // Format for display
       final narrative = _formatGeneralSummary(generalSummary);
 
       // Update cache with structured and text summary
       final updatedCache = (cache ?? BookSummaryCache(
         bookId: book.id,
-        lastProcessedChunkIndex: maxChapterIndex,
+        lastProcessedChunkIndex: maxChunkIndex,
         cumulativeSummary: '',
         lastUpdated: DateTime.now(),
       )).copyWith(
-        lastProcessedChunkIndex: maxChapterIndex,
+        lastProcessedChunkIndex: maxChunkIndex,
         lastProcessedCharacterIndex: currentCharacterIndex,
         cumulativeSummary: narrative,
         generalSummaryJson: generalSummary.toJsonString(),
         generalSummaryUpdatedAt: DateTime.now(),
         lastUpdated: DateTime.now(),
+        generalSummary: generalSummary,
       );
       await _dbService.saveSummaryCache(updatedCache);
 
@@ -997,10 +1128,11 @@ class EnhancedSummaryService {
   ) async {
     try {
       // Use currentCharacterIndex if available, fallback to currentWordIndex for backward compatibility
-      final currentCharacterIndex = progress.currentCharacterIndex ?? 
+      final currentCharacterIndex = progress.currentCharacterIndex ??
           (progress.currentWordIndex != null ? _estimateCharacterIndexFromWordIndex(progress.currentWordIndex!, book) : 0);
       final language = _getLanguage(languageCode);
-      
+      final prepared = await _prepareTextData(book, currentCharacterIndex, language);
+
       // Get cache to find last reading stop
       final cache = await _dbService.getSummaryCache(book.id);
       // Use characterIndex if available, fallback to wordIndex for backward compatibility
@@ -1039,15 +1171,15 @@ class EnhancedSummaryService {
         }
 
         try {
-          final beginningTexts = await _extractTextUpToCharacterIndex(book, endIndex);
-          if (beginningTexts.isEmpty) {
+          final safeEndIndex = math.min(endIndex, prepared.fullText.length);
+          if (safeEndIndex <= 0) {
             final fallback = language == 'fr'
                 ? 'Impossible de générer un résumé concis du début.'
                 : 'Unable to generate a concise beginning summary.';
             return '$heading\n\n$fallback';
           }
 
-          final beginningText = beginningTexts.map((ct) => ct.text).join('\n\n');
+          final beginningText = prepared.fullText.substring(0, safeEndIndex);
           if (beginningText.trim().isEmpty) {
             final fallback = language == 'fr'
                 ? 'Impossible de générer un résumé concis du début.'
@@ -1055,9 +1187,30 @@ class EnhancedSummaryService {
             return '$heading\n\n$fallback';
           }
 
-          final beginningSummary = await _generateChunkSummary(beginningText, null, language);
-          final conciseBeginning = await _generateConciseSummary(beginningSummary, book.title, language);
-          final trimmed = conciseBeginning.trim();
+          String combined = '';
+          final textChunks = _splitTextIntoChunks(beginningText, _safeChunkTokens);
+          for (final chunkText in textChunks) {
+            try {
+              final summary = await _generateChunkSummary(chunkText, null, language);
+              if (summary.trim().isNotEmpty &&
+                  !summary.contains('[Unable to generate') &&
+                  !summary.contains('[Summary generation failed') &&
+                  !summary.contains('Exception:')) {
+                combined = combined.isEmpty ? summary : '$combined\n\n$summary';
+              }
+            } catch (e) {
+              debugPrint('Error generating concise beginning summary chunk: $e');
+            }
+          }
+
+          if (combined.isEmpty) {
+            final fallback = language == 'fr'
+                ? 'Impossible de générer un résumé concis du début.'
+                : 'Unable to generate a concise beginning summary.';
+            return '$heading\n\n$fallback';
+          }
+
+          final trimmed = _cleanUpSummaryText(combined);
           if (trimmed.isEmpty) {
             final fallback = language == 'fr'
                 ? 'Impossible de générer un résumé concis du début.'
@@ -1133,40 +1286,13 @@ class EnhancedSummaryService {
           await buildConciseBeginningSection(sessionStartCharacterIndex);
 
       // Extract text for the session (from sessionStartCharacterIndex to sessionEndCharacterIndex)
-      final sessionEndTexts = await _extractTextUpToCharacterIndex(book, sessionEndCharacterIndex);
-      
-      // Calculate the text that belongs to the session
       String sessionText = '';
-      int characterOffset = 0;
-      
-      for (final chapterText in sessionEndTexts) {
-        final chapterCharacterCount = chapterText.text.length;
-        final chapterStartCharacterIndex = characterOffset;
-        final chapterEndCharacterIndex = characterOffset + chapterCharacterCount - 1;
-        
-        if (chapterEndCharacterIndex >= sessionStartCharacterIndex && chapterStartCharacterIndex < sessionEndCharacterIndex) {
-          // This chapter overlaps with the session
-          int startInChapter = 0;
-          int endInChapter = chapterCharacterCount;
-          
-          if (chapterStartCharacterIndex < sessionStartCharacterIndex) {
-            startInChapter = sessionStartCharacterIndex - chapterStartCharacterIndex;
-          }
-          if (chapterEndCharacterIndex > sessionEndCharacterIndex) {
-            endInChapter = sessionEndCharacterIndex - chapterStartCharacterIndex + 1;
-          }
-          
-          if (endInChapter > startInChapter) {
-            final sessionChapterText = chapterText.text.substring(startInChapter, endInChapter);
-            if (sessionText.isNotEmpty) {
-              sessionText = '$sessionText\n\n$sessionChapterText';
-            } else {
-              sessionText = sessionChapterText;
-            }
-          }
+      if (sessionEndCharacterIndex != null) {
+        final safeEndIndex = math.min(sessionEndCharacterIndex, prepared.fullText.length);
+        final startIndex = math.min(sessionStartCharacterIndex, safeEndIndex);
+        if (safeEndIndex > startIndex) {
+          sessionText = prepared.fullText.substring(startIndex, safeEndIndex);
         }
-        
-        characterOffset += chapterCharacterCount;
       }
 
       if (sessionText.trim().isEmpty) {
@@ -1179,8 +1305,7 @@ class EnhancedSummaryService {
       }
 
       // Generate summary of the session text
-      final safeMaxTokens = _maxTokensPerChunk ~/ 2;
-      final textChunks = _splitTextIntoChunks(sessionText, safeMaxTokens);
+      final textChunks = _splitTextIntoChunks(sessionText, _safeChunkTokens);
       
       String combinedSummary = '';
       for (final chunkText in textChunks) {
@@ -1223,17 +1348,17 @@ class EnhancedSummaryService {
           '${conciseBeginningSection.trim()}\n\n$sinceLastTimeHeader\n\n$combinedSummary';
       
       // Cache the generated summary
-      final maxChapterIndex = sessionEndTexts.isNotEmpty 
-          ? sessionEndTexts.last.chapterIndex 
-          : 0;
+      final sessionCoverageIndex = sessionEndCharacterIndex != null
+          ? estimateChunkIndexForCharacter(sessionEndCharacterIndex)
+          : estimateChunkIndexForCharacter(currentCharacterIndex);
       final updatedCache = (cache ?? BookSummaryCache(
         bookId: book.id,
-        lastProcessedChunkIndex: maxChapterIndex,
+        lastProcessedChunkIndex: sessionCoverageIndex,
         cumulativeSummary: '',
         lastUpdated: DateTime.now(),
       )).copyWith(
         summarySinceLastTime: fullSummary,
-        summarySinceLastTimeChunkIndex: maxChapterIndex,
+        summarySinceLastTimeChunkIndex: sessionCoverageIndex,
         summarySinceLastTimeCharacterIndex: currentCharacterIndex,
       );
       await _dbService.saveSummaryCache(updatedCache);
@@ -1261,21 +1386,20 @@ class EnhancedSummaryService {
         return 'No content read yet.';
       }
 
-      // Extract text up to the exact character index
-      final chapterTexts = await _extractTextUpToCharacterIndex(book, currentCharacterIndex);
-      
-      if (chapterTexts.isEmpty) {
+      final prepared = await _prepareTextData(book, currentCharacterIndex, language);
+
+      if (prepared.fullText.isEmpty) {
         throw Exception('No content found in book');
       }
 
       // Get or create cache
       var cache = await _dbService.getSummaryCache(book.id);
-      
+
       // Load existing character profiles from cache
-      CharacterProfilesPayload existingProfiles = cache?.characterProfilesPayload ?? 
+      CharacterProfilesPayload existingProfiles = cache?.characterProfilesPayload ??
           CharacterProfilesPayload(profiles: []);
       final existingCharacterNames = existingProfiles.profiles.map((p) => p.name.toLowerCase()).toSet();
-      
+
       // Get last processed character index for characters
       final lastCharacterProcessedCharacterIndex = cache?.charactersSummaryCharacterIndex ?? -1;
 
@@ -1286,56 +1410,48 @@ class EnhancedSummaryService {
         return cache.charactersSummary!;
       }
 
-      // Process chapters that haven't been processed yet
-      int characterOffset = 0;
-      for (final chapterText in chapterTexts) {
-        final chapterCharacterCount = chapterText.text.length;
-        final chapterStartCharacterIndex = characterOffset;
-        final chapterEndCharacterIndex = characterOffset + chapterCharacterCount - 1;
-        
-        if (chapterEndCharacterIndex > lastCharacterProcessedCharacterIndex) {
-          // This chapter needs processing (or re-processing if partially processed)
-          String textToProcess = chapterText.text;
-          
-          if (chapterStartCharacterIndex <= lastCharacterProcessedCharacterIndex) {
-            // Partial chapter - extract only the new part
-            final processedCharacters = lastCharacterProcessedCharacterIndex - chapterStartCharacterIndex + 1;
-            if (processedCharacters < chapterText.text.length) {
-              textToProcess = chapterText.text.substring(processedCharacters);
-            } else {
-              textToProcess = '';
-            }
+      final startIndex = math.min(
+        math.max(0, lastCharacterProcessedCharacterIndex + 1),
+        prepared.fullText.length,
+      );
+      final newText = prepared.fullText.substring(startIndex);
+
+      if (newText.trim().isNotEmpty) {
+        final characterChunks = _splitTextIntoChunks(
+          newText,
+          _safeChunkTokens,
+          overlapTokens: 0,
+        );
+
+        for (final chunkText in characterChunks) {
+          if (chunkText.trim().isEmpty) {
+            continue;
           }
-          
-          if (textToProcess.trim().isNotEmpty) {
-            try {
-              // Extract character information from this text
-              final chapterCharacterNotes = await _extractCharactersFromText(
-                textToProcess,
-                chapterText.title,
-                language,
-                existingCharacterNames,
-              );
-              
-              // Update character profiles with new information
-              existingProfiles = _mergeCharacterProfiles(
-                existingProfiles,
-                chapterCharacterNotes,
-                chapterText.title,
-              );
-              
-              // Update existing character names set
-              for (final profile in existingProfiles.profiles) {
-                existingCharacterNames.add(profile.name.toLowerCase());
-              }
-            } catch (e) {
-              debugPrint('Error processing chapter ${chapterText.chapterIndex} for characters: $e');
-              // Continue with next chapter
+
+          try {
+            // Extract character information from this text
+            final chunkNotes = await _extractCharactersFromText(
+              chunkText,
+              null,
+              language,
+              existingCharacterNames,
+            );
+
+            // Update character profiles with new information
+            existingProfiles = _mergeCharacterProfiles(
+              existingProfiles,
+              chunkNotes,
+              null,
+            );
+
+            // Update existing character names set
+            for (final note in chunkNotes) {
+              existingCharacterNames.add(note.name.toLowerCase());
             }
+          } catch (e) {
+            debugPrint('Error processing character chunk: $e');
           }
         }
-        
-        characterOffset += chapterCharacterCount;
       }
 
       // Generate final character profiles using structured data
@@ -1346,19 +1462,17 @@ class EnhancedSummaryService {
       );
 
       // Cache the structured character profiles
-      final maxChapterIndex = chapterTexts.isNotEmpty 
-          ? chapterTexts.last.chapterIndex 
-          : 0;
+      final characterChunkIndex = estimateChunkIndexForCharacter(currentCharacterIndex);
       final updatedCache = (cache ?? BookSummaryCache(
         bookId: book.id,
-        lastProcessedChunkIndex: maxChapterIndex,
+        lastProcessedChunkIndex: characterChunkIndex,
         cumulativeSummary: '',
         lastUpdated: DateTime.now(),
       )).copyWith(
         characterProfilesJson: existingProfiles.toJsonString(),
         characterProfilesUpdatedAt: DateTime.now(),
         charactersSummary: charactersSummary,
-        charactersSummaryChunkIndex: maxChapterIndex,
+        charactersSummaryChunkIndex: characterChunkIndex,
         charactersSummaryCharacterIndex: currentCharacterIndex,
       );
       

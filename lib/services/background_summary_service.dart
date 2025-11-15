@@ -95,9 +95,13 @@ class BackgroundSummaryService {
   /// Check if summary generation is needed
   Future<bool> _needsGeneration(Book book, ReadingProgress progress) async {
     try {
-      final currentChunkIndex = progress.currentChapterIndex ?? 0;
       final currentCharIndex = progress.currentCharacterIndex;
       final currentWordIndex = progress.currentWordIndex;
+      final currentChunkIndex = currentCharIndex != null
+          ? EnhancedSummaryService.computeChunkIndexForCharacterStatic(currentCharIndex)
+          : currentWordIndex != null
+              ? EnhancedSummaryService.computeChunkIndexForCharacterStatic(currentWordIndex * 6)
+              : progress.currentChapterIndex ?? 0;
 
       final hasProgress = (currentCharIndex != null && currentCharIndex > 0) ||
           (currentWordIndex != null && currentWordIndex > 0) ||
