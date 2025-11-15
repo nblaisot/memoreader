@@ -9,6 +9,9 @@ class BookSummaryChunk {
   final DateTime createdAt;
   final String? eventsJson;
   final String? characterNotesJson;
+  final int? startCharacterIndex;
+  final int? endCharacterIndex;
+  final String? contentHash;
   final List<SummaryEvent>? _events;
   final List<ChunkCharacterNote>? _characterNotes;
 
@@ -21,6 +24,9 @@ class BookSummaryChunk {
     required this.createdAt,
     this.eventsJson,
     this.characterNotesJson,
+    this.startCharacterIndex,
+    this.endCharacterIndex,
+    this.contentHash,
     List<SummaryEvent>? events,
     List<ChunkCharacterNote>? characterNotes,
   })  : _events = events,
@@ -49,6 +55,9 @@ class BookSummaryChunk {
       'createdAt': createdAt.toIso8601String(),
       'eventsJson': eventsPayload,
       'characterNotesJson': characterNotesPayload,
+      'startCharacterIndex': startCharacterIndex,
+      'endCharacterIndex': endCharacterIndex,
+      'contentHash': contentHash,
     };
   }
 
@@ -65,6 +74,9 @@ class BookSummaryChunk {
       createdAt: DateTime.parse(json['createdAt'] as String),
       eventsJson: json['eventsJson'] as String?,
       characterNotesJson: json['characterNotesJson'] as String?,
+      startCharacterIndex: json['startCharacterIndex'] as int?,
+      endCharacterIndex: json['endCharacterIndex'] as int?,
+      contentHash: json['contentHash'] as String?,
       events: StructuredSummaryCodec.decodeEvents(json['eventsJson'] as String?),
       characterNotes:
           StructuredSummaryCodec.decodeCharacterNotes(json['characterNotesJson'] as String?),

@@ -463,16 +463,19 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       );
       await _bookService.saveReadingProgress(progress);
       _savedProgress = progress;
+      final chunkIndex = _summaryService != null
+          ? _summaryService!.estimateChunkIndexForCharacter(page.startCharIndex ?? 0)
+          : EnhancedSummaryService.computeChunkIndexForCharacterStatic(page.startCharIndex ?? 0);
       unawaited(_summaryDatabase.updateLastReadingStop(
         widget.book.id,
-        chunkIndex: page.chapterIndex,
+        chunkIndex: chunkIndex,
         characterIndex: page.startCharIndex,
         wordIndex: page.startWordIndex,
       ));
       if (_summaryService != null) {
         unawaited(_summaryService!.updateLastReadingStop(
           widget.book.id,
-          chunkIndex: page.chapterIndex,
+          chunkIndex: chunkIndex,
           characterIndex: page.startCharIndex,
           wordIndex: page.startWordIndex,
         ));
