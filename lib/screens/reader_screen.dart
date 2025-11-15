@@ -29,6 +29,8 @@ import 'reader/line_metrics_pagination_engine.dart';
 import 'reader/pagination_cache.dart';
 import 'reader/tap_zones.dart';
 import 'reader/reader_menu.dart';
+import 'reader/navigation_helper.dart';
+import 'routes.dart';
 import 'settings_screen.dart';
 import 'summary_screen.dart';
 
@@ -432,6 +434,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
 
   void _handleSelectionChanged(bool hasSelection, VoidCallback clearSelection) {
     if (hasSelection) {
+      _resetTapTracking();
       _clearSelectionCallback = clearSelection;
       _lastSelectionChangeTimestamp = DateTime.now();
     } else {
@@ -914,8 +917,15 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       onGoToChapter: _showChapterSelector,
       onGoToPercentage: _showGoToPercentageDialog,
       onShowSummaries: _openSummaries,
-      onReturnToLibrary: () => Navigator.of(context).pop(),
+      onReturnToLibrary: _returnToLibrary,
     ));
+  }
+
+  Future<void> _returnToLibrary() {
+    return returnToLibrary(
+      context,
+      openLibrary: () => Navigator.of(context).pushReplacementNamed(libraryRoute),
+    );
   }
 
   void _showChapterSelector() {
