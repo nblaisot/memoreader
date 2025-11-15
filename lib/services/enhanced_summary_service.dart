@@ -1041,7 +1041,7 @@ class EnhancedSummaryService {
         book,
         currentCharacterIndex,
         language,
-        ensureChunkSummaries: false,
+        ensureChunkSummaries: true,
       );
 
       if (prepared.fullText.isEmpty) {
