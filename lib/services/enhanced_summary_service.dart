@@ -292,9 +292,8 @@ class EnhancedSummaryService {
       if (content.isEmpty) {
         continue;
       }
-      final title = file.Title?.isNotEmpty == true
-          ? file.Title!
-          : 'Section ${i + 1}';
+      // EpubTextContentFile no longer exposes Title; use a simple fallback.
+      final title = 'Section ${i + 1}';
       sections.add(Chapter(
         index: i,
         title: title,
@@ -619,8 +618,8 @@ class EnhancedSummaryService {
     if (fraction == null || fraction.isNaN || fraction.isInfinite) {
       return null;
     }
-    final percent = (fraction * 100).clamp(0, 100);
-    return percent;
+    final clamped = (fraction * 100).clamp(0.0, 100.0);
+    return clamped.toDouble();
   }
 
   String _extractLastWords(String text, int wordCount) {
