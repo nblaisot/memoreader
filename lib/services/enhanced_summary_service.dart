@@ -174,6 +174,8 @@ class EnhancedSummaryService {
       : _chunkConfig = ChunkingConfig.resolve(_baseSummaryService),
         _promptConfigService = PromptConfigService(prefs);
 
+  String get serviceName => _baseSummaryService.serviceName;
+
   static int _computeChunkIndex(int characterIndex, int chunkCharacterSize) {
     if (characterIndex <= 0) {
       return 0;
@@ -1994,6 +1996,18 @@ Concise summary:''';
   /// Delete all summaries for a book
   Future<void> deleteBookSummaries(String bookId) async {
     await _dbService.deleteBookSummaries(bookId);
+  }
+
+  Future<void> resetGeneralSummary(String bookId) async {
+    await _dbService.clearGeneralSummary(bookId);
+  }
+
+  Future<void> resetSinceLastTimeSummary(String bookId) async {
+    await _dbService.clearSinceLastTimeSummary(bookId);
+  }
+
+  Future<void> resetCharactersSummary(String bookId) async {
+    await _dbService.clearCharactersSummary(bookId);
   }
 
   Future<void> resetAllSummaries() async {

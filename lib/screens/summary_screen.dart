@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
 import '../services/settings_service.dart';
@@ -12,7 +11,6 @@ enum SummaryType {
   fromBeginning,
   sinceLastTime,
   characters,
-  resetAll,
 }
 
 class SummaryScreen extends StatefulWidget {
@@ -20,12 +18,14 @@ class SummaryScreen extends StatefulWidget {
   final ReadingProgress progress;
   final EnhancedSummaryService enhancedSummaryService;
   final String? engineFullText;
+  final SummaryType summaryType;
 
   const SummaryScreen({
     super.key,
     required this.book,
     required this.progress,
     required this.enhancedSummaryService,
+    required this.summaryType,
     this.engineFullText,
   });
 
@@ -38,12 +38,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
   double _fontSize = 18.0;
   bool _isLoading = true;
   String _summary = '';
-  SummaryType _selectedSummaryType = SummaryType.fromBeginning;
+  String? _statusMessage;
 
   @override
   void initState() {
     super.initState();
-    _loadPreferences();
+    _loadSummary();
     _loadFontSize();
   }
 
@@ -54,54 +54,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
     _loadFontSize();
   }
 
-  Future<void> _loadPreferences() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final summaryTypeString = prefs.getString('summary_type_${widget.book.id}');
-      if (summaryTypeString != null) {
-        switch (summaryTypeString) {
-          case 'sinceLastTime':
-            _selectedSummaryType = SummaryType.sinceLastTime;
-            break;
-          case 'characters':
-            _selectedSummaryType = SummaryType.characters;
-            break;
-          default:
-            _selectedSummaryType = SummaryType.fromBeginning;
-        }
-      }
-      await _loadSummary();
-    } catch (e) {
-      // If error, use default and continue
-      await _loadSummary();
-    }
-  }
-
-  Future<void> _saveSummaryTypePreference() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      String summaryTypeString;
-      switch (_selectedSummaryType) {
-        case SummaryType.resetAll:
-          return;
-        case SummaryType.sinceLastTime:
-          summaryTypeString = 'sinceLastTime';
-          break;
-        case SummaryType.characters:
-          summaryTypeString = 'characters';
-          break;
-        default:
-          summaryTypeString = 'fromBeginning';
-      }
-      await prefs.setString('summary_type_${widget.book.id}', summaryTypeString);
-    } catch (e) {
-      // Ignore errors
-    }
-  }
-
   Future<void> _loadSummary() async {
+    final l10n = AppLocalizations.of(context)!;
+
     setState(() {
       _isLoading = true;
+      _statusMessage = l10n.summaryStatusPreparing;
     });
 
     try {
@@ -118,16 +76,21 @@ class _SummaryScreenState extends State<SummaryScreen> {
       // Get app language
       final appLocale = Localizations.localeOf(context);
       final languageCode = appLocale.languageCode;
+      final summaryType = widget.summaryType;
+
+      _updateStatusMessage(
+        l10n.summaryStatusCalling(widget.enhancedSummaryService.serviceName),
+      );
 
       String summary;
-      if (_selectedSummaryType == SummaryType.sinceLastTime) {
+      if (summaryType == SummaryType.sinceLastTime) {
         summary = await widget.enhancedSummaryService.getSummarySinceLastTime(
           widget.book,
           widget.progress,
           languageCode,
           preparedEngineText: widget.engineFullText,
         );
-      } else if (_selectedSummaryType == SummaryType.characters) {
+      } else if (summaryType == SummaryType.characters) {
         summary = await widget.enhancedSummaryService.getCharactersSummary(
           widget.book,
           widget.progress,
@@ -156,13 +119,14 @@ class _SummaryScreenState extends State<SummaryScreen> {
         setState(() {
           _summary = summary;
           _isLoading = false;
+          _statusMessage = null;
         });
       }
     } catch (e) {
       if (mounted) {
         final errorMessage = e.toString();
         String userFriendlyMessage;
-        
+
         // Provide user-friendly error messages
         if (errorMessage.contains('timeout')) {
           userFriendlyMessage = 'Summary generation timed out. Please check your internet connection and try again.';
@@ -171,60 +135,21 @@ class _SummaryScreenState extends State<SummaryScreen> {
         } else {
           userFriendlyMessage = 'Error generating summary: $errorMessage\n\nIf this persists, please check your API key configuration in settings.';
         }
-        
+
         setState(() {
           _summary = userFriendlyMessage;
           _isLoading = false;
+          _statusMessage = null;
         });
       }
     }
   }
 
-  Future<void> _onSummaryTypeChanged(SummaryType? newType) async {
-    if (newType == null || newType == _selectedSummaryType) return;
-
-    if (newType == SummaryType.resetAll) {
-      await _resetSummaries();
-      return;
-    }
-
+  void _updateStatusMessage(String message) {
+    if (!mounted || !_isLoading) return;
     setState(() {
-      _selectedSummaryType = newType;
+      _statusMessage = message;
     });
-
-    await _saveSummaryTypePreference();
-    await _loadSummary();
-  }
-
-  Future<void> _resetSummaries() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      await widget.enhancedSummaryService.resetAllSummaries();
-      final prefs = await SharedPreferences.getInstance();
-      final keys = prefs.getKeys()
-          .where((key) => key.startsWith('summary_type_'))
-          .toList();
-      for (final key in keys) {
-        await prefs.remove(key);
-      }
-
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _summary = e.toString();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppLocalizations.of(context)!.resetSummariesError),
-        ),
-      );
-    }
   }
 
   Future<void> _loadFontSize() async {
@@ -233,6 +158,62 @@ class _SummaryScreenState extends State<SummaryScreen> {
       setState(() {
         _fontSize = fontSize;
       });
+    }
+  }
+
+  Future<void> _resetCurrentSummary() async {
+    if (_isLoading) return;
+    final l10n = AppLocalizations.of(context)!;
+
+    setState(() {
+      _isLoading = true;
+      _statusMessage = l10n.summaryStatusPreparing;
+    });
+
+    try {
+      switch (widget.summaryType) {
+        case SummaryType.fromBeginning:
+          await widget.enhancedSummaryService
+              .resetGeneralSummary(widget.book.id);
+          break;
+        case SummaryType.sinceLastTime:
+          await widget.enhancedSummaryService
+              .resetSinceLastTimeSummary(widget.book.id);
+          break;
+        case SummaryType.characters:
+          await widget.enhancedSummaryService
+              .resetCharactersSummary(widget.book.id);
+          break;
+      }
+
+      await _loadSummary();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.summaryReset)),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _statusMessage = null;
+        _summary = e.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.resetSummariesError)),
+      );
+    }
+  }
+
+  String _titleForSummaryType(AppLocalizations l10n) {
+    switch (widget.summaryType) {
+      case SummaryType.sinceLastTime:
+        return l10n.summarySinceLastTime;
+      case SummaryType.characters:
+        return l10n.summaryCharacters;
+      case SummaryType.fromBeginning:
+      default:
+        return l10n.summaryFromBeginning;
     }
   }
 
@@ -250,6 +231,10 @@ class _SummaryScreenState extends State<SummaryScreen> {
               const CircularProgressIndicator(),
               const SizedBox(height: 16),
               Text(l10n.generatingSummary),
+              if (_statusMessage?.isNotEmpty == true) ...[
+                const SizedBox(height: 8),
+                Text(_statusMessage!),
+              ],
             ],
           ),
         ),
@@ -365,54 +350,30 @@ class _SummaryScreenState extends State<SummaryScreen> {
   }
 
   Widget _buildHeader(AppLocalizations l10n) {
+    final title = _titleForSummaryType(l10n);
+
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Summary type dropdown as the title
           Expanded(
-            child: DropdownButtonFormField<SummaryType>(
-              value: _selectedSummaryType,
-              decoration: InputDecoration(
-                labelText: l10n.summary,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              ),
-              items: [
-                DropdownMenuItem(
-                  value: SummaryType.fromBeginning,
-                  child: Text(l10n.summaryFromBeginning),
-                ),
-                DropdownMenuItem(
-                  value: SummaryType.sinceLastTime,
-                  child: Text(l10n.summarySinceLastTime),
-                ),
-                DropdownMenuItem(
-                  value: SummaryType.characters,
-                  child: Text(l10n.summaryCharacters),
-                ),
-                DropdownMenuItem(
-                  value: SummaryType.resetAll,
-                  child: Text(
-                    l10n.resetSummaries,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error),
-                  ),
-                ),
-              ],
-              onChanged: _onSummaryTypeChanged,
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ) ??
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
           ),
-          const SizedBox(width: 8),
-          // Close button
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.all(8.0),
-              child: const Icon(Icons.close),
-            ),
+          IconButton(
+            tooltip: l10n.summaryReset,
+            onPressed: _isLoading ? null : _resetCurrentSummary,
+            icon: const Icon(Icons.delete_outline),
+          ),
+          IconButton(
+            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.close),
           ),
         ],
       ),

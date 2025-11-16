@@ -939,7 +939,9 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       hasChapters: _chapterEntries.isNotEmpty,
       onGoToChapter: _showChapterSelector,
       onGoToPercentage: _showGoToPercentageDialog,
-      onShowSummaries: _openSummaries,
+      onShowSummaryFromBeginning: () => _openSummary(SummaryType.fromBeginning),
+      onShowSummarySinceLastTime: () => _openSummary(SummaryType.sinceLastTime),
+      onShowCharactersSummary: () => _openSummary(SummaryType.characters),
       onReturnToLibrary: _returnToLibrary,
     ));
   }
@@ -1067,7 +1069,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     });
   }
 
-  void _openSummaries() async {
+  void _openSummary(SummaryType summaryType) async {
     if (_engine == null) return;
     final currentPage = _engine!.getPage(_currentPageIndex);
     if (currentPage == null) return;
@@ -1109,6 +1111,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
           book: widget.book,
           progress: progress,
           enhancedSummaryService: _summaryService!,
+          summaryType: summaryType,
           engineFullText: engineFullText,
         ),
       ),

@@ -79,6 +79,10 @@
     "description": "Message d'erreur pour un pourcentage invalide"
   },
   "summary": "Résumé",
+  "summariesSectionTitle": "Résumés",
+  "@summariesSectionTitle": {
+    "description": "Titre de section pour les actions liées aux résumés"
+  },
   "backToLibrary": "Retour à la bibliothèque",
   "enterPageNumber": "Entrez le numéro de page (1-{max})",
   "@enterPageNumber": {
@@ -236,6 +240,16 @@
   "information": "Information",
   "summarySettingsInfo": "OpenAI et Mistral AI fournissent des résumés rapides et précis mais nécessitent une connexion Internet et une clé API. Configurez votre fournisseur préféré et personnalisez les prompts utilisés pour la génération de résumés.",
   "generatingSummary": "Génération du résumé...",
+  "summaryReset": "Réinitialiser ce résumé",
+  "summaryStatusPreparing": "Préparation...",
+  "summaryStatusCalling": "Appel de {provider}...",
+  "@summaryStatusCalling": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
   "errorGeneratingSummary": "Erreur lors de la génération du résumé : {error}",
   "@errorGeneratingSummary": {
     "placeholders": {
@@ -264,7 +278,7 @@
   "languageEnglish": "Anglais",
   "languageFrench": "Français",
   "summaryFromBeginning": "Depuis le début",
-  "summarySinceLastTime": "Dernière lecture",
+  "summarySinceLastTime": "Depuis la dernière fois",
   "summaryCharacters": "Personnages",
   "horizontalPaddingSaved": "Padding horizontal enregistré. Les modifications s'appliqueront lors de la réouverture d'un livre.",
   "verticalPaddingSaved": "Padding vertical enregistré. Les modifications s'appliqueront lors de la réouverture d'un livre."

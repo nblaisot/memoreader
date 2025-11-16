@@ -818,6 +818,30 @@ abstract class AppLocalizations {
   /// **'French'**
   String get languageFrench;
 
+  /// Section header for summary-related actions
+  ///
+  /// In en, this message translates to:
+  /// **'Summaries'**
+  String get summariesSectionTitle;
+
+  /// Tooltip for resetting the current summary
+  ///
+  /// In en, this message translates to:
+  /// **'Reset this summary'**
+  String get summaryReset;
+
+  /// Status label shown while preparing summary generation
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing...'**
+  String get summaryStatusPreparing;
+
+  /// Status label shown while calling the selected provider
+  ///
+  /// In en, this message translates to:
+  /// **'Calling {provider}...'**
+  String summaryStatusCalling(Object provider);
+
   /// Summary type option - from beginning
   ///
   /// In en, this message translates to:
@@ -827,7 +851,7 @@ abstract class AppLocalizations {
   /// Summary type option - since last time
   ///
   /// In en, this message translates to:
-  /// **'Last Reading'**
+  /// **'Since last time'**
   String get summarySinceLastTime;
 
   /// Message shown when horizontal padding is saved

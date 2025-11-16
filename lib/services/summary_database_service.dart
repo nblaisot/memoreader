@@ -554,6 +554,62 @@ class SummaryDatabaseService {
     return BookSummaryCache.fromJson(results.first);
   }
 
+  Future<void> clearGeneralSummary(String bookId) async {
+    final db = await database;
+    await db.delete(
+      'summary_chunks',
+      where: 'bookId = ?',
+      whereArgs: [bookId],
+    );
+
+    await db.update(
+      'summary_cache',
+      {
+        'cumulativeSummary': '',
+        'generalSummaryJson': null,
+        'generalSummaryUpdatedAt': null,
+        'lastProcessedCharacterIndex': null,
+        'lastProcessedWordIndex': null,
+      },
+      where: 'bookId = ?',
+      whereArgs: [bookId],
+    );
+  }
+
+  Future<void> clearSinceLastTimeSummary(String bookId) async {
+    final db = await database;
+    await db.update(
+      'summary_cache',
+      {
+        'summarySinceLastTime': null,
+        'summarySinceLastTimeChunkIndex': null,
+        'summarySinceLastTimeWordIndex': null,
+        'summarySinceLastTimeCharacterIndex': null,
+        'sinceLastTimeJson': null,
+        'sinceLastTimeUpdatedAt': null,
+      },
+      where: 'bookId = ?',
+      whereArgs: [bookId],
+    );
+  }
+
+  Future<void> clearCharactersSummary(String bookId) async {
+    final db = await database;
+    await db.update(
+      'summary_cache',
+      {
+        'charactersSummary': null,
+        'charactersSummaryChunkIndex': null,
+        'charactersSummaryWordIndex': null,
+        'charactersSummaryCharacterIndex': null,
+        'characterProfilesJson': null,
+        'characterProfilesUpdatedAt': null,
+      },
+      where: 'bookId = ?',
+      whereArgs: [bookId],
+    );
+  }
+
   Future<void> deleteBookSummaries(String bookId) async {
     final db = await database;
     await db.delete(

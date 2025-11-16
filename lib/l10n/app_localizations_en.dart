@@ -419,10 +419,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get languageFrench => 'French';
 
   @override
+  String get summariesSectionTitle => 'Summaries';
+
+  @override
+  String get summaryReset => 'Reset this summary';
+
+  @override
+  String get summaryStatusPreparing => 'Preparing...';
+
+  @override
+  String summaryStatusCalling(Object provider) => 'Calling $provider...';
+
+  @override
   String get summaryFromBeginning => 'From the Beginning';
 
   @override
-  String get summarySinceLastTime => 'Last Reading';
+  String get summarySinceLastTime => 'Since last time';
 
   @override
   String get horizontalPaddingSaved =>
