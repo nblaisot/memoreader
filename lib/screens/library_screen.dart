@@ -23,7 +23,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final AppStateService _appStateService = AppStateService();
   List<Book> _books = [];
   Map<String, ReadingProgress> _bookProgress = {}; // Map bookId to progress
-  Map<String, int> _bookTotalChapters = {}; // Cache total chapters per book
   bool _isLoading = true;
   bool _isImporting = false;
   String? _errorMessage;
@@ -56,33 +55,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       final books = await _bookService.getAllBooks();
       
-      // Load progress for all books and total chapters
+      // Load progress for all books
       final progressMap = <String, ReadingProgress>{};
-      final chaptersMap = <String, int>{};
-      
+
       for (final book in books) {
         final progress = await _bookService.getReadingProgress(book.id);
         if (progress != null) {
           progressMap[book.id] = progress;
-          
-          // Load book to get total chapters (cache it)
-          try {
-            final epubBook = await _bookService.loadEpubBook(book.filePath);
-            final totalChapters = epubBook.Chapters?.length ?? 0;
-            if (totalChapters > 0) {
-              chaptersMap[book.id] = totalChapters;
-            }
-          } catch (e) {
-            // If loading fails, use estimate
-            debugPrint('Failed to load chapters for ${book.id}: $e');
-          }
         }
       }
-      
+
       setState(() {
         _books = books;
         _bookProgress = progressMap;
-        _bookTotalChapters = chaptersMap;
         _isLoading = false;
       });
       
