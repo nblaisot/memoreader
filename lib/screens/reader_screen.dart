@@ -177,18 +177,21 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (!_isLoading && mounted) {
-      _scheduleRepagination(retainCurrentPage: true);
-    }
-
-    if (state == AppLifecycleState.paused ||
+    final shouldPersistProgress = state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden) {
+        state == AppLifecycleState.hidden;
+
+    if (shouldPersistProgress) {
       final page = _engine?.getPage(_currentPageIndex);
       if (page != null) {
         unawaited(_saveProgress(page));
       }
       unawaited(_appStateService.setLastOpenedBook(widget.book.id));
+      return;
+    }
+
+    if (state == AppLifecycleState.resumed && !_isLoading && mounted) {
+      _scheduleRepagination(retainCurrentPage: true);
     }
   }
 
