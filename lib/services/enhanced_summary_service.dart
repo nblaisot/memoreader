@@ -622,8 +622,8 @@ class EnhancedSummaryService {
     if (fraction == null || fraction.isNaN || fraction.isInfinite) {
       return null;
     }
-    final percent = (fraction * 100).clamp(0, 100);
-    return percent;
+    final clamped = (fraction * 100).clamp(0.0, 100.0);
+    return clamped.toDouble();
   }
 
   String _extractFirstWords(String text, int wordCount) {
