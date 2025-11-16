@@ -784,7 +784,7 @@ class EnhancedSummaryService {
       return null;
     }
     final percent = (fraction * 100).clamp(0, 100);
-    return percent;
+    return (percent is double) ? percent : (percent as num).toDouble();
   }
 
   String _extractLastWords(String text, int wordCount) {
