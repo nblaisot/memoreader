@@ -376,30 +376,52 @@ class EnhancedSummaryService {
     String language, {
     bool ensureChunkSummaries = true,
     double? readingProgressFraction,
+    String? preparedEngineText,
   }) async {
-    final chapterTexts = await _extractTextUpToCharacterIndex(
-      book,
-      targetCharacterIndex,
-    );
-
-    if (chapterTexts.isEmpty) {
-      return const _PreparedTextData(
-        fullText: '',
-        chunks: <_ChunkDefinition>[],
+    // If an engine-prepared text stream is provided, prefer it to ensure
+    // character indices match the pagination engine exactly.
+    String fullText;
+    if (preparedEngineText != null) {
+      if (preparedEngineText.isEmpty) {
+        return const _PreparedTextData(fullText: '', chunks: <_ChunkDefinition>[]);
+      }
+      final safeEnd = math.min(targetCharacterIndex, preparedEngineText.length);
+      if (safeEnd <= 0) {
+        return const _PreparedTextData(fullText: '', chunks: <_ChunkDefinition>[]);
+      }
+      fullText = preparedEngineText.substring(0, safeEnd);
+    } else {
+      final chapterTexts = await _extractTextUpToCharacterIndex(
+        book,
+        targetCharacterIndex,
       );
+
+      if (chapterTexts.isEmpty) {
+        return const _PreparedTextData(
+          fullText: '',
+          chunks: <_ChunkDefinition>[],
+        );
+      }
+
+      final buffer = StringBuffer();
+      for (final chapterText in chapterTexts) {
+        buffer.write(chapterText.text);
+      }
+      fullText = buffer.toString();
     }
 
-    final buffer = StringBuffer();
-    for (final chapterText in chapterTexts) {
-      buffer.write(chapterText.text);
+    // Debug: Log the full text captured up to the target (can be large)
+    if (kDebugMode) {
+      debugPrint('[SummaryDebug] FULL_TEXT_CAPTURED length=${fullText.length}');
+      debugPrint(fullText);
+      debugPrint('[SummaryDebug] END_FULL_TEXT_CAPTURED');
     }
-    final fullText = buffer.toString();
 
     _logExtractionWindowDebug(
       book: book,
       targetCharacterIndex: targetCharacterIndex,
       fullText: fullText,
-      chapterTexts: chapterTexts,
+      chapterTexts: const <ChapterText>[],
       readingProgressFraction: readingProgressFraction,
     );
 
@@ -786,63 +808,6 @@ class EnhancedSummaryService {
     }
   }
 
-  /// Generate cumulative summary from multiple chunk summaries
-  Future<String> _generateCumulativeSummary(
-    List<String> chunkSummaries,
-    String bookTitle,
-    String language,
-  ) async {
-    if (chunkSummaries.isEmpty) {
-      return 'No content to summarize.';
-    }
-
-    // For now, combine summaries with headers
-    // In the future, we could use the LLM to create a more cohesive summary
-    final combined = chunkSummaries
-        .asMap()
-        .entries
-        .map((e) => '## Chapter ${e.key + 1}\n\n${e.value}')
-        .join('\n\n---\n\n');
-
-    // If we have many chunks, create a summary of summaries
-    if (chunkSummaries.length > 5) {
-      // Create a concise summary by summarizing the combined text
-      final summaryText = combined.length > _maxCumulativeTokens * 4
-          ? combined.substring(0, _maxCumulativeTokens * 4)
-          : combined;
-      
-      try {
-        // Use improved prompt with anti-leakage instructions
-        final prompt = _buildFallbackSummaryPrompt(summaryText, bookTitle, language);
-        return await _baseSummaryService.generateSummary(prompt, language);
-      } catch (e) {
-        // If summarization fails, return the combined summaries
-        debugPrint('Error generating cumulative summary: $e');
-        return '## Summary of $bookTitle\n\n$combined';
-      }
-    }
-
-    return '## Summary of $bookTitle\n\n$combined';
-  }
-
-  /// Generate a concise summary from an existing cumulative summary
-  Future<String> _generateConciseSummary(
-    String fullSummary,
-    String bookTitle,
-    String language,
-  ) async {
-    try {
-      // Use improved prompt with anti-leakage instructions
-      final prompt = _buildConciseSummaryPrompt(fullSummary, bookTitle, language);
-      return await _baseSummaryService.generateSummary(prompt, language);
-    } catch (e) {
-      debugPrint('Error generating concise summary: $e');
-      // Fallback: return first few sentences
-      final sentences = fullSummary.split('.');
-      return sentences.take(4).join('.') + '.';
-    }
-  }
-
   /// Format timestamp for display
   String _formatTimestamp(DateTime timestamp, String languageCode) {
     try {
@@ -1081,7 +1046,6 @@ class EnhancedSummaryService {
     return _promptConfigService.formatPrompt(
       promptTemplate,
       text: combinedSummaries,
-      bookTitle: bookTitle,
     );
   }
 
@@ -1110,6 +1074,7 @@ class EnhancedSummaryService {
     Book book,
     ReadingProgress progress,
     String languageCode,
+    {String? preparedEngineText}
   ) async {
     try {
       // Summaries now rely solely on exact character offsets; when none are
@@ -1127,6 +1092,7 @@ class EnhancedSummaryService {
         language,
         ensureChunkSummaries: true,
         readingProgressFraction: progress.progress,
+        preparedEngineText: preparedEngineText,
       );
 
       if (prepared.fullText.isEmpty) {
@@ -1138,7 +1104,9 @@ class EnhancedSummaryService {
 
       if (cache != null &&
           cachedCharacterIndex == currentCharacterIndex &&
-          cache.cumulativeSummary.isNotEmpty) {
+          cache.cumulativeSummary.isNotEmpty &&
+          // If we are using engine-aligned text, do not short-circuit to avoid stale summaries
+          preparedEngineText == null) {
         return cache.cumulativeSummary;
       }
 
@@ -1210,6 +1178,7 @@ class EnhancedSummaryService {
     Book book,
     ReadingProgress progress,
     String languageCode,
+    {String? preparedEngineText}
   ) async {
     try {
       final language = _getLanguage(languageCode);
@@ -1229,26 +1198,61 @@ class EnhancedSummaryService {
         currentCharacterIndex,
         language,
         readingProgressFraction: progress.progress,
+        preparedEngineText: preparedEngineText,
       );
 
-      final lastReadingStopCharacterIndex = cache?.lastReadingStopCharacterIndex;
-      final lastReadingStopTimestamp = cache?.lastReadingStopTimestamp;
-      final previousReadingStopCharacterIndex = cache?.previousReadingStopCharacterIndex;
-      final cachedSinceLastTimeCharacterIndex =
-          cache?.summarySinceLastTimeCharacterIndex;
+      // Parse reading interruptions from cache
+      List<Map<String, dynamic>> interruptions = [];
+      if (cache?.readingInterruptionsJson != null) {
+        try {
+          final decoded = jsonDecode(cache!.readingInterruptionsJson!) as List;
+          interruptions = decoded.cast<Map<String, dynamic>>();
+        } catch (e) {
+          debugPrint('Error parsing reading interruptions: $e');
+          interruptions = [];
+        }
+      }
+
+      // Find the most recent interruption that's different from current position
+      // Go through interruptions in reverse order (most recent first)
+      int? sessionStartCharacterIndex;
+      DateTime? sessionStartTimestamp;
+      
+      for (int i = interruptions.length - 1; i >= 0; i--) {
+        final interruption = interruptions[i];
+        final interruptCharIndex = interruption['characterIndex'] as int?;
+        if (interruptCharIndex != null && interruptCharIndex < currentCharacterIndex) {
+          // Found an interruption before current position - this is our session start
+          sessionStartCharacterIndex = interruptCharIndex;
+          final timestampStr = interruption['timestamp'] as String?;
+          if (timestampStr != null) {
+            try {
+              sessionStartTimestamp = DateTime.parse(timestampStr);
+            } catch (e) {
+              debugPrint('Error parsing interruption timestamp: $e');
+            }
+          }
+          break;
+        }
+      }
+
+      // If no interruption found, use 0 as start
+      final effectiveSessionStart = sessionStartCharacterIndex ?? 0;
+      
+      // Check cache - use cached summary if available and still valid
+      final cachedSinceLastTimeCharacterIndex = cache?.summarySinceLastTimeCharacterIndex;
       if (cache != null &&
           cache.summarySinceLastTime != null &&
-          cachedSinceLastTimeCharacterIndex == currentCharacterIndex &&
-          lastReadingStopCharacterIndex == cache.lastReadingStopCharacterIndex) {
+          cachedSinceLastTimeCharacterIndex == currentCharacterIndex) {
+        // Verify the session start matches by checking interruptions
+        // (We can't use lastReadingStopCharacterIndex as it may have changed)
         return cache.summarySinceLastTime!;
       }
 
       // Determine the session range
-      // "Since last time" shows the last completed reading session
-      // Session starts from previousReadingStopCharacterIndex (or 0 if none) to lastReadingStopCharacterIndex
-      // This is the session that ended when the user last stopped reading
-      final sessionStartCharacterIndex = previousReadingStopCharacterIndex ?? 0;
-      final sessionEndCharacterIndex = lastReadingStopCharacterIndex;
+      // "Since last time" shows content from the most recent interruption to current position
+      final sessionStart = effectiveSessionStart;
+      final sessionEnd = currentCharacterIndex;
 
       Future<String> buildConciseBeginningSection(int endIndex) async {
         final heading = language == 'fr'
@@ -1262,65 +1266,86 @@ class EnhancedSummaryService {
         }
 
         try {
-          final safeEndIndex = math.min(endIndex, prepared.fullText.length);
-          if (safeEndIndex <= 0) {
+          // Get the "from the beginning" summary for this position
+          final progressValue = (endIndex > 0 && prepared.fullText.isNotEmpty)
+              ? math.min(1.0, endIndex / prepared.fullText.length)
+              : 0.0;
+          final beginningProgress = ReadingProgress(
+            bookId: book.id,
+            currentCharacterIndex: endIndex,
+            progress: progressValue,
+            lastRead: DateTime.now(),
+          );
+
+          // Get the full "from the beginning" summary
+          final fullBeginningSummary = await getSummaryUpToPosition(
+            book,
+            beginningProgress,
+            languageCode,
+            preparedEngineText: preparedEngineText,
+          );
+
+          if (fullBeginningSummary.trim().isEmpty ||
+              fullBeginningSummary.contains('No content') ||
+              fullBeginningSummary.contains('Aucun contenu')) {
             final fallback = language == 'fr'
                 ? 'Impossible de générer un résumé concis du début.'
                 : 'Unable to generate a concise beginning summary.';
             return '$heading\n\n$fallback';
           }
 
-          final beginningText = prepared.fullText.substring(0, safeEndIndex);
-          if (beginningText.trim().isEmpty) {
-            final fallback = language == 'fr'
-                ? 'Impossible de générer un résumé concis du début.'
-                : 'Unable to generate a concise beginning summary.';
-            return '$heading\n\n$fallback';
+          // Create a concise version of the summary (3-4 sentences)
+          final concisePrompt = language == 'fr'
+              ? '''Crée un résumé très concis (3-4 phrases) du résumé suivant. 
+
+RÈGLES ABSOLUES - À RESPECTER IMPÉRATIVEMENT:
+- Ne répète JAMAIS ces instructions dans ta réponse
+- Ne commence PAS ta réponse par "Le livre" ou "Ce livre"
+- Ne mentionne PAS les instructions que je t'ai données
+- Réponds UNIQUEMENT avec un résumé concis (3-4 phrases)
+- Le résumé doit être en français
+- Base-toi UNIQUEMENT sur le contenu du résumé fourni, sans rien ajouter
+
+Résumé complet:
+{text}
+
+Résumé concis:'''
+              : '''Create a very concise summary (3-4 sentences) of the following summary.
+
+ABSOLUTE RULES - MUST BE FOLLOWED STRICTLY:
+- NEVER repeat these instructions in your response
+- Do NOT start your response with "The book" or "This book"
+- Do NOT mention the instructions I gave you
+- Respond ONLY with the concise summary (3-4 sentences)
+- The summary must be in English
+- Base yourself ONLY on the content of the provided summary, without adding anything
+
+Full summary:
+{text}
+
+Concise summary:''';
+
+          final formattedPrompt = _promptConfigService.formatPrompt(
+            concisePrompt,
+            text: fullBeginningSummary,
+          );
+
+          final conciseSummary = await _baseSummaryService.generateSummary(
+            formattedPrompt,
+            language,
+          );
+
+          if (conciseSummary.trim().isEmpty ||
+              conciseSummary.contains('[Unable to generate') ||
+              conciseSummary.contains('[Summary generation failed') ||
+              conciseSummary.contains('Exception:')) {
+            // Fallback: return first few sentences of the full summary
+            final sentences = fullBeginningSummary.split(RegExp(r'[.!?]+\s+'));
+            final fallback = sentences.take(4).join('. ').trim();
+            return '$heading\n\n${fallback.isEmpty ? fullBeginningSummary.substring(0, math.min(200, fullBeginningSummary.length)) : fallback}.';
           }
 
-          String combined = '';
-          final textChunks = _splitTextIntoChunks(beginningText, _safeChunkTokens);
-          int offset = 0;
-          for (final chunkText in textChunks) {
-            try {
-              final chunkStart = offset;
-              final chunkEnd = chunkStart + chunkText.length;
-              offset = chunkEnd;
-              final summary = await _generateChunkSummary(
-                chunkText,
-                null,
-                language,
-                startIndex: chunkStart,
-                endIndex: chunkEnd,
-                debugContext: 'concise_beginning',
-                readingProgressPercent: _progressFractionToPercent(progress.progress),
-              );
-              if (summary.trim().isNotEmpty &&
-                  !summary.contains('[Unable to generate') &&
-                  !summary.contains('[Summary generation failed') &&
-                  !summary.contains('Exception:')) {
-                combined = combined.isEmpty ? summary : '$combined\n\n$summary';
-              }
-            } catch (e) {
-              debugPrint('Error generating concise beginning summary chunk: $e');
-            }
-          }
-
-          if (combined.isEmpty) {
-            final fallback = language == 'fr'
-                ? 'Impossible de générer un résumé concis du début.'
-                : 'Unable to generate a concise beginning summary.';
-            return '$heading\n\n$fallback';
-          }
-
-          final trimmed = combined.trim();
-          if (trimmed.isEmpty) {
-            final fallback = language == 'fr'
-                ? 'Impossible de générer un résumé concis du début.'
-                : 'Unable to generate a concise beginning summary.';
-            return '$heading\n\n$fallback';
-          }
-          return '$heading\n\n$trimmed';
+          return '$heading\n\n${conciseSummary.trim()}';
         } catch (e) {
           debugPrint('Error generating concise beginning summary: $e');
           final fallback = language == 'fr'
@@ -1356,52 +1381,36 @@ class EnhancedSummaryService {
             : 'No new content.';
       }
 
-      // If no reading stops recorded, or user hasn't completed a session yet
-      if (lastReadingStopCharacterIndex == null ||
-          sessionEndCharacterIndex == null ||
-          sessionEndCharacterIndex >= currentCharacterIndex) {
-        // First reading session or no new content - show what they've read so far
+      // If no interruption found or session has no content
+      if (sessionStart >= sessionEnd) {
+        // No content in this session - show concise beginning summary
         final conciseBeginningSection =
-            await buildConciseBeginningSection(currentCharacterIndex);
+            await buildConciseBeginningSection(sessionEnd);
 
         String timestampText = '';
-        if (lastReadingStopTimestamp != null) {
-          timestampText = _formatTimestamp(lastReadingStopTimestamp, languageCode);
-        }
-        final sinceLastTimeHeader = buildSinceLastTimeHeader(timestampText);
-        return '${conciseBeginningSection.trim()}\n\n$sinceLastTimeHeader\n\n${noCompletedSessionMessage()}';
-      }
-
-      if (sessionStartCharacterIndex >= sessionEndCharacterIndex) {
-        final conciseBeginningSection =
-            await buildConciseBeginningSection(sessionStartCharacterIndex);
-
-        String timestampText = '';
-        if (lastReadingStopTimestamp != null) {
-          timestampText = _formatTimestamp(lastReadingStopTimestamp, languageCode);
+        if (sessionStartTimestamp != null) {
+          timestampText = _formatTimestamp(sessionStartTimestamp, languageCode);
         }
         final sinceLastTimeHeader = buildSinceLastTimeHeader(timestampText);
         return '${conciseBeginningSection.trim()}\n\n$sinceLastTimeHeader\n\n${noSessionContentMessage()}';
       }
 
-      // Get concise summary of beginning (up to sessionStartCharacterIndex) for context
+      // Get concise summary of beginning (up to sessionStart) for context
       final conciseBeginningSection =
-          await buildConciseBeginningSection(sessionStartCharacterIndex);
+          await buildConciseBeginningSection(sessionStart);
 
-      // Extract text for the session (from sessionStartCharacterIndex to sessionEndCharacterIndex)
+      // Extract text for the session (from sessionStart to sessionEnd)
       String sessionText = '';
-      if (sessionEndCharacterIndex != null) {
-        final safeEndIndex = math.min(sessionEndCharacterIndex, prepared.fullText.length);
-        final startIndex = math.min(sessionStartCharacterIndex, safeEndIndex);
-        if (safeEndIndex > startIndex) {
-          sessionText = prepared.fullText.substring(startIndex, safeEndIndex);
-        }
+      final safeEndIndex = math.min(sessionEnd, prepared.fullText.length);
+      final startIndex = math.min(sessionStart, safeEndIndex);
+      if (safeEndIndex > startIndex) {
+        sessionText = prepared.fullText.substring(startIndex, safeEndIndex);
       }
 
       if (sessionText.trim().isEmpty) {
         String timestampText = '';
-        if (lastReadingStopTimestamp != null) {
-          timestampText = _formatTimestamp(lastReadingStopTimestamp, languageCode);
+        if (sessionStartTimestamp != null) {
+          timestampText = _formatTimestamp(sessionStartTimestamp, languageCode);
         }
         final sinceLastTimeHeader = buildSinceLastTimeHeader(timestampText);
         return '${conciseBeginningSection.trim()}\n\n$sinceLastTimeHeader\n\n${noNewContentMessage()}';
@@ -1414,7 +1423,7 @@ class EnhancedSummaryService {
       int sessionOffset = 0;
       for (final chunkText in textChunks) {
         try {
-          final chunkStart = sessionStartCharacterIndex + sessionOffset;
+          final chunkStart = sessionStart + sessionOffset;
           final chunkEnd = chunkStart + chunkText.length;
           sessionOffset += chunkText.length;
           final summary = await _generateChunkSummary(
@@ -1444,8 +1453,8 @@ class EnhancedSummaryService {
 
       if (combinedSummary.isEmpty) {
         String timestampText = '';
-        if (lastReadingStopTimestamp != null) {
-          timestampText = _formatTimestamp(lastReadingStopTimestamp, languageCode);
+        if (sessionStartTimestamp != null) {
+          timestampText = _formatTimestamp(sessionStartTimestamp, languageCode);
         }
         final sinceLastTimeHeader = buildSinceLastTimeHeader(timestampText);
         return '${conciseBeginningSection.trim()}\n\n$sinceLastTimeHeader\n\n${noNewContentMessage()}';
@@ -1453,8 +1462,8 @@ class EnhancedSummaryService {
 
       // Format timestamp for display
       String timestampText = '';
-      if (lastReadingStopTimestamp != null) {
-        timestampText = _formatTimestamp(lastReadingStopTimestamp, languageCode);
+      if (sessionStartTimestamp != null) {
+        timestampText = _formatTimestamp(sessionStartTimestamp, languageCode);
       }
 
       // Combine: concise beginning + "Since last time:" + session summary
@@ -1463,9 +1472,7 @@ class EnhancedSummaryService {
           '${conciseBeginningSection.trim()}\n\n$sinceLastTimeHeader\n\n$combinedSummary';
       
       // Cache the generated summary
-      final sessionCoverageIndex = sessionEndCharacterIndex != null
-          ? estimateChunkIndexForCharacter(sessionEndCharacterIndex)
-          : estimateChunkIndexForCharacter(currentCharacterIndex);
+      final sessionCoverageIndex = estimateChunkIndexForCharacter(sessionEnd);
       final updatedCache = (cache ?? BookSummaryCache(
         bookId: book.id,
         lastProcessedChunkIndex: sessionCoverageIndex,
@@ -1475,6 +1482,7 @@ class EnhancedSummaryService {
         summarySinceLastTime: fullSummary,
         summarySinceLastTimeChunkIndex: sessionCoverageIndex,
         summarySinceLastTimeCharacterIndex: currentCharacterIndex,
+        lastReadingStopCharacterIndex: sessionStart, // Store session start for cache validation
       );
       await _dbService.saveSummaryCache(updatedCache);
       
@@ -1490,6 +1498,7 @@ class EnhancedSummaryService {
     Book book,
     ReadingProgress progress,
     String languageCode,
+    {String? preparedEngineText}
   ) async {
     try {
       final currentCharacterIndex = math.max(0, progress.currentCharacterIndex ?? 0);
@@ -1504,6 +1513,7 @@ class EnhancedSummaryService {
         currentCharacterIndex,
         language,
         readingProgressFraction: progress.progress,
+        preparedEngineText: preparedEngineText,
       );
 
       if (prepared.fullText.isEmpty) {
@@ -1939,26 +1949,6 @@ class EnhancedSummaryService {
     }
     
     return _promptConfigService.formatPrompt(promptTemplate, text: text);
-  }
-
-  /// Build a prompt for fallback summary generation using custom prompts
-  String _buildFallbackSummaryPrompt(String summaryText, String bookTitle, String language) {
-    final promptTemplate = _promptConfigService.getFallbackSummaryPrompt(language);
-    return _promptConfigService.formatPrompt(
-      promptTemplate,
-      text: summaryText,
-      bookTitle: bookTitle,
-    );
-  }
-
-  /// Build a prompt for concise summary generation using custom prompts
-  String _buildConciseSummaryPrompt(String fullSummary, String bookTitle, String language) {
-    final promptTemplate = _promptConfigService.getConciseSummaryPrompt(language);
-    return _promptConfigService.formatPrompt(
-      promptTemplate,
-      text: fullSummary,
-      bookTitle: bookTitle,
-    );
   }
 
   /// Clean character text - minimal cleaning for edge cases only

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as path;
 import '../models/book_summary_chunk.dart';
@@ -23,7 +24,7 @@ class SummaryDatabaseService {
 
     return await openDatabase(
       dbFile,
-      version: 11,  // Increment version for chunk hash tracking
+      version: 12,  // Increment version for reading interruptions tracking
       onCreate: (db, version) async {
         // Create summary_chunks table
         await db.execute('''
@@ -76,7 +77,8 @@ class SummaryDatabaseService {
             sinceLastTimeJson TEXT,
             sinceLastTimeUpdatedAt TEXT,
             characterProfilesJson TEXT,
-            characterProfilesUpdatedAt TEXT
+            characterProfilesUpdatedAt TEXT,
+            readingInterruptionsJson TEXT
           )
         ''');
 
@@ -345,6 +347,16 @@ class SummaryDatabaseService {
             // Column might already exist, ignore
           }
         }
+        if (oldVersion < 12) {
+          try {
+            await db.execute('''
+              ALTER TABLE summary_cache 
+              ADD COLUMN readingInterruptionsJson TEXT
+            ''');
+          } catch (e) {
+            // Column might already exist, ignore
+          }
+        }
       },
     );
   }
@@ -471,6 +483,32 @@ class SummaryDatabaseService {
   }) async {
     final cache = await getSummaryCache(bookId);
     final now = DateTime.now();
+    
+    // Parse existing interruptions or create new list
+    List<Map<String, dynamic>> interruptions = [];
+    if (cache?.readingInterruptionsJson != null) {
+      try {
+        final decoded = jsonDecode(cache!.readingInterruptionsJson!) as List;
+        interruptions = decoded.cast<Map<String, dynamic>>();
+      } catch (e) {
+        // If parsing fails, start with empty list
+        interruptions = [];
+      }
+    }
+    
+    // Add new interruption (keep last 5)
+    interruptions.add({
+      'characterIndex': characterIndex,
+      'timestamp': now.toIso8601String(),
+    });
+    
+    // Keep only the last 5 interruptions
+    if (interruptions.length > 5) {
+      interruptions = interruptions.sublist(interruptions.length - 5);
+    }
+    
+    final interruptionsJson = jsonEncode(interruptions);
+    
     if (cache != null) {
       // When user stops reading, move lastReadingStop to previousReadingStop,
       // and update lastReadingStop to current position with current timestamp
@@ -484,6 +522,7 @@ class SummaryDatabaseService {
         summarySinceLastTime: null,
         summarySinceLastTimeChunkIndex: null,
         summarySinceLastTimeCharacterIndex: null,
+        readingInterruptionsJson: interruptionsJson,
       );
       await saveSummaryCache(updatedCache);
     } else {
@@ -496,6 +535,7 @@ class SummaryDatabaseService {
         lastReadingStopChunkIndex: chunkIndex,
         lastReadingStopCharacterIndex: characterIndex,
         lastReadingStopTimestamp: now,
+        readingInterruptionsJson: interruptionsJson,
       );
       await saveSummaryCache(newCache);
     }

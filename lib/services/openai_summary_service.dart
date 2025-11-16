@@ -36,6 +36,13 @@ class OpenAISummaryService implements SummaryService {
           ? '${prompt.substring(0, maxLength)}...'
           : prompt;
 
+      if (kDebugMode) {
+        debugPrint('[LLM] OpenAI request: model=gpt-3.5-turbo, promptLength=${safePrompt.length}');
+        debugPrint('[LLM] OpenAI prompt begin >>>');
+        debugPrint(safePrompt);
+        debugPrint('[LLM] OpenAI prompt end <<<');
+      }
+
       final response = await http.post(
         Uri.parse(_apiUrl),
         headers: {
@@ -62,6 +69,9 @@ class OpenAISummaryService implements SummaryService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final summary = data['choices'][0]['message']['content'] as String;
+        if (kDebugMode) {
+          debugPrint('[LLM] OpenAI response ok: summaryLength=${summary.length}');
+        }
         return summary.trim();
       } else {
         final errorData = jsonDecode(response.body);

@@ -163,6 +163,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _engine?.removeListener(_handleEngineUpdate);
     _pageController.dispose();
     _progressDebounce?.cancel();
+    
+    // Always update reading stop when leaving reader (all interruptions are tracked)
+    _updateLastReadingStopOnExit();
+    
     super.dispose();
   }
 
@@ -185,6 +189,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       final page = _engine?.getPage(_currentPageIndex);
       if (page != null) {
         unawaited(_saveProgress(page));
+        // Update reading stop when app goes to background
+        unawaited(_updateLastReadingStopOnExit());
       }
       unawaited(_appStateService.setLastOpenedBook(widget.book.id));
       return;
@@ -463,9 +469,24 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       );
       await _bookService.saveReadingProgress(progress);
       _savedProgress = progress;
+      // Note: updateLastReadingStop is NOT called here anymore
+      // It's only called when actually leaving the reader screen
+    } catch (_) {
+      // Saving progress is best-effort; ignore failures.
+    }
+  }
+
+  /// Update the last reading stop position when leaving the reader
+  /// This is called when the user actually stops reading (not just saving progress)
+  Future<void> _updateLastReadingStopOnExit() async {
+    try {
+      final page = _engine?.getPage(_currentPageIndex);
+      if (page == null) return;
+
       final chunkIndex = _summaryService != null
           ? _summaryService!.estimateChunkIndexForCharacter(page.startCharIndex ?? 0)
           : EnhancedSummaryService.computeChunkIndexForCharacterStatic(page.startCharIndex ?? 0);
+      
       unawaited(_summaryDatabase.updateLastReadingStop(
         widget.book.id,
         chunkIndex: chunkIndex,
@@ -479,7 +500,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         ));
       }
     } catch (_) {
-      // Saving progress is best-effort; ignore failures.
+      // Updating reading stop is best-effort; ignore failures.
     }
   }
 
@@ -1062,13 +1083,33 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       lastRead: DateTime.now(),
     );
 
-    Navigator.push(
+    // Build an engine-aligned full text to guarantee index consistency
+    final engineTextBuffer = StringBuffer();
+    for (final block in _docBlocks) {
+      if (block is TextDocumentBlock) {
+        engineTextBuffer.write(block.text);
+      } else if (block is ImageDocumentBlock) {
+        // Engine counts images as a single character in totalCharacters.
+        // Use one placeholder character to preserve indices alignment.
+        engineTextBuffer.write('\uFFFC');
+      }
+    }
+    final engineFullText = engineTextBuffer.toString();
+
+    // Record interruption when going to summaries (all interruptions are tracked)
+    final page = _engine?.getPage(_currentPageIndex);
+    if (page != null) {
+      unawaited(_updateLastReadingStopOnExit());
+    }
+    
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => SummaryScreen(
           book: widget.book,
           progress: progress,
           enhancedSummaryService: _summaryService!,
+          engineFullText: engineFullText,
         ),
       ),
     );

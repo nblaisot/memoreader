@@ -31,6 +31,7 @@ class BookSummaryCache {
   final DateTime? sinceLastTimeUpdatedAt;
   final String? characterProfilesJson; // Structured character profiles payload
   final DateTime? characterProfilesUpdatedAt;
+  final String? readingInterruptionsJson; // JSON array of recent reading interruptions (last 5)
   final GeneralSummaryPayload? _generalSummary;
   final SinceLastTimePayload? _sinceLastTimePayload;
   final CharacterProfilesPayload? _characterProfilesPayload;
@@ -66,6 +67,7 @@ class BookSummaryCache {
     this.sinceLastTimeUpdatedAt,
     this.characterProfilesJson,
     this.characterProfilesUpdatedAt,
+    this.readingInterruptionsJson,
     GeneralSummaryPayload? generalSummary,
     SinceLastTimePayload? sinceLastTimePayload,
     CharacterProfilesPayload? characterProfilesPayload,
@@ -122,6 +124,7 @@ class BookSummaryCache {
       'sinceLastTimeUpdatedAt': sinceLastTimeUpdatedAt?.toIso8601String(),
       'characterProfilesJson': generatedCharacterProfilesJson,
       'characterProfilesUpdatedAt': characterProfilesUpdatedAt?.toIso8601String(),
+      'readingInterruptionsJson': readingInterruptionsJson,
     };
   }
 
@@ -176,6 +179,7 @@ class BookSummaryCache {
       characterProfilesUpdatedAt: json['characterProfilesUpdatedAt'] != null
           ? DateTime.parse(json['characterProfilesUpdatedAt'] as String)
           : null,
+      readingInterruptionsJson: json['readingInterruptionsJson'] as String?,
     );
   }
 
@@ -213,6 +217,7 @@ class BookSummaryCache {
     String? characterProfilesJson,
     DateTime? characterProfilesUpdatedAt,
     CharacterProfilesPayload? characterProfilesPayload,
+    String? readingInterruptionsJson,
   }) {
     return BookSummaryCache(
       bookId: bookId ?? this.bookId,
@@ -249,6 +254,7 @@ class BookSummaryCache {
       characterProfilesJson: characterProfilesJson ?? this.characterProfilesJson,
       characterProfilesUpdatedAt: characterProfilesUpdatedAt ?? this.characterProfilesUpdatedAt,
       characterProfilesPayload: characterProfilesPayload ?? _characterProfilesPayload,
+      readingInterruptionsJson: readingInterruptionsJson ?? this.readingInterruptionsJson,
     );
   }
 }

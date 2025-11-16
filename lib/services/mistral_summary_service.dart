@@ -40,6 +40,13 @@ class MistralSummaryService implements SummaryService {
           ? '${prompt.substring(0, maxLength)}...'
           : prompt;
 
+      if (kDebugMode) {
+        debugPrint('[LLM] Mistral request: model=mistral-small-latest, promptLength=${safePrompt.length}');
+        debugPrint('[LLM] Mistral prompt begin >>>');
+        debugPrint(safePrompt);
+        debugPrint('[LLM] Mistral prompt end <<<');
+      }
+
       final response = await http.post(
         Uri.parse(_apiUrl),
         headers: {
@@ -66,6 +73,9 @@ class MistralSummaryService implements SummaryService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final summary = data['choices'][0]['message']['content'] as String;
+        if (kDebugMode) {
+          debugPrint('[LLM] Mistral response ok: summaryLength=${summary.length}');
+        }
         return summary.trim();
       } else {
         final errorData = jsonDecode(response.body);

@@ -19,12 +19,14 @@ class SummaryScreen extends StatefulWidget {
   final Book book;
   final ReadingProgress progress;
   final EnhancedSummaryService enhancedSummaryService;
+  final String? engineFullText;
 
   const SummaryScreen({
     super.key,
     required this.book,
     required this.progress,
     required this.enhancedSummaryService,
+    this.engineFullText,
   });
 
   @override
@@ -123,18 +125,21 @@ class _SummaryScreenState extends State<SummaryScreen> {
           widget.book,
           widget.progress,
           languageCode,
+          preparedEngineText: widget.engineFullText,
         );
       } else if (_selectedSummaryType == SummaryType.characters) {
         summary = await widget.enhancedSummaryService.getCharactersSummary(
           widget.book,
           widget.progress,
           languageCode,
+          preparedEngineText: widget.engineFullText,
         );
       } else {
         summary = await widget.enhancedSummaryService.getSummaryUpToPosition(
           widget.book,
           widget.progress,
           languageCode,
+          preparedEngineText: widget.engineFullText,
         );
       }
 

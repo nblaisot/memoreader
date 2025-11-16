@@ -58,8 +58,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     'characterExtraction': false,
     'batchSummary': false,
     'narrativeSynthesis': false,
-    'fallbackSummary': false,
-    'conciseSummary': false,
     'textAction': false,
   };
   
@@ -140,10 +138,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'batchSummary_en',
       'narrativeSynthesis_fr',
       'narrativeSynthesis_en',
-      'fallbackSummary_fr',
-      'fallbackSummary_en',
-      'conciseSummary_fr',
-      'conciseSummary_en',
       'textActionLabel_fr',
       'textActionLabel_en',
       'textActionPrompt_fr',
@@ -168,12 +162,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           break;
         case 'narrativeSynthesis':
           promptText = _promptConfigService.getNarrativeSynthesisPrompt(language);
-          break;
-        case 'fallbackSummary':
-          promptText = _promptConfigService.getFallbackSummaryPrompt(language);
-          break;
-        case 'conciseSummary':
-          promptText = _promptConfigService.getConciseSummaryPrompt(language);
           break;
         case 'textActionLabel':
           promptText = _promptConfigService.getTextActionLabel(language);
@@ -218,12 +206,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           break;
         case 'narrativeSynthesis':
           await _promptConfigService.setNarrativeSynthesisPrompt(language, controller.text);
-          break;
-        case 'fallbackSummary':
-          await _promptConfigService.setFallbackSummaryPrompt(language, controller.text);
-          break;
-        case 'conciseSummary':
-          await _promptConfigService.setConciseSummaryPrompt(language, controller.text);
           break;
         case 'textActionLabel':
           await _promptConfigService.setTextActionLabel(language, controller.text);
@@ -270,12 +252,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             break;
           case 'narrativeSynthesis':
             promptText = _promptConfigService.getNarrativeSynthesisPrompt(language);
-            break;
-          case 'fallbackSummary':
-            promptText = _promptConfigService.getFallbackSummaryPrompt(language);
-            break;
-          case 'conciseSummary':
-            promptText = _promptConfigService.getConciseSummaryPrompt(language);
             break;
           case 'textActionLabel':
             promptText = _promptConfigService.getTextActionLabel(language);
@@ -630,22 +606,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         fields: [
           _PromptFieldConfig('narrativeSynthesis_fr', l10n.narrativeSynthesisPromptFr),
           _PromptFieldConfig('narrativeSynthesis_en', l10n.narrativeSynthesisPromptEn),
-        ],
-      ),
-      _PromptSection(
-        stateKey: 'fallbackSummary',
-        title: l10n.fallbackSummaryPrompt,
-        fields: [
-          _PromptFieldConfig('fallbackSummary_fr', l10n.fallbackSummaryPromptFr),
-          _PromptFieldConfig('fallbackSummary_en', l10n.fallbackSummaryPromptEn),
-        ],
-      ),
-      _PromptSection(
-        stateKey: 'conciseSummary',
-        title: l10n.conciseSummaryPrompt,
-        fields: [
-          _PromptFieldConfig('conciseSummary_fr', l10n.conciseSummaryPromptFr),
-          _PromptFieldConfig('conciseSummary_en', l10n.conciseSummaryPromptEn),
         ],
       ),
       _PromptSection(
