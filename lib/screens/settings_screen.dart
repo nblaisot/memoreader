@@ -29,6 +29,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _showMistralApiKey = false;
   double _horizontalPadding = 30.0;
   double _verticalPadding = 50.0;
+  final Map<String, bool> _expansionState = {
+    'chunkSummary': false,
+    'characterExtraction': false,
+    'batchSummary': false,
+    'narrativeSynthesis': false,
+    'fallbackSummary': false,
+    'conciseSummary': false,
+    'textAction': false,
+  };
   
   // Prompt controllers
   final Map<String, TextEditingController> _promptControllers = {};
@@ -533,6 +542,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  List<Widget> _buildExpansionChildren(
+    String sectionKey,
+    List<Widget> Function() builder, {
+    CrossAxisAlignment crossAxisAlignment = CrossAxisAlignment.center,
+  }) {
+    if (!(_expansionState[sectionKey] ?? false)) {
+      return const [];
+    }
+    return [
+      Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: crossAxisAlignment,
+          children: builder(),
+        ),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -829,126 +857,122 @@ class _SettingsScreenState extends State<SettingsScreen> {
           // Chunk Summary Prompts
           ExpansionTile(
             title: Text(l10n.chunkSummaryPrompt),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    _buildPromptTextField('chunkSummary_fr', l10n.chunkSummaryPromptFr),
-                    _buildPromptTextField('chunkSummary_en', l10n.chunkSummaryPromptEn),
-                  ],
-                ),
-              ),
-            ],
+            initiallyExpanded: _expansionState['chunkSummary'] ?? false,
+            onExpansionChanged: (expanded) {
+              setState(() {
+                _expansionState['chunkSummary'] = expanded;
+              });
+            },
+            children: _buildExpansionChildren('chunkSummary', () => [
+                  _buildPromptTextField('chunkSummary_fr', l10n.chunkSummaryPromptFr),
+                  _buildPromptTextField('chunkSummary_en', l10n.chunkSummaryPromptEn),
+                ]),
           ),
           
           // Character Extraction Prompts
           ExpansionTile(
             title: Text(l10n.characterExtractionPrompt),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    _buildPromptTextField('characterExtraction_fr', l10n.characterExtractionPromptFr),
-                    _buildPromptTextField('characterExtraction_en', l10n.characterExtractionPromptEn),
-                  ],
-                ),
-              ),
-            ],
+            initiallyExpanded: _expansionState['characterExtraction'] ?? false,
+            onExpansionChanged: (expanded) {
+              setState(() {
+                _expansionState['characterExtraction'] = expanded;
+              });
+            },
+            children: _buildExpansionChildren('characterExtraction', () => [
+                  _buildPromptTextField('characterExtraction_fr', l10n.characterExtractionPromptFr),
+                  _buildPromptTextField('characterExtraction_en', l10n.characterExtractionPromptEn),
+                ]),
           ),
           
           // Batch Summary Prompts
           ExpansionTile(
             title: Text(l10n.batchSummaryPrompt),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    _buildPromptTextField('batchSummary_fr', l10n.batchSummaryPromptFr),
-                    _buildPromptTextField('batchSummary_en', l10n.batchSummaryPromptEn),
-                  ],
-                ),
-              ),
-            ],
+            initiallyExpanded: _expansionState['batchSummary'] ?? false,
+            onExpansionChanged: (expanded) {
+              setState(() {
+                _expansionState['batchSummary'] = expanded;
+              });
+            },
+            children: _buildExpansionChildren('batchSummary', () => [
+                  _buildPromptTextField('batchSummary_fr', l10n.batchSummaryPromptFr),
+                  _buildPromptTextField('batchSummary_en', l10n.batchSummaryPromptEn),
+                ]),
           ),
           
           // Narrative Synthesis Prompts
           ExpansionTile(
             title: Text(l10n.narrativeSynthesisPrompt),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    _buildPromptTextField('narrativeSynthesis_fr', l10n.narrativeSynthesisPromptFr),
-                    _buildPromptTextField('narrativeSynthesis_en', l10n.narrativeSynthesisPromptEn),
-                  ],
-                ),
-              ),
-            ],
+            initiallyExpanded: _expansionState['narrativeSynthesis'] ?? false,
+            onExpansionChanged: (expanded) {
+              setState(() {
+                _expansionState['narrativeSynthesis'] = expanded;
+              });
+            },
+            children: _buildExpansionChildren('narrativeSynthesis', () => [
+                  _buildPromptTextField('narrativeSynthesis_fr', l10n.narrativeSynthesisPromptFr),
+                  _buildPromptTextField('narrativeSynthesis_en', l10n.narrativeSynthesisPromptEn),
+                ]),
           ),
           
           // Fallback Summary Prompts
           ExpansionTile(
             title: Text(l10n.fallbackSummaryPrompt),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    _buildPromptTextField('fallbackSummary_fr', l10n.fallbackSummaryPromptFr),
-                    _buildPromptTextField('fallbackSummary_en', l10n.fallbackSummaryPromptEn),
-                  ],
-                ),
-              ),
-            ],
+            initiallyExpanded: _expansionState['fallbackSummary'] ?? false,
+            onExpansionChanged: (expanded) {
+              setState(() {
+                _expansionState['fallbackSummary'] = expanded;
+              });
+            },
+            children: _buildExpansionChildren('fallbackSummary', () => [
+                  _buildPromptTextField('fallbackSummary_fr', l10n.fallbackSummaryPromptFr),
+                  _buildPromptTextField('fallbackSummary_en', l10n.fallbackSummaryPromptEn),
+                ]),
           ),
           
           // Concise Summary Prompts
           ExpansionTile(
             title: Text(l10n.conciseSummaryPrompt),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    _buildPromptTextField('conciseSummary_fr', l10n.conciseSummaryPromptFr),
-                    _buildPromptTextField('conciseSummary_en', l10n.conciseSummaryPromptEn),
-                  ],
-                ),
-              ),
-            ],
+            initiallyExpanded: _expansionState['conciseSummary'] ?? false,
+            onExpansionChanged: (expanded) {
+              setState(() {
+                _expansionState['conciseSummary'] = expanded;
+              });
+            },
+            children: _buildExpansionChildren('conciseSummary', () => [
+                  _buildPromptTextField('conciseSummary_fr', l10n.conciseSummaryPromptFr),
+                  _buildPromptTextField('conciseSummary_en', l10n.conciseSummaryPromptEn),
+                ]),
           ),
 
           // Reader text selection action
           ExpansionTile(
             title: Text(l10n.textSelectionActionSettings),
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      l10n.textSelectionActionDescription(
-                        Localizations.localeOf(context).languageCode,
-                        'selected text',
+            initiallyExpanded: _expansionState['textAction'] ?? false,
+            onExpansionChanged: (expanded) {
+              setState(() {
+                _expansionState['textAction'] = expanded;
+              });
+            },
+            children: _buildExpansionChildren(
+              'textAction',
+              () => [
+                Text(
+                  l10n.textSelectionActionDescription(
+                    Localizations.localeOf(context).languageCode,
+                    'selected text',
+                  ),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Colors.grey[600],
                       ),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Colors.grey[600],
-                          ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildActionLabelField('textActionLabel_fr', l10n.textSelectionActionLabelFr),
-                    _buildActionLabelField('textActionLabel_en', l10n.textSelectionActionLabelEn),
-                    _buildPromptTextField('textActionPrompt_fr', l10n.textSelectionActionPromptFr),
-                    _buildPromptTextField('textActionPrompt_en', l10n.textSelectionActionPromptEn),
-                  ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+                _buildActionLabelField('textActionLabel_fr', l10n.textSelectionActionLabelFr),
+                _buildActionLabelField('textActionLabel_en', l10n.textSelectionActionLabelEn),
+                _buildPromptTextField('textActionPrompt_fr', l10n.textSelectionActionPromptFr),
+                _buildPromptTextField('textActionPrompt_en', l10n.textSelectionActionPromptEn),
+              ],
+              crossAxisAlignment: CrossAxisAlignment.start,
+            ),
           ),
 
           const SizedBox(height: 16),

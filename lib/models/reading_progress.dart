@@ -45,8 +45,7 @@ class ReadingProgress {
       contentCfi: json['contentCfi'] as String?,
       progress: (json['progress'] as num?)?.toDouble(),
       currentWordIndex: json['currentWordIndex'] as int?,
-      currentCharacterIndex: (json['currentCharacterIndex'] as int?) ??
-          json['currentWordIndex'] as int?,
+      currentCharacterIndex: json['currentCharacterIndex'] as int?,
     );
   }
 
