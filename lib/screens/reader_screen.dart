@@ -272,6 +272,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       textHeightBehavior: metrics.textHeightBehavior,
       textScaler: metrics.textScaler,
       cacheManager: _paginationCacheManager,
+      viewportInsetBottom: metrics.viewportBottomInset,
     );
 
     final targetPageIndex =
@@ -315,6 +316,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     // Calculate available height: screen height minus only system padding
     final systemVerticalPadding =
         mediaQuery.padding.top + mediaQuery.padding.bottom;
+    final bottomSafeInset =
+        math.max(mediaQuery.padding.bottom, mediaQuery.viewPadding.bottom);
+    final keyboardInset = mediaQuery.viewInsets.bottom;
+    final viewportInsetBottom = math.max(bottomSafeInset, keyboardInset);
     final maxWidth = math.max(120.0, size.width - systemHorizontalPadding);
     final maxHeight = math.max(160.0, size.height - systemVerticalPadding);
 
@@ -341,6 +346,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       baseTextStyle: baseStyle,
       textHeightBehavior: textHeightBehavior,
       textScaler: MediaQuery.textScalerOf(context),
+      viewportBottomInset: viewportInsetBottom,
     );
   }
 
@@ -349,12 +355,15 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         math.max(120.0, metrics.maxWidth - _horizontalPadding * 2);
     final adjustedHeight =
         math.max(160.0, metrics.maxHeight - _verticalPadding * 2);
+    final adjustedInset =
+        math.max(0.0, metrics.viewportBottomInset - _verticalPadding);
     return _PageMetrics(
       maxWidth: adjustedWidth,
       maxHeight: adjustedHeight,
       baseTextStyle: metrics.baseTextStyle,
       textHeightBehavior: metrics.textHeightBehavior,
       textScaler: metrics.textScaler,
+      viewportBottomInset: adjustedInset,
     );
   }
 
@@ -1557,6 +1566,7 @@ class _PageMetrics {
     required this.baseTextStyle,
     required this.textHeightBehavior,
     required this.textScaler,
+    required this.viewportBottomInset,
   });
 
   final double maxWidth;
@@ -1564,6 +1574,7 @@ class _PageMetrics {
   final TextStyle baseTextStyle;
   final TextHeightBehavior textHeightBehavior;
   final TextScaler textScaler;
+  final double viewportBottomInset;
 }
 
 class _PageContentView extends StatefulWidget {

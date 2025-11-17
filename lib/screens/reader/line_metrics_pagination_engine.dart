@@ -28,6 +28,8 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
     required TextHeightBehavior textHeightBehavior,
     required TextScaler textScaler,
     required PaginationCacheManager? cacheManager,
+    required double viewportInsetBottom,
+    required bool tracingEnabled,
   })  : _bookId = bookId,
         _blocks = blocks,
         _baseTextStyle = baseTextStyle,
@@ -37,21 +39,27 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
         _textHeightBehavior = textHeightBehavior,
         _textScaler = textScaler,
         _cacheManager = cacheManager,
+        _viewportInsetBottom = viewportInsetBottom,
+        _tracingEnabled = tracingEnabled,
         _layoutKey = _computeLayoutKey(
           baseTextStyle: baseTextStyle,
           maxWidth: maxWidth,
           maxHeight: maxHeight,
           textHeightBehavior: textHeightBehavior,
           textScaler: textScaler,
+          viewportInsetBottom: viewportInsetBottom,
         ) {
     _textStates = List<_TextBlockState?>.filled(_blocks.length, null);
     _imageConsumed = List<bool>.filled(_blocks.length, false);
   }
 
-  static const double _minBreakPointMargin = 24.0;
+  static const double _minBreakPointMargin = 20.0;
   static const double _maxBreakPointMargin = 80.0;
-  static const double _minPageBottomMargin = 48.0;
+  static const double _minPageBottomMargin = 24.0;
   static const double _maxBottomMarginFraction = 0.18;
+  static const double _heightTolerance = 0.5;
+  static const bool _defaultTracingFlag =
+      bool.fromEnvironment('ENABLE_READER_PAGINATION_TRACE', defaultValue: false);
 
   final String _bookId;
   final List<DocumentBlock> _blocks;
@@ -62,6 +70,8 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
   final TextHeightBehavior _textHeightBehavior;
   final TextScaler _textScaler;
   final PaginationCacheManager? _cacheManager;
+  final double _viewportInsetBottom;
+  final bool _tracingEnabled;
   final String _layoutKey;
 
   late final List<_TextBlockState?> _textStates;
@@ -76,6 +86,11 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
   Future<void>? _ongoingComputation;
   Future<void>? _ongoingSave;
 
+  void _trace(String message) {
+    if (!_tracingEnabled) return;
+    debugPrint('[PaginationEngine] $message');
+  }
+
   /// Creates a new engine. If a compatible cache is available it will be
   /// loaded to seed the lazy pagination process.
   static Future<LineMetricsPaginationEngine> create({
@@ -87,6 +102,8 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
     required TextHeightBehavior textHeightBehavior,
     required TextScaler textScaler,
     PaginationCacheManager? cacheManager,
+    double viewportInsetBottom = 0.0,
+    bool tracingEnabled = _defaultTracingFlag,
   }) async {
     final engine = LineMetricsPaginationEngine._(
       bookId: bookId,
@@ -97,6 +114,8 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
       textHeightBehavior: textHeightBehavior,
       textScaler: textScaler,
       cacheManager: cacheManager,
+      viewportInsetBottom: viewportInsetBottom,
+      tracingEnabled: tracingEnabled,
     );
 
     if (cacheManager != null) {
@@ -126,9 +145,10 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
     required double maxHeight,
     required TextHeightBehavior textHeightBehavior,
     required TextScaler textScaler,
+    required double viewportInsetBottom,
   }) {
     final buffer = StringBuffer()
-      ..write('v2|')
+      ..write('v3|')
       ..write(baseTextStyle.fontFamily ?? 'default')
       ..write('|')
       ..write(baseTextStyle.fontSize?.toStringAsFixed(2) ?? '16.0')
@@ -142,7 +162,9 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
       ..write(textHeightBehavior.applyHeightToFirstAscent ? '1' : '0')
       ..write(textHeightBehavior.applyHeightToLastDescent ? '1' : '0')
       ..write('|')
-      ..write(textScaler.hashCode);
+      ..write(textScaler.hashCode)
+      ..write('|')
+      ..write(viewportInsetBottom.toStringAsFixed(1));
     return base64UrlEncode(buffer.toString().codeUnits);
   }
 
@@ -600,6 +622,8 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
       textScaler: _textScaler,
       computeBreakPointMargin: _computeBreakPointMargin,
       computePageBottomMargin: _computePageBottomMargin,
+      trace: _trace,
+      tracingEnabled: _tracingEnabled,
     );
     _textStates[blockIndex] = state;
     return state;
@@ -619,15 +643,18 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
   }
 
   double _computeBreakPointMargin(double lineHeight) {
-    final target = lineHeight * 0.75;
+    final target = lineHeight * (lineHeight > 64 ? 0.5 : 0.6);
     return target.clamp(_minBreakPointMargin, _maxBreakPointMargin);
   }
 
   double _computePageBottomMargin(double lineHeight, double spacingAfter) {
-    final dynamicMargin = lineHeight + spacingAfter;
-    final upperBound = _originalMaxHeight * _maxBottomMarginFraction;
-    final effectiveUpperBound = math.max(_minPageBottomMargin, upperBound);
-    return dynamicMargin.clamp(_minPageBottomMargin, effectiveUpperBound);
+    final insetInfluence = _viewportInsetBottom * 0.6;
+    final dynamicMargin = lineHeight * 0.5 + spacingAfter * 0.5 + insetInfluence;
+    final minMargin = math.max(_minPageBottomMargin, _viewportInsetBottom * 0.5);
+    final upperBound = (_originalMaxHeight + _viewportInsetBottom) *
+        _maxBottomMarginFraction;
+    final effectiveUpperBound = math.max(minMargin, upperBound);
+    return dynamicMargin.clamp(minMargin, effectiveUpperBound);
   }
 
   PageContent? _createImagePage(
@@ -691,13 +718,17 @@ class _TextBlockState {
     required double Function(double lineHeight) computeBreakPointMargin,
     required double Function(double lineHeight, double spacingAfter)
         computePageBottomMargin,
+    required void Function(String message) trace,
+    required bool tracingEnabled,
   })  : _maxWidth = maxWidth,
         _maxHeight = maxHeight,
         _originalMaxHeight = originalMaxHeight,
         _textHeightBehavior = textHeightBehavior,
         _textScaler = textScaler,
         _computeBreakPointMargin = computeBreakPointMargin,
-        _computePageBottomMargin = computePageBottomMargin {
+        _computePageBottomMargin = computePageBottomMargin,
+        _trace = trace,
+        _tracingEnabled = tracingEnabled {
     textStyle = baseTextStyle.copyWith(
       fontSize: (baseTextStyle.fontSize ?? 16) * block.fontScale,
       fontWeight: block.fontWeight,
@@ -726,7 +757,16 @@ class _TextBlockState {
       textPainter.preferredLineHeight,
       block.spacingAfter,
     );
-    effectiveMaxHeight = _originalMaxHeight - pageBottomMargin;
+    effectiveMaxHeight = math.max(0.0, _maxHeight - pageBottomMargin);
+
+    if (_tracingEnabled) {
+      _trace(
+        'init bottomMargin=${pageBottomMargin.toStringAsFixed(2)} '
+        'effectiveMaxHeight=${effectiveMaxHeight.toStringAsFixed(2)} '
+        'lineHeight=${textPainter.preferredLineHeight.toStringAsFixed(2)} '
+        'spacingAfter=${block.spacingAfter.toStringAsFixed(2)}',
+      );
+    }
   }
 
   final TextDocumentBlock block;
@@ -743,6 +783,8 @@ class _TextBlockState {
   final double Function(double lineHeight) _computeBreakPointMargin;
   final double Function(double lineHeight, double spacingAfter)
       _computePageBottomMargin;
+  final void Function(String message) _trace;
+  final bool _tracingEnabled;
 
   late final double pageBottomMargin;
   late final double effectiveMaxHeight;
@@ -802,6 +844,14 @@ class _TextBlockState {
 
       if (totalHeightWithLine > effectiveMaxHeight &&
           pageStartTextIndex < lineStartOffset) {
+        if (_tracingEnabled) {
+          _trace(
+            'overflow line=$lineIndex currentHeight=${currentPageHeight.toStringAsFixed(2)} '
+            'lineHeight=${lineHeight.toStringAsFixed(2)} '
+            'limit=${effectiveMaxHeight.toStringAsFixed(2)} '
+            'breakMargin=${breakPointMargin.toStringAsFixed(2)}',
+          );
+        }
         final breakPointTop = (top - breakPointMargin).clamp(0.0, double.infinity);
         final breakPointOffset = textPainter
             .getPositionForOffset(Offset(left, breakPointTop))
@@ -828,6 +878,22 @@ class _TextBlockState {
             pageEndTokenPointerExclusive,
             pageStartTextIndex,
           );
+        }
+
+        if (safeBreakOffset <= pageStartTextIndex) {
+          final expandedPointer = math.min(
+            pageEndTokenPointerExclusive + 1,
+            tokenSpans.length,
+          );
+          final expandedOffset = _safeBreakOffsetForTokenPointer(
+            expandedPointer,
+            pageStartTextIndex,
+          );
+
+          if (expandedOffset > safeBreakOffset) {
+            pageEndTokenPointerExclusive = expandedPointer;
+            safeBreakOffset = expandedOffset;
+          }
         }
 
         if (safeBreakOffset <= pageStartTextIndex &&
@@ -878,6 +944,19 @@ class _TextBlockState {
               startCharIndex: globalCharIndex,
               endCharIndex: globalCharIndex + fitResult.text.length - 1,
             );
+
+            final pageHeight = _measureHeight(
+              pageText: fitResult.text,
+              spacingBefore: spacingBefore,
+              spacingAfter: 0.0,
+            );
+            if (_tracingEnabled) {
+              _trace(
+                'page built (partial block) height=${pageHeight.toStringAsFixed(2)} '
+                'tokens=$tokensInPage chars=${fitResult.text.length} '
+                'breakOffset=$nextOffset',
+              );
+            }
 
             final nextOffset = fitResult.endOffset;
             final nextTokenPointer = fitResult.endTokenPointerExclusive;
@@ -950,6 +1029,18 @@ class _TextBlockState {
 
           markComplete();
 
+          if (_tracingEnabled) {
+            final pageHeight = _measureHeight(
+              pageText: fitResult.text,
+              spacingBefore: spacingBefore,
+              spacingAfter: block.spacingAfter,
+            );
+            _trace(
+              'page built (block end) height=${pageHeight.toStringAsFixed(2)} '
+              'tokens=$tokensInPage chars=${fitResult.text.length}',
+            );
+          }
+
           return _TextPageResult(
             page: page,
             charactersInPage: fitResult.text.length,
@@ -1003,13 +1094,13 @@ class _TextBlockState {
     return null;
   }
 
-  bool _fitsWithinHeight({
+  double _measureHeight({
     required String pageText,
     required double spacingBefore,
     required double spacingAfter,
   }) {
     if (pageText.isEmpty) {
-      return true;
+      return spacingBefore + spacingAfter;
     }
 
     final painter = TextPainter(
@@ -1023,7 +1114,7 @@ class _TextBlockState {
 
     final metrics = painter.computeLineMetrics();
     if (metrics.isEmpty) {
-      return true;
+      return spacingBefore + spacingAfter;
     }
 
     double totalHeight = spacingBefore;
@@ -1031,9 +1122,31 @@ class _TextBlockState {
       totalHeight += line.height;
     }
     totalHeight += spacingAfter;
+    return totalHeight;
+  }
 
-    final roundedHeight = totalHeight.ceilToDouble();
-    return roundedHeight <= effectiveMaxHeight;
+  bool _fitsWithinHeight({
+    required String pageText,
+    required double spacingBefore,
+    required double spacingAfter,
+  }) {
+    final totalHeight = _measureHeight(
+      pageText: pageText,
+      spacingBefore: spacingBefore,
+      spacingAfter: spacingAfter,
+    );
+
+    final fits =
+        totalHeight <= effectiveMaxHeight + LineMetricsPaginationEngine._heightTolerance;
+    if (_tracingEnabled) {
+      _trace(
+        'fit height=${totalHeight.toStringAsFixed(2)} '
+        'limit=${effectiveMaxHeight.toStringAsFixed(2)} '
+        'tolerance=${LineMetricsPaginationEngine._heightTolerance.toStringAsFixed(2)} '
+        'textLength=${pageText.length}',
+      );
+    }
+    return fits;
   }
 
   int _findTokenIndexAfterOffset(int offset, int startIndex) {
