@@ -877,7 +877,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
       return null;
     }
 
-    double progressValue = progress.progress ?? 0;
+    double? progressValue = _progressFractionForBook(progress);
+    if (progressValue == null) {
+      return null;
+    }
     progressValue = progressValue.clamp(0.0, 1.0);
 
     if (progressValue <= 0.0) {
@@ -892,8 +895,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final progress = _bookProgress[book.id];
     if (progress == null) return false;
 
-    final progressValue = (progress.progress ?? 0).clamp(0.0, 1.0);
+    final progressValue = (_progressFractionForBook(progress) ?? 0).clamp(0.0, 1.0);
     return progressValue >= 0.99;
+  }
+
+  double? _progressFractionForBook(ReadingProgress progress) {
+    final stored = progress.progress;
+    if (stored != null && !stored.isNaN && !stored.isInfinite) {
+      return stored;
+    }
+
+    final totalChars = progress.totalCharacters;
+    final currentChar = progress.currentCharacterIndex;
+    if (totalChars != null && totalChars > 0 && currentChar != null) {
+      final clampedCurrent = currentChar.clamp(0, totalChars - 1);
+      return (clampedCurrent + 1) / totalChars;
+    }
+
+    return null;
   }
 
   Widget _buildReadWatermark() {

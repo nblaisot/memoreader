@@ -51,8 +51,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _mistralApiKeyController = TextEditingController();
   bool _showOpenaiApiKey = false;
   bool _showMistralApiKey = false;
-  double _horizontalPadding = 30.0;
-  double _verticalPadding = 50.0;
   final Map<String, bool> _expansionState = {
     'chunkSummary': false,
     'characterExtraction': false,
@@ -111,10 +109,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       
       // Load language preference
       _selectedLanguageCode = await _settingsService.getLanguageCode();
-      
-      // Load padding preferences
-      _horizontalPadding = await _settingsService.getHorizontalPadding();
-      _verticalPadding = await _settingsService.getVerticalPadding();
       
       // Initialize prompt controllers and focus nodes
       _initializePromptControllers();
@@ -280,34 +274,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
   
-  Future<void> _saveHorizontalPadding(double padding) async {
-    await _settingsService.saveHorizontalPadding(padding);
-    
-    if (mounted) {
-      final l10n = AppLocalizations.of(context)!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.horizontalPaddingSaved),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-  Future<void> _saveVerticalPadding(double padding) async {
-    await _settingsService.saveVerticalPadding(padding);
-    
-    if (mounted) {
-      final l10n = AppLocalizations.of(context)!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.verticalPaddingSaved),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
   Future<void> _saveLanguagePreference(String? languageCode) async {
     await _settingsService.saveLanguage(
       languageCode != null ? Locale(languageCode) : null,
@@ -707,106 +673,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             groupValue: _selectedLanguageCode,
             onChanged: (value) => _saveLanguagePreference(value),
           ),
-          
+
           const Divider(height: 32),
-          
-          // Reader Display Settings Section
-          Text(
-            'Reader Display Settings',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Adjust the padding of the reader screen. Horizontal padding affects left and right margins, vertical padding affects top and bottom margins.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 16),
-          
-          // Horizontal Padding
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Horizontal Padding (Left/Right): ${_horizontalPadding.toStringAsFixed(0)} px',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    Slider(
-                      value: _horizontalPadding,
-                      min: _settingsService.minPadding,
-                      max: _settingsService.maxPadding,
-                      divisions: 100,
-                      label: '${_horizontalPadding.toStringAsFixed(0)} px',
-                      onChanged: (value) {
-                        setState(() {
-                          _horizontalPadding = value;
-                        });
-                      },
-                      onChangeEnd: (value) {
-                        _saveHorizontalPadding(value);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Default: ${_settingsService.defaultHorizontalPadding.toStringAsFixed(0)} px. '
-            'Range: ${_settingsService.minPadding.toStringAsFixed(0)} - ${_settingsService.maxPadding.toStringAsFixed(0)} px',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // Vertical Padding
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Vertical Padding (Top/Bottom): ${_verticalPadding.toStringAsFixed(0)} px',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    Slider(
-                      value: _verticalPadding,
-                      min: _settingsService.minPadding,
-                      max: _settingsService.maxPadding,
-                      divisions: 100,
-                      label: '${_verticalPadding.toStringAsFixed(0)} px',
-                      onChanged: (value) {
-                        setState(() {
-                          _verticalPadding = value;
-                        });
-                      },
-                      onChangeEnd: (value) {
-                        _saveVerticalPadding(value);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Default: ${_settingsService.defaultVerticalPadding.toStringAsFixed(0)} px. '
-            'Range: ${_settingsService.minPadding.toStringAsFixed(0)} - ${_settingsService.maxPadding.toStringAsFixed(0)} px',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Colors.grey[600],
-            ),
-          ),
-          
-          const Divider(height: 32),
-          
+
           // Summary Provider Section
           Text(
             l10n.summaryProvider,

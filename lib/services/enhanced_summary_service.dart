@@ -684,6 +684,22 @@ class EnhancedSummaryService {
     return clamped.toDouble();
   }
 
+  double? _resolveProgressFraction(ReadingProgress progress) {
+    final stored = progress.progress;
+    if (stored != null && !stored.isNaN && !stored.isInfinite) {
+      return stored.clamp(0.0, 1.0);
+    }
+
+    final totalChars = progress.totalCharacters;
+    final current = progress.currentCharacterIndex;
+    if (totalChars != null && totalChars > 0 && current != null) {
+      final clampedCurrent = current.clamp(0, math.max(0, totalChars - 1));
+      return (clampedCurrent + 1) / totalChars;
+    }
+
+    return null;
+  }
+
   String _extractLastWords(String text, int wordCount) {
     final trimmed = text.trimRight();
     if (trimmed.isEmpty) {
@@ -1166,7 +1182,7 @@ class EnhancedSummaryService {
         currentCharacterIndex,
         language,
         ensureChunkSummaries: true,
-        readingProgressFraction: progress.progress,
+        readingProgressFraction: _resolveProgressFraction(progress),
         preparedEngineText: preparedEngineText,
       );
       debugPrint('[SummaryDebug] _prepareTextData completed. fullText length: ${prepared.fullText.length}, chunks: ${prepared.chunks.length}');
@@ -1290,7 +1306,7 @@ class EnhancedSummaryService {
         book,
         currentCharacterIndex,
         language,
-        readingProgressFraction: progress.progress,
+        readingProgressFraction: _resolveProgressFraction(progress),
         preparedEngineText: preparedEngineText,
       );
 
@@ -1314,9 +1330,17 @@ class EnhancedSummaryService {
       for (int i = interruptions.length - 1; i >= 0; i--) {
         final interruption = interruptions[i];
         final interruptCharIndex = interruption['characterIndex'] as int?;
-        if (interruptCharIndex != null && interruptCharIndex < currentCharacterIndex) {
+        final interruptProgress = (interruption['progress'] as num?)?.toDouble();
+        final estimatedCharIndex = interruptCharIndex ??
+            ((interruptProgress != null && prepared.fullText.isNotEmpty)
+                ? (interruptProgress.clamp(0.0, 1.0) * prepared.fullText.length)
+                    .floor()
+                : null);
+
+        if (estimatedCharIndex != null &&
+            estimatedCharIndex < currentCharacterIndex) {
           // Found an interruption before current position - this is our session start
-          sessionStartCharacterIndex = interruptCharIndex;
+          sessionStartCharacterIndex = estimatedCharIndex;
           final timestampStr = interruption['timestamp'] as String?;
           if (timestampStr != null) {
             try {
@@ -1368,6 +1392,7 @@ class EnhancedSummaryService {
             currentCharacterIndex: endIndex,
             progress: progressValue,
             lastRead: DateTime.now(),
+            totalCharacters: prepared.fullText.length,
           );
 
           // Get the full "from the beginning" summary
@@ -1528,7 +1553,8 @@ Concise summary:''';
             startIndex: chunkStart,
             endIndex: chunkEnd,
             debugContext: 'since_last_time_session',
-            readingProgressPercent: _progressFractionToPercent(progress.progress),
+            readingProgressPercent:
+                _progressFractionToPercent(_resolveProgressFraction(progress)),
             bookId: book.id,
             onCacheHit: onCacheHit,
           );
@@ -1610,7 +1636,7 @@ Concise summary:''';
         book,
         currentCharacterIndex,
         language,
-        readingProgressFraction: progress.progress,
+        readingProgressFraction: _resolveProgressFraction(progress),
         preparedEngineText: preparedEngineText,
       );
 
@@ -2090,11 +2116,13 @@ Concise summary:''';
     String bookId, {
     required int chunkIndex,
     required int characterIndex,
+    double? progress,
   }) async {
     await _dbService.updateLastReadingStop(
       bookId,
       chunkIndex: chunkIndex,
       characterIndex: characterIndex,
+      progress: progress,
     );
   }
 

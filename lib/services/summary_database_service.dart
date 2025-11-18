@@ -480,6 +480,7 @@ class SummaryDatabaseService {
     String bookId, {
     required int chunkIndex,
     required int characterIndex,
+    double? progress,
   }) async {
     final cache = await getSummaryCache(bookId);
     final now = DateTime.now();
@@ -500,6 +501,7 @@ class SummaryDatabaseService {
     interruptions.add({
       'characterIndex': characterIndex,
       'timestamp': now.toIso8601String(),
+      if (progress != null) 'progress': progress,
     });
     
     // Keep only the last 5 interruptions
@@ -519,10 +521,10 @@ class SummaryDatabaseService {
         lastReadingStopChunkIndex: chunkIndex,
         lastReadingStopCharacterIndex: characterIndex,
         lastReadingStopTimestamp: now,
+        readingInterruptionsJson: interruptionsJson,
         summarySinceLastTime: null,
         summarySinceLastTimeChunkIndex: null,
         summarySinceLastTimeCharacterIndex: null,
-        readingInterruptionsJson: interruptionsJson,
       );
       await saveSummaryCache(updatedCache);
     } else {
@@ -535,6 +537,55 @@ class SummaryDatabaseService {
         lastReadingStopChunkIndex: chunkIndex,
         lastReadingStopCharacterIndex: characterIndex,
         lastReadingStopTimestamp: now,
+        readingInterruptionsJson: interruptionsJson,
+      );
+      await saveSummaryCache(newCache);
+    }
+  }
+
+  Future<void> recordReadingProgress(
+    String bookId, {
+    required int? characterIndex,
+    double? progress,
+  }) async {
+    if (characterIndex == null) return;
+
+    final cache = await getSummaryCache(bookId);
+    final now = DateTime.now();
+
+    List<Map<String, dynamic>> interruptions = [];
+    if (cache?.readingInterruptionsJson != null) {
+      try {
+        final decoded = jsonDecode(cache!.readingInterruptionsJson!) as List;
+        interruptions = decoded.cast<Map<String, dynamic>>();
+      } catch (_) {
+        interruptions = [];
+      }
+    }
+
+    interruptions.add({
+      'characterIndex': characterIndex,
+      'timestamp': now.toIso8601String(),
+      if (progress != null) 'progress': progress,
+    });
+
+    if (interruptions.length > 5) {
+      interruptions = interruptions.sublist(interruptions.length - 5);
+    }
+
+    final interruptionsJson = jsonEncode(interruptions);
+
+    if (cache != null) {
+      final updatedCache = cache.copyWith(
+        readingInterruptionsJson: interruptionsJson,
+      );
+      await saveSummaryCache(updatedCache);
+    } else {
+      final newCache = BookSummaryCache(
+        bookId: bookId,
+        lastProcessedChunkIndex: 0,
+        cumulativeSummary: '',
+        lastUpdated: now,
         readingInterruptionsJson: interruptionsJson,
       );
       await saveSummaryCache(newCache);

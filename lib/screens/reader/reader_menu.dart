@@ -7,7 +7,15 @@ import 'package:memoreader/l10n/app_localizations.dart';
 Future<void> showReaderMenu({
   required BuildContext context,
   required double fontSize,
+  required double minFontSize,
+  required double maxFontSize,
+  required double horizontalPadding,
+  required double verticalPadding,
+  required double minPadding,
+  required double maxPadding,
   required ValueChanged<double> onFontSizeChanged,
+  required ValueChanged<double> onHorizontalPaddingChanged,
+  required ValueChanged<double> onVerticalPaddingChanged,
   required bool hasChapters,
   required VoidCallback onGoToChapter,
   required VoidCallback onGoToPercentage,
@@ -34,7 +42,15 @@ Future<void> showReaderMenu({
 
       return _ReaderMenuDialog(
         fontSize: fontSize,
+        minFontSize: minFontSize,
+        maxFontSize: maxFontSize,
         onFontSizeChanged: onFontSizeChanged,
+        horizontalPadding: horizontalPadding,
+        verticalPadding: verticalPadding,
+        minPadding: minPadding,
+        maxPadding: maxPadding,
+        onHorizontalPaddingChanged: onHorizontalPaddingChanged,
+        onVerticalPaddingChanged: onVerticalPaddingChanged,
         hasChapters: hasChapters,
         onGoToChapter: () => handleAction(onGoToChapter),
         onGoToPercentage: () => handleAction(onGoToPercentage),
@@ -67,7 +83,15 @@ Future<void> showReaderMenu({
 class _ReaderMenuDialog extends StatefulWidget {
   const _ReaderMenuDialog({
     required this.fontSize,
+    required this.minFontSize,
+    required this.maxFontSize,
     required this.onFontSizeChanged,
+    required this.horizontalPadding,
+    required this.verticalPadding,
+    required this.minPadding,
+    required this.maxPadding,
+    required this.onHorizontalPaddingChanged,
+    required this.onVerticalPaddingChanged,
     required this.hasChapters,
     required this.onGoToChapter,
     required this.onGoToPercentage,
@@ -78,7 +102,15 @@ class _ReaderMenuDialog extends StatefulWidget {
   });
 
   final double fontSize;
+  final double minFontSize;
+  final double maxFontSize;
   final ValueChanged<double> onFontSizeChanged;
+  final double horizontalPadding;
+  final double verticalPadding;
+  final double minPadding;
+  final double maxPadding;
+  final ValueChanged<double> onHorizontalPaddingChanged;
+  final ValueChanged<double> onVerticalPaddingChanged;
   final bool hasChapters;
   final VoidCallback onGoToChapter;
   final VoidCallback onGoToPercentage;
@@ -93,11 +125,15 @@ class _ReaderMenuDialog extends StatefulWidget {
 
 class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
   late double _sliderValue;
+  late double _horizontalPadding;
+  late double _verticalPadding;
 
   @override
   void initState() {
     super.initState();
     _sliderValue = widget.fontSize;
+    _horizontalPadding = widget.horizontalPadding;
+    _verticalPadding = widget.verticalPadding;
   }
 
   @override
@@ -149,14 +185,44 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
                     const SizedBox(height: 16),
                     Text('Taille du texte : ${_sliderValue.toStringAsFixed(0)} pt'),
                     Slider(
-                      min: 14,
-                      max: 30,
-                      divisions: 16,
+                      min: widget.minFontSize,
+                      max: widget.maxFontSize,
+                      divisions: (widget.maxFontSize - widget.minFontSize).round(),
                       label: '${_sliderValue.toStringAsFixed(0)} pt',
                       value: _sliderValue,
                       onChanged: (value) {
                         setState(() => _sliderValue = value);
                         widget.onFontSizeChanged(value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Marge horizontale : ${_horizontalPadding.toStringAsFixed(0)} px',
+                    ),
+                    Slider(
+                      min: widget.minPadding,
+                      max: widget.maxPadding,
+                      divisions: (widget.maxPadding - widget.minPadding).round(),
+                      label: '${_horizontalPadding.toStringAsFixed(0)} px',
+                      value: _horizontalPadding,
+                      onChanged: (value) {
+                        setState(() => _horizontalPadding = value);
+                        widget.onHorizontalPaddingChanged(value);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Marge verticale : ${_verticalPadding.toStringAsFixed(0)} px',
+                    ),
+                    Slider(
+                      min: widget.minPadding,
+                      max: widget.maxPadding,
+                      divisions: (widget.maxPadding - widget.minPadding).round(),
+                      label: '${_verticalPadding.toStringAsFixed(0)} px',
+                      value: _verticalPadding,
+                      onChanged: (value) {
+                        setState(() => _verticalPadding = value);
+                        widget.onVerticalPaddingChanged(value);
                       },
                     ),
                     const SizedBox(height: 8),
