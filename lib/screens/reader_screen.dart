@@ -62,8 +62,6 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   Size? _lastActualSize;
 
-  double _fontSize = 18.0;
-
   EpubBook? _epubBook;
   List<DocumentBlock> _docBlocks = [];
   List<_ChapterEntry> _chapterEntries = [];
@@ -81,6 +79,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   String? _errorMessage;
 
   bool _showProgressBar = false;
+  double _fontSize = 18.0;
 
   ReadingProgress? _savedProgress;
   Timer? _progressDebounce;
@@ -100,7 +99,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initializeSummaryService();
-    _loadReaderPreferences();
+    _loadVerticalPadding();
     _loadBook();
     unawaited(_appStateService.setLastOpenedBook(widget.book.id));
   }
@@ -115,19 +114,14 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
   }
 
-  Future<void> _loadReaderPreferences() async {
+  Future<void> _loadVerticalPadding() async {
     final horizontal = await _settingsService.getHorizontalPadding();
     final vertical = await _settingsService.getVerticalPadding();
-    final savedFontSize = await _settingsService.getFontSize();
     if (mounted) {
       setState(() {
         _horizontalPadding = horizontal;
         _verticalPadding = vertical;
-        _fontSize = savedFontSize;
       });
-      if (_docBlocks.isNotEmpty) {
-        _scheduleRepagination(retainCurrentPage: true, actualSize: _lastActualSize);
-      }
     }
   }
 
@@ -481,15 +475,9 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         currentCharacterIndex: page.startCharIndex,
         progress: pageProgress,
         lastRead: DateTime.now(),
-        totalCharacters: _totalCharacterCount,
       );
       await _bookService.saveReadingProgress(progress);
       _savedProgress = progress;
-      unawaited(_summaryDatabase.recordReadingProgress(
-        widget.book.id,
-        characterIndex: page.startCharIndex,
-        progress: pageProgress,
-      ));
       // Note: updateLastReadingStop is NOT called here anymore
       // It's only called when actually leaving the reader screen
     } catch (_) {
@@ -507,21 +495,17 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       final chunkIndex = _summaryService != null
           ? _summaryService!.estimateChunkIndexForCharacter(page.startCharIndex ?? 0)
           : EnhancedSummaryService.computeChunkIndexForCharacterStatic(page.startCharIndex ?? 0);
-      final stopProgress =
-          _calculateProgressForPage(page, totalChars: _totalCharacterCount);
-
+      
       unawaited(_summaryDatabase.updateLastReadingStop(
         widget.book.id,
         chunkIndex: chunkIndex,
         characterIndex: page.startCharIndex,
-        progress: stopProgress,
       ));
       if (_summaryService != null) {
         unawaited(_summaryService!.updateLastReadingStop(
           widget.book.id,
           chunkIndex: chunkIndex,
           characterIndex: page.startCharIndex,
-          progress: stopProgress,
         ));
       }
     } catch (_) {
@@ -533,24 +517,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     setState(() {
       _fontSize = value;
     });
-    unawaited(_settingsService.saveFontSize(value));
-    _scheduleRepagination(retainCurrentPage: true, actualSize: _lastActualSize);
-  }
-
-  void _changeHorizontalPadding(double value) {
-    setState(() {
-      _horizontalPadding = value;
-    });
-    unawaited(_settingsService.saveHorizontalPadding(value));
-    _scheduleRepagination(retainCurrentPage: true, actualSize: _lastActualSize);
-  }
-
-  void _changeVerticalPadding(double value) {
-    setState(() {
-      _verticalPadding = value;
-    });
-    unawaited(_settingsService.saveVerticalPadding(value));
-    _scheduleRepagination(retainCurrentPage: true, actualSize: _lastActualSize);
+    _scheduleRepagination(retainCurrentPage: true);
   }
 
   Future<bool> _goToNextPage({bool resetPager = true}) async {
@@ -977,15 +944,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     unawaited(showReaderMenu(
       context: context,
       fontSize: _fontSize,
-      minFontSize: _settingsService.minFontSize,
-      maxFontSize: _settingsService.maxFontSize,
-      horizontalPadding: _horizontalPadding,
-      verticalPadding: _verticalPadding,
-      minPadding: _settingsService.minPadding,
-      maxPadding: _settingsService.maxPadding,
       onFontSizeChanged: _changeFontSize,
-      onHorizontalPaddingChanged: _changeHorizontalPadding,
-      onVerticalPaddingChanged: _changeVerticalPadding,
       hasChapters: _chapterEntries.isNotEmpty,
       onGoToChapter: _showChapterSelector,
       onGoToPercentage: _showGoToPercentageDialog,
@@ -1091,7 +1050,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         ),
       );
       await _initializeSummaryService();
-      await _loadReaderPreferences();
+      await _loadVerticalPadding();
       await _loadSelectionActionConfig();
       if (mounted) {
         _scheduleRepagination(retainCurrentPage: true);
@@ -1133,7 +1092,6 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       currentCharacterIndex: currentPage.startCharIndex,
       progress: _calculateProgressForPage(currentPage),
       lastRead: DateTime.now(),
-      totalCharacters: _totalCharacterCount,
     );
 
     // Build an engine-aligned full text to guarantee index consistency
