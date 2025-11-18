@@ -1389,34 +1389,35 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
 
     final blocks = <DocumentBlock>[];
     bool isFirstBlock = true;
+    final buffer = StringBuffer();
+    bool pendingParagraphBreak = false;
 
-    void addTextBlock({
-      required String text,
-      double fontScale = 1.0,
-      FontWeight fontWeight = FontWeight.normal,
-      FontStyle fontStyle = FontStyle.normal,
-      TextAlign textAlign = TextAlign.left,
-      double spacingBefore = _paragraphSpacing / 2,
-      double spacingAfter = _paragraphSpacing,
-    }) {
-      final normalized = normalizeWhitespace(text);
-      if (normalized.isEmpty) return;
+    void flushTextBuffer() {
+      final normalized = normalizeWhitespace(buffer.toString());
+      if (normalized.isEmpty) {
+        buffer.clear();
+        pendingParagraphBreak = false;
+        return;
+      }
       blocks.add(
         TextDocumentBlock(
           chapterIndex: chapterIndex,
-          spacingBefore: isFirstBlock ? 0 : spacingBefore,
-          spacingAfter: spacingAfter,
+          spacingBefore: isFirstBlock ? 0 : _paragraphSpacing / 2,
+          spacingAfter: _paragraphSpacing,
           text: normalized,
-          fontScale: fontScale,
-          fontWeight: fontWeight,
-          fontStyle: fontStyle,
-          textAlign: textAlign,
+          fontScale: 1.0,
+          fontWeight: FontWeight.normal,
+          fontStyle: FontStyle.normal,
+          textAlign: TextAlign.left,
         ),
       );
+      buffer.clear();
+      pendingParagraphBreak = false;
       isFirstBlock = false;
     }
 
-    void addImageBlock(String? src) {
+    void flushForImage(String? src) {
+      flushTextBuffer();
       if (src == null) return;
       final bytes = _resolveImageBytes(src, images);
       if (bytes == null) return;
@@ -1445,58 +1446,72 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       isFirstBlock = false;
     }
 
+    void ensureParagraphBoundary() {
+      if (buffer.isNotEmpty) {
+        if (pendingParagraphBreak && !buffer.toString().endsWith('\n\n')) {
+          if (buffer.toString().endsWith('\n')) {
+            buffer.write('\n');
+          } else {
+            buffer.write('\n\n');
+          }
+        }
+        pendingParagraphBreak = false;
+      }
+    }
+
+    void scheduleParagraphBreak() {
+      pendingParagraphBreak = true;
+    }
+
     void walk(dom.Node node) {
       if (node is dom.Element) {
         final name = node.localName?.toLowerCase();
+        if (name == null || _isLayoutArtifact(node)) {
+          return;
+        }
+
         switch (name) {
-          case 'h1':
-          case 'h2':
-          case 'h3':
-          case 'h4':
-          case 'h5':
-          case 'h6':
-            final level = int.tryParse(name![1]) ?? 3;
-            final scale = (2.2 - level * 0.2).clamp(1.2, 1.6);
-            addTextBlock(
-              text: node.text,
-              fontScale: scale,
-              fontWeight: FontWeight.w700,
-              textAlign: TextAlign.center,
-              spacingBefore: _headingSpacing,
-              spacingAfter: _paragraphSpacing,
-            );
+          case 'style':
+          case 'script':
             return;
-          case 'p':
-          case 'div':
-          case 'section':
-          case 'article':
-          case 'blockquote':
-            addTextBlock(text: node.text);
-            for (final child in node.nodes) {
-              walk(child);
-            }
+          case 'br':
+            buffer.write('\n');
+            return;
+          case 'img':
+            flushForImage(node.attributes['src']);
+            scheduleParagraphBreak();
             return;
           case 'ul':
           case 'ol':
+            ensureParagraphBoundary();
             final ordered = name == 'ol';
             int counter = 1;
             for (final child in node.children.where((n) => n.localName == 'li')) {
               final text = normalizeWhitespace(child.text);
               if (text.isEmpty) continue;
               final bullet = ordered ? '$counter. ' : '• ';
-              addTextBlock(
-                text: '$bullet$text',
-                spacingBefore: _paragraphSpacing / 2,
-                spacingAfter: _paragraphSpacing / 2,
-              );
+              buffer.write('$bullet$text\n');
               counter++;
             }
+            scheduleParagraphBreak();
             return;
-          case 'img':
-            addImageBlock(node.attributes['src']);
-            return;
-          case 'br':
-            addTextBlock(text: '');
+          case 'h1':
+          case 'h2':
+          case 'h3':
+          case 'h4':
+          case 'h5':
+          case 'h6':
+          case 'p':
+          case 'div':
+          case 'section':
+          case 'article':
+          case 'blockquote':
+          case 'pre':
+            ensureParagraphBoundary();
+            for (final child in node.nodes) {
+              walk(child);
+            }
+            scheduleParagraphBreak();
             return;
           default:
             for (final child in node.nodes) {
@@ -1505,7 +1520,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
             return;
         }
       } else if (node is dom.Text) {
-        addTextBlock(text: node.text);
+        buffer.write(_cleanText(node.text));
       } else {
         for (final child in node.nodes) {
           walk(child);
@@ -1517,7 +1532,37 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       walk(node);
     }
 
+    ensureParagraphBoundary();
+    flushTextBuffer();
+
     return blocks;
+  }
+
+  bool _isLayoutArtifact(dom.Element element) {
+    final classAttr = element.className.toLowerCase();
+    if (classAttr.contains('pagebreak') || classAttr.contains('pagenum')) {
+      return true;
+    }
+
+    final style = element.attributes['style']?.toLowerCase() ?? '';
+    if (style.contains('page-break') || style.contains('break-before') || style.contains('break-after')) {
+      return true;
+    }
+    if (style.contains('position:absolute') || style.contains('position: fixed')) {
+      return true;
+    }
+    if (style.contains(RegExp(r'(width|height)\s*:\s*\d+px'))) {
+      return true;
+    }
+    if (style.contains(RegExp(r'\b(top|left|right|bottom)\s*:'))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  String _cleanText(String text) {
+    return normalizeWhitespace(text);
   }
 
   Uint8List? _resolveImageBytes(String src, Map<String, EpubByteContentFile>? images) {

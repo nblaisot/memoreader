@@ -1,5 +1,5 @@
-import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as dom;
+import 'package:html/parser.dart' as html_parser;
 
 /// Provides utilities to extract reader-aligned plain text from HTML content.
 ///
@@ -13,6 +13,7 @@ class HtmlTextExtractor {
   HtmlTextExtractor._(this._buffer);
 
   final StringBuffer _buffer;
+  bool _pendingParagraphBreak = false;
 
   /// Extract normalized text matching the reader's behavior.
   static String extract(String html) {
@@ -29,33 +30,32 @@ class HtmlTextExtractor {
       extractor._walk(node);
     }
 
+    extractor._flushPendingBreak();
     return buffer.toString();
   }
 
   void _walk(dom.Node node) {
     if (node is dom.Element) {
       final name = node.localName?.toLowerCase();
+      if (name == null || _isLayoutArtifact(node)) {
+        return;
+      }
+
       switch (name) {
-        case 'h1':
-        case 'h2':
-        case 'h3':
-        case 'h4':
-        case 'h5':
-        case 'h6':
-          _addTextBlock(node.text);
+        case 'style':
+        case 'script':
           return;
-        case 'p':
-        case 'div':
-        case 'section':
-        case 'article':
-        case 'blockquote':
-          _addTextBlock(node.text);
-          for (final child in node.nodes) {
-            _walk(child);
-          }
+        case 'br':
+          _buffer.write('\n');
+          return;
+        case 'img':
+          _flushPendingBreak();
+          _addImagePlaceholder();
+          _scheduleParagraphBreak();
           return;
         case 'ul':
         case 'ol':
+          _ensureParagraphBoundary();
           final ordered = name == 'ol';
           int counter = 1;
           for (final child
@@ -65,16 +65,29 @@ class HtmlTextExtractor {
               continue;
             }
             final bullet = ordered ? '$counter. ' : '• ';
-            _addRawText('$bullet$text');
+            _buffer.write('$bullet$text');
+            _buffer.write('\n');
             counter++;
           }
+          _scheduleParagraphBreak();
           return;
-        case 'img':
-          _addImagePlaceholder();
-          return;
-        case 'br':
-          // Reader treats explicit line breaks as empty blocks, which results in
-          // no additional characters. Nothing to append here.
+        case 'h1':
+        case 'h2':
+        case 'h3':
+        case 'h4':
+        case 'h5':
+        case 'h6':
+        case 'p':
+        case 'div':
+        case 'section':
+        case 'article':
+        case 'blockquote':
+        case 'pre':
+          _ensureParagraphBoundary();
+          for (final child in node.nodes) {
+            _walk(child);
+          }
+          _scheduleParagraphBreak();
           return;
         default:
           for (final child in node.nodes) {
@@ -83,7 +96,7 @@ class HtmlTextExtractor {
           return;
       }
     } else if (node is dom.Text) {
-      _addTextBlock(node.text);
+      _buffer.write(_cleanText(node.text));
     } else {
       for (final child in node.nodes) {
         _walk(child);
@@ -91,19 +104,56 @@ class HtmlTextExtractor {
     }
   }
 
-  void _addTextBlock(String text) {
-    final normalized = normalizeWhitespace(text);
-    if (normalized.isEmpty) {
-      return;
+  void _ensureParagraphBoundary() {
+    if (_buffer.isNotEmpty) {
+      _flushPendingBreak();
     }
-    _buffer.write(normalized);
   }
 
-  void _addRawText(String text) {
-    if (text.isEmpty) {
-      return;
+  void _scheduleParagraphBreak() {
+    _pendingParagraphBreak = true;
+  }
+
+  void _flushPendingBreak() {
+    if (_pendingParagraphBreak &&
+        !_buffer.toString().endsWith('\n\n') &&
+        _buffer.isNotEmpty) {
+      if (_buffer.toString().endsWith('\n')) {
+        _buffer.write('\n');
+      } else {
+        _buffer.write('\n\n');
+      }
     }
-    _buffer.write(text);
+    _pendingParagraphBreak = false;
+  }
+
+  String _cleanText(String text) {
+    final normalized = normalizeWhitespace(text);
+    _pendingParagraphBreak = false;
+    return normalized;
+  }
+
+  bool _isLayoutArtifact(dom.Element element) {
+    final classAttr = element.className.toLowerCase();
+    if (classAttr.contains('pagebreak') || classAttr.contains('pagenum')) {
+      return true;
+    }
+
+    final style = element.attributes['style']?.toLowerCase() ?? '';
+    if (style.contains('page-break') || style.contains('break-before') || style.contains('break-after')) {
+      return true;
+    }
+    if (style.contains('position:absolute') || style.contains('position: fixed')) {
+      return true;
+    }
+    if (style.contains(RegExp(r'(width|height)\s*:\s*\d+px'))) {
+      return true;
+    }
+    if (style.contains(RegExp(r'\b(top|left|right|bottom)\s*:'))) {
+      return true;
+    }
+
+    return false;
   }
 
   void _addImagePlaceholder() {
@@ -121,6 +171,7 @@ class HtmlTextExtractor {
 String normalizeWhitespace(String text) {
   var normalized = text.replaceAll(RegExp(r'\r\n'), '\n');
   normalized = normalized.replaceAll(RegExp(r'\r'), '\n');
+  normalized = normalized.replaceAll('\u00a0', ' ');
   normalized = normalized.replaceAll(RegExp(r'[ \t]+'), ' ');
   normalized = normalized.replaceAll(RegExp(r'\n{3,}'), '\n\n');
   return normalized.trim();
