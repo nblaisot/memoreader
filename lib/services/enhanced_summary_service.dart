@@ -694,6 +694,41 @@ class EnhancedSummaryService {
     return words.sublist(start).join(' ');
   }
 
+  /// Extend a character index forward by a specified number of words.
+  /// Returns the new character index (capped at text length).
+  /// If the text is empty or the starting index is invalid, returns the original index.
+  int _extendCharacterIndexByWords(String text, int startCharacterIndex, int wordCount) {
+    if (text.isEmpty || startCharacterIndex < 0 || startCharacterIndex >= text.length) {
+      return startCharacterIndex;
+    }
+    
+    // Extract text from the start index onward
+    final remainingText = text.substring(startCharacterIndex);
+    if (remainingText.trim().isEmpty) {
+      return startCharacterIndex;
+    }
+    
+    // Use regex to match word boundaries - find sequences of non-whitespace characters
+    final wordPattern = RegExp(r'\S+');
+    final matches = wordPattern.allMatches(remainingText);
+    
+    // Take the first N words (up to wordCount or available words)
+    final wordsToTake = math.min(wordCount, matches.length);
+    if (wordsToTake == 0) {
+      return startCharacterIndex;
+    }
+    
+    // Get the end position of the last word we're taking
+    final lastWordMatch = matches.elementAt(wordsToTake - 1);
+    final endOffset = lastWordMatch.end;
+    
+    // Calculate the new character index
+    final newIndex = startCharacterIndex + endOffset;
+    
+    // Cap at text length
+    return math.min(newIndex, text.length);
+  }
+
   void _logExtractionWindowDebug({
     required Book book,
     required int targetCharacterIndex,
@@ -1139,6 +1174,7 @@ class EnhancedSummaryService {
 
   /// Get or generate summary up to the current reading position (from beginning)
   /// Uses currentCharacterIndex to extract text exactly up to the reading position
+  /// Includes 200 words of overlap beyond the reader's stop position
   Future<String> getSummaryUpToPosition(
     Book book,
     ReadingProgress progress,
@@ -1160,10 +1196,38 @@ class EnhancedSummaryService {
         return 'No content read yet.';
       }
 
+      // First, get the text up to the current position to determine the extended index
+      String fullTextForExtension;
+      if (preparedEngineText != null) {
+        // Use prepared engine text if available
+        fullTextForExtension = preparedEngineText;
+      } else {
+        // Extract text from book up to a reasonable maximum to calculate extension
+        // We'll extract up to current + estimated 200 words worth (roughly 1000 chars)
+        final estimatedMaxIndex = currentCharacterIndex + 1000;
+        final chapterTexts = await _extractTextUpToCharacterIndex(
+          book,
+          estimatedMaxIndex,
+        );
+        final buffer = StringBuffer();
+        for (final chapterText in chapterTexts) {
+          buffer.write(chapterText.text);
+        }
+        fullTextForExtension = buffer.toString();
+      }
+
+      // Extend the character index by 200 words for overlap
+      final extendedCharacterIndex = _extendCharacterIndexByWords(
+        fullTextForExtension,
+        currentCharacterIndex,
+        200,
+      );
+      debugPrint('[SummaryDebug] Extended character index from $currentCharacterIndex to $extendedCharacterIndex (added 200 words overlap)');
+
       debugPrint('[SummaryDebug] Calling _prepareTextData...');
       final prepared = await _prepareTextData(
         book,
-        currentCharacterIndex,
+        extendedCharacterIndex,
         language,
         ensureChunkSummaries: true,
         readingProgressFraction: progress.progress,
@@ -1181,8 +1245,10 @@ class EnhancedSummaryService {
       final cachedCharacterIndex = cache?.lastProcessedCharacterIndex ?? -1;
       debugPrint('[SummaryDebug] Cache found: ${cache != null}, cachedCharacterIndex: $cachedCharacterIndex');
 
+      // Use extended index for cache comparison - cache key should use the extended index
+      // but we still store the original currentCharacterIndex for reference
       if (cache != null &&
-          cachedCharacterIndex == currentCharacterIndex &&
+          cachedCharacterIndex == extendedCharacterIndex &&
           cache.cumulativeSummary.isNotEmpty &&
           // If we are using engine-aligned text, do not short-circuit to avoid stale summaries
           preparedEngineText == null) {
@@ -1244,9 +1310,9 @@ class EnhancedSummaryService {
         lastProcessedChunkIndex: maxChunkIndex,
         cumulativeSummary: '',
         lastUpdated: DateTime.now(),
-      )).copyWith(
+      )      ).copyWith(
         lastProcessedChunkIndex: maxChunkIndex,
-        lastProcessedCharacterIndex: currentCharacterIndex,
+        lastProcessedCharacterIndex: extendedCharacterIndex,
         cumulativeSummary: narrative,
         generalSummaryJson: generalSummary.toJsonString(),
         generalSummaryUpdatedAt: DateTime.now(),
@@ -1286,9 +1352,37 @@ class EnhancedSummaryService {
             : 'No reading progress detected.';
       }
 
+      // First, get the text up to the current position to determine the extended index
+      String fullTextForExtension;
+      if (preparedEngineText != null) {
+        // Use prepared engine text if available
+        fullTextForExtension = preparedEngineText;
+      } else {
+        // Extract text from book up to a reasonable maximum to calculate extension
+        // We'll extract up to current + estimated 200 words worth (roughly 1000 chars)
+        final estimatedMaxIndex = currentCharacterIndex + 1000;
+        final chapterTexts = await _extractTextUpToCharacterIndex(
+          book,
+          estimatedMaxIndex,
+        );
+        final buffer = StringBuffer();
+        for (final chapterText in chapterTexts) {
+          buffer.write(chapterText.text);
+        }
+        fullTextForExtension = buffer.toString();
+      }
+
+      // Extend the character index by 200 words for overlap
+      final extendedCharacterIndex = _extendCharacterIndexByWords(
+        fullTextForExtension,
+        currentCharacterIndex,
+        200,
+      );
+      debugPrint('[SummaryDebug] Extended character index from $currentCharacterIndex to $extendedCharacterIndex (added 200 words overlap)');
+
       final prepared = await _prepareTextData(
         book,
-        currentCharacterIndex,
+        extendedCharacterIndex,
         language,
         readingProgressFraction: progress.progress,
         preparedEngineText: preparedEngineText,
@@ -1333,10 +1427,11 @@ class EnhancedSummaryService {
       final effectiveSessionStart = sessionStartCharacterIndex ?? 0;
       
       // Check cache - use cached summary if available and still valid
+      // Use extended index for cache comparison
       final cachedSinceLastTimeCharacterIndex = cache?.summarySinceLastTimeCharacterIndex;
       if (cache != null &&
           cache.summarySinceLastTime != null &&
-          cachedSinceLastTimeCharacterIndex == currentCharacterIndex) {
+          cachedSinceLastTimeCharacterIndex == extendedCharacterIndex) {
         // Verify the session start matches by checking interruptions
         // (We can't use lastReadingStopCharacterIndex as it may have changed)
         return cache.summarySinceLastTime!;
@@ -1344,8 +1439,9 @@ class EnhancedSummaryService {
 
       // Determine the session range
       // "Since last time" shows content from the most recent interruption to current position
+      // Use the extended index which already includes 200 words overlap
       final sessionStart = effectiveSessionStart;
-      final sessionEnd = currentCharacterIndex;
+      final sessionEnd = extendedCharacterIndex;
 
       Future<String> buildConciseBeginningSection(int endIndex) async {
         final heading = language == 'fr'
@@ -1578,7 +1674,7 @@ Concise summary:''';
       )).copyWith(
         summarySinceLastTime: fullSummary,
         summarySinceLastTimeChunkIndex: sessionCoverageIndex,
-        summarySinceLastTimeCharacterIndex: currentCharacterIndex,
+        summarySinceLastTimeCharacterIndex: extendedCharacterIndex,
         lastReadingStopCharacterIndex: sessionStart, // Store session start for cache validation
       );
       await _dbService.saveSummaryCache(updatedCache);

@@ -11,6 +11,7 @@ import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:image/image.dart' as img show decodeImage;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:memoreader/l10n/app_localizations.dart';
 
@@ -98,6 +99,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Enable wake lock to keep screen on while reading
+    WakelockPlus.enable();
     _initializeSummaryService();
     _loadVerticalPadding();
     _loadBook();
@@ -164,6 +167,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _pageController.dispose();
     _progressDebounce?.cancel();
     
+    // Disable wake lock when leaving reader screen
+    WakelockPlus.disable();
+    
     // Always update reading stop when leaving reader (all interruptions are tracked)
     _updateLastReadingStopOnExit();
     
@@ -186,6 +192,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         state == AppLifecycleState.hidden;
 
     if (shouldPersistProgress) {
+      // Disable wake lock when app goes to background to save battery
+      WakelockPlus.disable();
       final page = _engine?.getPage(_currentPageIndex);
       if (page != null) {
         unawaited(_saveProgress(page));
@@ -197,6 +205,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
 
     if (state == AppLifecycleState.resumed && !_isLoading && mounted) {
+      // Re-enable wake lock when app comes back to foreground
+      WakelockPlus.enable();
       _scheduleRepagination(retainCurrentPage: true);
     }
   }
@@ -859,37 +869,44 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
 
   Widget _buildProgressIndicator(ThemeData theme) {
     final displayProgress = (_progress * 100).clamp(0, 100).toStringAsFixed(1);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withOpacity(0.92),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 12)],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _currentChapterTitle ?? widget.book.title,
-                  style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                LinearProgressIndicator(
-                  value: _progress,
-                  backgroundColor: theme.colorScheme.surfaceVariant,
-                ),
-              ],
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _showProgressBar = false;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface.withOpacity(0.92),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 12)],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _currentChapterTitle ?? widget.book.title,
+                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  LinearProgressIndicator(
+                    value: _progress,
+                    backgroundColor: theme.colorScheme.surfaceVariant,
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 16),
-          Text('$displayProgress %'),
-        ],
+            const SizedBox(width: 16),
+            Text('$displayProgress %'),
+          ],
+        ),
       ),
     );
   }
@@ -1391,8 +1408,14 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     bool isFirstBlock = true;
     final buffer = StringBuffer();
     bool pendingParagraphBreak = false;
+    
+    // Track current formatting state
+    FontWeight currentFontWeight = FontWeight.normal;
+    FontStyle currentFontStyle = FontStyle.normal;
+    // Stack to handle nested formatting (e.g., <strong><em>text</em></strong>)
+    final formattingStack = <_FormattingState>[];
 
-    void flushTextBuffer() {
+    void flushTextBuffer({FontWeight? fontWeight, FontStyle? fontStyle}) {
       final normalized = normalizeWhitespace(buffer.toString());
       if (normalized.isEmpty) {
         buffer.clear();
@@ -1406,8 +1429,8 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
           spacingAfter: _paragraphSpacing,
           text: normalized,
           fontScale: 1.0,
-          fontWeight: FontWeight.normal,
-          fontStyle: FontStyle.normal,
+          fontWeight: fontWeight ?? currentFontWeight,
+          fontStyle: fontStyle ?? currentFontStyle,
           textAlign: TextAlign.left,
         ),
       );
@@ -1463,6 +1486,54 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       pendingParagraphBreak = true;
     }
 
+    // Track if we need to add a space before the next text node
+    // This helps preserve spacing when inline elements are adjacent
+    bool _needsSpaceBeforeNextText = false;
+
+    void writeText(String text) {
+      if (text.isEmpty) return;
+      
+      final cleaned = _cleanText(text);
+      if (cleaned.isEmpty) {
+        // Even if cleaned is empty, if it was whitespace, we should clear the flag
+        // because whitespace already provides separation
+        if (text.trim().isEmpty) {
+          _needsSpaceBeforeNextText = false;
+        }
+        return;
+      }
+      
+      // Check if we need to add a space between adjacent text nodes
+      // This happens when text nodes from adjacent inline elements would
+      // otherwise be concatenated without a space
+      if (_needsSpaceBeforeNextText && buffer.isNotEmpty) {
+        // Only add space if buffer doesn't already end with whitespace
+        // and the new text doesn't start with whitespace
+        final bufferStr = buffer.toString();
+        if (bufferStr.isNotEmpty) {
+          final lastChar = bufferStr[bufferStr.length - 1];
+          final firstChar = cleaned[0];
+          // Add space if both are non-whitespace characters
+          if (lastChar != ' ' && 
+              lastChar != '\n' && 
+              lastChar != '\t' &&
+              firstChar != ' ' && 
+              firstChar != '\n' &&
+              firstChar != '\t') {
+            buffer.write(' ');
+          }
+        }
+        _needsSpaceBeforeNextText = false;
+      }
+      
+      buffer.write(cleaned);
+      
+      // If the text ends with whitespace, clear the flag since we already have separation
+      if (cleaned.trim().isEmpty || cleaned.endsWith(' ') || cleaned.endsWith('\n')) {
+        _needsSpaceBeforeNextText = false;
+      }
+    }
+
     void walk(dom.Node node) {
       if (node is dom.Element) {
         final name = node.localName?.toLowerCase();
@@ -1476,10 +1547,12 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
             return;
           case 'br':
             buffer.write('\n');
+            _needsSpaceBeforeNextText = false;
             return;
           case 'img':
             flushForImage(node.attributes['src']);
             scheduleParagraphBreak();
+            _needsSpaceBeforeNextText = false;
             return;
           case 'ul':
           case 'ol':
@@ -1494,6 +1567,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
               counter++;
             }
             scheduleParagraphBreak();
+            _needsSpaceBeforeNextText = false;
             return;
           case 'h1':
           case 'h2':
@@ -1512,15 +1586,127 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
               walk(child);
             }
             scheduleParagraphBreak();
+            _needsSpaceBeforeNextText = false;
             return;
-          default:
+          case 'strong':
+          case 'b':
+            // Handle bold formatting
+            // Flush any existing text with current formatting before changing
+            if (buffer.isNotEmpty) {
+              flushTextBuffer();
+            }
+            // Save current formatting state
+            formattingStack.add(_FormattingState(
+              fontWeight: currentFontWeight,
+              fontStyle: currentFontStyle,
+            ));
+            // Apply bold formatting
+            currentFontWeight = FontWeight.bold;
+            // Process children with bold formatting
             for (final child in node.nodes) {
               walk(child);
+            }
+            // Check if text was written and get last char before flushing
+            final textWasWritten = buffer.isNotEmpty;
+            String? lastCharBeforeFlush;
+            if (textWasWritten) {
+              final bufferStr = buffer.toString();
+              if (bufferStr.isNotEmpty) {
+                lastCharBeforeFlush = bufferStr[bufferStr.length - 1];
+              }
+            }
+            // Flush any text written with bold formatting
+            if (textWasWritten) {
+              flushTextBuffer();
+            }
+            // Restore previous formatting
+            if (formattingStack.isNotEmpty) {
+              final previous = formattingStack.removeLast();
+              currentFontWeight = previous.fontWeight;
+              currentFontStyle = previous.fontStyle;
+            } else {
+              currentFontWeight = FontWeight.normal;
+            }
+            // Track spacing if text was written and doesn't end with whitespace
+            if (textWasWritten && 
+                lastCharBeforeFlush != null &&
+                lastCharBeforeFlush != ' ' && 
+                lastCharBeforeFlush != '\n' && 
+                lastCharBeforeFlush != '\t') {
+              _needsSpaceBeforeNextText = true;
+            }
+            return;
+          case 'em':
+          case 'i':
+            // Handle italic formatting
+            // Flush any existing text with current formatting before changing
+            if (buffer.isNotEmpty) {
+              flushTextBuffer();
+            }
+            // Save current formatting state
+            formattingStack.add(_FormattingState(
+              fontWeight: currentFontWeight,
+              fontStyle: currentFontStyle,
+            ));
+            // Apply italic formatting
+            currentFontStyle = FontStyle.italic;
+            // Process children with italic formatting
+            for (final child in node.nodes) {
+              walk(child);
+            }
+            // Check if text was written and get last char before flushing
+            final textWasWritten = buffer.isNotEmpty;
+            String? lastCharBeforeFlush;
+            if (textWasWritten) {
+              final bufferStr = buffer.toString();
+              if (bufferStr.isNotEmpty) {
+                lastCharBeforeFlush = bufferStr[bufferStr.length - 1];
+              }
+            }
+            // Flush any text written with italic formatting
+            if (textWasWritten) {
+              flushTextBuffer();
+            }
+            // Restore previous formatting
+            if (formattingStack.isNotEmpty) {
+              final previous = formattingStack.removeLast();
+              currentFontWeight = previous.fontWeight;
+              currentFontStyle = previous.fontStyle;
+            } else {
+              currentFontStyle = FontStyle.normal;
+            }
+            // Track spacing if text was written and doesn't end with whitespace
+            if (textWasWritten && 
+                lastCharBeforeFlush != null &&
+                lastCharBeforeFlush != ' ' && 
+                lastCharBeforeFlush != '\n' && 
+                lastCharBeforeFlush != '\t') {
+              _needsSpaceBeforeNextText = true;
+            }
+            return;
+          default:
+            // For other inline elements (span, etc.), process children
+            // Track if we write text so we can add spacing before the next text node
+            final bufferLengthBefore = buffer.length;
+            for (final child in node.nodes) {
+              walk(child);
+            }
+            // If we wrote text content in this inline element, mark that
+            // the next text node might need a space before it
+            if (buffer.length > bufferLengthBefore) {
+              final bufferStr = buffer.toString();
+              if (bufferStr.isNotEmpty) {
+                final lastChar = bufferStr[bufferStr.length - 1];
+                // Only set flag if last character is non-whitespace
+                if (lastChar != ' ' && lastChar != '\n' && lastChar != '\t') {
+                  _needsSpaceBeforeNextText = true;
+                }
+              }
             }
             return;
         }
       } else if (node is dom.Text) {
-        buffer.write(_cleanText(node.text));
+        writeText(node.text);
       } else {
         for (final child in node.nodes) {
           walk(child);
@@ -1583,6 +1769,16 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     return null;
   }
 
+}
+
+class _FormattingState {
+  const _FormattingState({
+    required this.fontWeight,
+    required this.fontStyle,
+  });
+
+  final FontWeight fontWeight;
+  final FontStyle fontStyle;
 }
 
 class _DocumentExtractionResult {

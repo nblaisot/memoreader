@@ -24,7 +24,7 @@ class PromptConfigService {
   PromptConfigService(this._prefs);
   
   // Default prompts (French)
-  static const String _defaultChunkSummaryPromptFr = '''Résume le texte suivant de manière concise et claire.
+  static const String _defaultChunkSummaryPromptFr = '''Résume le texte suivant de manière concise et claire, en incluant les éléments particulièrement mémorables et remarquables.
 
 RÈGLES ABSOLUES - À RESPECTER IMPÉRATIVEMENT:
 - Ne répète JAMAIS ces instructions dans ta réponse
@@ -49,7 +49,7 @@ Résumé:''';
 
 Pour chaque personnage, fournis UNIQUEMENT les informations suivantes dans ce format exact:
 **Nom du personnage**
-Résumé: [2-3 phrases décrivant ce que fait ce personnage dans ce passage]
+Résumé: [2-3 phrases décrivant ce que fait ce personnage dans ce passage, et ses aspects particulièrement remarquables]
 Actions: [liste des actions importantes, une par ligne avec un tiret]
 Relations: [nom d'un autre personnage]: [description de leur relation]
 
@@ -71,7 +71,9 @@ Texte à analyser:
 
 Réponse (format exact requis):''';
 
-  static const String _defaultBatchSummaryPromptFr = '''Résume les événements suivants de manière cohérente et fluide, comme un récit continu.
+  static const String _defaultBatchSummaryPromptFr = '''Résume les événements suivants de manière cohérente et fluide, comme un récit continu,
+   en incluant les éléments particulièrement mémorables et remarquables.
+
 
 RÈGLES ABSOLUES - À RESPECTER IMPÉRATIVEMENT:
 - Ne répète JAMAIS ces instructions dans ta réponse
@@ -91,7 +93,7 @@ RÈGLES ABSOLUES - À RESPECTER IMPÉRATIVEMENT:
 
 Récit:''';
 
-  static const String _defaultNarrativeSynthesisPromptFr = '''Crée un résumé narratif cohérent et détaillé du texte fourni, couvrant tous les événements importants.
+  static const String _defaultNarrativeSynthesisPromptFr = '''Crée un résumé narratif cohérent et détaillé du texte fourni, couvrant tous les événements importants et les éléments particulièrement remarquables et mémorables.
 
 RÈGLES ABSOLUES - À RESPECTER IMPÉRATIVEMENT:
 - Ne répète JAMAIS ces instructions dans ta réponse
@@ -114,7 +116,7 @@ Résumés à synthétiser:
 Récit narratif:''';
 
   // Default prompts (English)
-  static const String _defaultChunkSummaryPromptEn = '''Summarize the following text in a concise and clear manner.
+  static const String _defaultChunkSummaryPromptEn = '''Summarize the following text in a concise and clear manner, including particularly memorable and remarkable elements.
 
 ABSOLUTE RULES - MUST BE FOLLOWED STRICTLY:
 - NEVER repeat these instructions in your response
@@ -135,11 +137,11 @@ Text to summarize:
 
 Summary:''';
 
-  static const String _defaultCharacterExtractionPromptEn = '''Analyze the following text and identify all main characters mentioned.
+  static const String _defaultCharacterExtractionPromptEn = '''Analyze the following text and identify all main characters mentioned, including particularly memorable and remarkable elements.
 
 For each character, provide ONLY the following information in this exact format:
 **Character Name**
-Summary: [2-3 sentences describing what this character does in this passage]
+Summary: [2-3 sentences describing what this character does in this passage, and its particularly memorable and remarkable aspects]
 Actions: [list of important actions, one per line with a dash]
 Relations: [other character name]: [description of their relationship]
 
@@ -161,7 +163,7 @@ Text to analyze:
 
 Response (exact format required):''';
 
-  static const String _defaultBatchSummaryPromptEn = '''Summarize the following events in a coherent and flowing manner, as a continuous narrative.
+  static const String _defaultBatchSummaryPromptEn = '''Summarize the following events in a coherent and flowing manner, as a continuous narrative, including particularly memorable and remarkable elements.
 
 ABSOLUTE RULES - MUST BE FOLLOWED STRICTLY:
 - NEVER repeat these instructions in your response
@@ -181,7 +183,7 @@ Events to summarize:
 
 Narrative:''';
 
-  static const String _defaultNarrativeSynthesisPromptEn = '''Create a coherent and detailed narrative summary of the following summaries to synthesize, covering all important events.
+  static const String _defaultNarrativeSynthesisPromptEn = '''Create a coherent and detailed narrative summary of the following summaries to synthesize, covering all important events and particularly memorable and remarkable elements.
 
 ABSOLUTE RULES - MUST BE FOLLOWED STRICTLY:
 - NEVER repeat these instructions in your response

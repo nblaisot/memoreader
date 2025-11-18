@@ -945,6 +945,8 @@ class _TextBlockState {
               endCharIndex: globalCharIndex + fitResult.text.length - 1,
             );
 
+            final nextOffset = fitResult.endOffset;
+            final nextTokenPointer = fitResult.endTokenPointerExclusive;
             final pageHeight = _measureHeight(
               pageText: fitResult.text,
               spacingBefore: spacingBefore,
@@ -957,9 +959,6 @@ class _TextBlockState {
                 'breakOffset=$nextOffset',
               );
             }
-
-            final nextOffset = fitResult.endOffset;
-            final nextTokenPointer = fitResult.endTokenPointerExclusive;
             final nextLineIndex = _findLineIndexForOffset(nextOffset);
 
             currentLineIndex = nextLineIndex;

@@ -69,6 +69,9 @@ dependencies:
   sqflite: ^2.3.3+1
   
   flutter_markdown_plus: ^1.0.5
+  
+  # Keep screen awake while reading
+  wakelock_plus: ^1.2.8
 
 dev_dependencies:
   flutter_test:
