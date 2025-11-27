@@ -1239,13 +1239,13 @@ class EnhancedSummaryService {
       // Use the prepared engine text for continuous text flow
       final fullTextForExtension = preparedEngineText;
 
-      // Extend the character index by 200 words for overlap
+      // Extend the character index by 500 words for overlap to ensure last chunk covers recent reading
       final extendedCharacterIndex = _extendCharacterIndexByWords(
         fullTextForExtension,
         currentCharacterIndex,
-        200,
+        500,
       );
-      debugPrint('[SummaryDebug] Extended character index from $currentCharacterIndex to $extendedCharacterIndex (added 200 words overlap)');
+      debugPrint('[SummaryDebug] Extended character index from $currentCharacterIndex to $extendedCharacterIndex (added 500 words overlap)');
 
       debugPrint('[SummaryDebug] Calling _prepareTextData...');
       final prepared = await _prepareTextData(
@@ -1395,13 +1395,13 @@ class EnhancedSummaryService {
         fullTextForExtension = buffer.toString();
       }
 
-      // Extend the character index by 200 words for overlap
+      // Extend the character index by 500 words for overlap to ensure last chunk covers recent reading
       final extendedCharacterIndex = _extendCharacterIndexByWords(
         fullTextForExtension,
         currentCharacterIndex,
-        200,
+        500,
       );
-      debugPrint('[SummaryDebug] Extended character index from $currentCharacterIndex to $extendedCharacterIndex (added 200 words overlap)');
+      debugPrint('[SummaryDebug] Extended character index from $currentCharacterIndex to $extendedCharacterIndex (added 500 words overlap)');
 
       final prepared = await _prepareTextData(
         book,
