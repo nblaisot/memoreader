@@ -19,7 +19,7 @@ class SummaryScreen extends StatefulWidget {
   final Book book;
   final ReadingProgress progress;
   final EnhancedSummaryService enhancedSummaryService;
-  final String? engineFullText;
+  final String engineFullText;
   final SummaryType summaryType;
 
   const SummaryScreen({
@@ -28,7 +28,7 @@ class SummaryScreen extends StatefulWidget {
     required this.progress,
     required this.enhancedSummaryService,
     required this.summaryType,
-    this.engineFullText,
+    required this.engineFullText,
   });
 
   @override

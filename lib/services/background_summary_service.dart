@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:epubx/epubx.dart' as epub;
 import '../models/book.dart';
 import '../models/reading_progress.dart';
 import '../services/book_service.dart';
@@ -8,6 +9,7 @@ import '../services/enhanced_summary_service.dart';
 import '../services/summary_config_service.dart';
 import '../services/settings_service.dart';
 import '../services/summary_database_service.dart';
+import '../utils/html_text_extractor.dart';
 
 /// Service for proactive background summary generation
 /// 
@@ -47,6 +49,110 @@ class BackgroundSummaryService {
   /// Check if summary generation is currently in progress for a book
   bool isGenerationInProgress(String bookId) {
     return _generationInProgress[bookId] ?? false;
+  }
+
+  /// Extract full text content from a book for summary generation
+  Future<String> _extractFullTextContent(Book book, ReadingProgress progress) async {
+    try {
+      final epub = await _bookService.loadEpubBook(book.filePath);
+
+      // Parse chapters and extract text content similar to enhanced summary service
+      final parsedChapters = _parseChapters(epub);
+      final orderedSections =
+          parsedChapters.isNotEmpty ? parsedChapters : _fallbackSectionsFromContent(epub);
+
+      final buffer = StringBuffer();
+      for (final section in orderedSections) {
+        final plainText = _extractTextFromHtml(section.htmlContent);
+        if (plainText.isNotEmpty) {
+          buffer.write(plainText);
+        }
+      }
+
+      return buffer.toString();
+    } catch (e) {
+      debugPrint('Failed to extract full text content: $e');
+      return '';
+    }
+  }
+
+  List<_ParsedChapter> _parseChapters(epub.EpubBook epubBook) {
+    final chapters = <_ParsedChapter>[];
+    try {
+      final epubChapters = epubBook.Chapters;
+      if (epubChapters == null || epubChapters.isEmpty) {
+        return chapters;
+      }
+
+      for (int i = 0; i < epubChapters.length; i++) {
+        try {
+          final epubChapter = epubChapters[i];
+          final title = epubChapter.Title?.isNotEmpty == true
+              ? epubChapter.Title!
+              : 'Chapter ${i + 1}';
+          final htmlContent = epubChapter.HtmlContent ?? '';
+
+          if (htmlContent.isNotEmpty) {
+            chapters.add(_ParsedChapter(
+              index: i,
+              title: title,
+              htmlContent: htmlContent,
+            ));
+          }
+        } catch (e) {
+          debugPrint('Error parsing chapter $i: $e');
+        }
+      }
+    } catch (e) {
+      debugPrint('Error parsing chapters: $e');
+    }
+
+    return chapters.isEmpty ? [] : chapters;
+  }
+
+  List<_ParsedChapter> _fallbackSectionsFromContent(epub.EpubBook epubBook) {
+    final htmlFiles = epubBook.Content?.Html;
+    if (htmlFiles == null || htmlFiles.isEmpty) {
+      return const <_ParsedChapter>[];
+    }
+
+    final entries = htmlFiles.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    final sections = <_ParsedChapter>[];
+
+    for (var i = 0; i < entries.length; i++) {
+      final file = entries[i].value;
+      final content = file.Content ?? '';
+      if (content.isEmpty) {
+        continue;
+      }
+      // EpubTextContentFile no longer exposes Title; use a simple fallback.
+      final title = 'Section ${i + 1}';
+      sections.add(_ParsedChapter(
+        index: i,
+        title: title,
+        htmlContent: content,
+      ));
+    }
+
+    return sections;
+  }
+
+  String _extractTextFromHtml(String htmlContent) {
+    try {
+      return HtmlTextExtractor.extract(htmlContent);
+    } catch (e) {
+      debugPrint('Error parsing HTML: $e');
+      final fallback = htmlContent
+          .replaceAll(RegExp(r'<[^>]+>'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      return _normalizeWhitespace(fallback);
+    }
+  }
+
+  String _normalizeWhitespace(String text) {
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   /// Generate summaries proactively for a book
@@ -170,11 +276,15 @@ class BackgroundSummaryService {
     if (_summaryService == null) return;
 
     try {
+      // Extract full text content for summary generation
+      final fullText = await _extractFullTextContent(book, progress);
+
       // Generate cumulative summary (from beginning)
       await _summaryService!.getSummaryUpToPosition(
         book,
         progress,
         languageCode,
+        preparedEngineText: fullText,
       );
 
       // Generate characters summary
@@ -182,6 +292,7 @@ class BackgroundSummaryService {
         book,
         progress,
         languageCode,
+        preparedEngineText: fullText,
       );
 
       // Note: We don't generate "since last time" proactively as it depends on
@@ -232,5 +343,17 @@ class BackgroundSummaryService {
       debugPrint('Error generating summaries for all books: $e');
     }
   }
+}
+
+class _ParsedChapter {
+  final int index;
+  final String title;
+  final String htmlContent;
+
+  _ParsedChapter({
+    required this.index,
+    required this.title,
+    required this.htmlContent,
+  });
 }
 
