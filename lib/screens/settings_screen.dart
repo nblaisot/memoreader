@@ -56,8 +56,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final Map<String, bool> _expansionState = {
     'chunkSummary': false,
     'characterExtraction': false,
-    'batchSummary': false,
-    'narrativeSynthesis': false,
     'textAction': false,
   };
   
@@ -134,10 +132,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'chunkSummary_en',
       'characterExtraction_fr',
       'characterExtraction_en',
-      'batchSummary_fr',
-      'batchSummary_en',
-      'narrativeSynthesis_fr',
-      'narrativeSynthesis_en',
       'textActionLabel_fr',
       'textActionLabel_en',
       'textActionPrompt_fr',
@@ -156,12 +150,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           break;
         case 'characterExtraction':
           promptText = _promptConfigService.getCharacterExtractionPrompt(language);
-          break;
-        case 'batchSummary':
-          promptText = _promptConfigService.getBatchSummaryPrompt(language);
-          break;
-        case 'narrativeSynthesis':
-          promptText = _promptConfigService.getNarrativeSynthesisPrompt(language);
           break;
         case 'textActionLabel':
           promptText = _promptConfigService.getTextActionLabel(language);
@@ -200,12 +188,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           break;
         case 'characterExtraction':
           await _promptConfigService.setCharacterExtractionPrompt(language, controller.text);
-          break;
-        case 'batchSummary':
-          await _promptConfigService.setBatchSummaryPrompt(language, controller.text);
-          break;
-        case 'narrativeSynthesis':
-          await _promptConfigService.setNarrativeSynthesisPrompt(language, controller.text);
           break;
         case 'textActionLabel':
           await _promptConfigService.setTextActionLabel(language, controller.text);
@@ -246,12 +228,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             break;
           case 'characterExtraction':
             promptText = _promptConfigService.getCharacterExtractionPrompt(language);
-            break;
-          case 'batchSummary':
-            promptText = _promptConfigService.getBatchSummaryPrompt(language);
-            break;
-          case 'narrativeSynthesis':
-            promptText = _promptConfigService.getNarrativeSynthesisPrompt(language);
             break;
           case 'textActionLabel':
             promptText = _promptConfigService.getTextActionLabel(language);
@@ -590,22 +566,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         fields: [
           _PromptFieldConfig('characterExtraction_fr', l10n.characterExtractionPromptFr),
           _PromptFieldConfig('characterExtraction_en', l10n.characterExtractionPromptEn),
-        ],
-      ),
-      _PromptSection(
-        stateKey: 'batchSummary',
-        title: l10n.batchSummaryPrompt,
-        fields: [
-          _PromptFieldConfig('batchSummary_fr', l10n.batchSummaryPromptFr),
-          _PromptFieldConfig('batchSummary_en', l10n.batchSummaryPromptEn),
-        ],
-      ),
-      _PromptSection(
-        stateKey: 'narrativeSynthesis',
-        title: l10n.narrativeSynthesisPrompt,
-        fields: [
-          _PromptFieldConfig('narrativeSynthesis_fr', l10n.narrativeSynthesisPromptFr),
-          _PromptFieldConfig('narrativeSynthesis_en', l10n.narrativeSynthesisPromptEn),
         ],
       ),
       _PromptSection(

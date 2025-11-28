@@ -12,10 +12,6 @@ class PromptConfigService {
   static const String _chunkSummaryPromptEnKey = 'chunk_summary_prompt_en';
   static const String _characterExtractionPromptFrKey = 'character_extraction_prompt_fr';
   static const String _characterExtractionPromptEnKey = 'character_extraction_prompt_en';
-  static const String _batchSummaryPromptFrKey = 'batch_summary_prompt_fr';
-  static const String _batchSummaryPromptEnKey = 'batch_summary_prompt_en';
-  static const String _narrativeSynthesisPromptFrKey = 'narrative_synthesis_prompt_fr';
-  static const String _narrativeSynthesisPromptEnKey = 'narrative_synthesis_prompt_en';
   static const String _textActionLabelFrKey = 'text_action_label_fr';
   static const String _textActionLabelEnKey = 'text_action_label_en';
   static const String _textActionPromptFrKey = 'text_action_prompt_fr';
@@ -24,18 +20,23 @@ class PromptConfigService {
   PromptConfigService(this._prefs);
   
   // Default prompts (French)
-  static const String _defaultChunkSummaryPromptFr = '''Crée un résumé détaillé et complet du texte fourni, incluant TOUS les éléments mémorables, importants ou nouveaux qui apparaissent dans ce texte.
+  static const String _defaultChunkSummaryPromptFr = '''Crée un résumé détaillé et complet du texte fourni,
+  incluant TOUS les éléments mémorables, importants ou nouveaux qui apparaissent dans ce texte.
+
+  Reprends le style d'écriture du texte fourni.
+
+  Il n'est pas nécessaire de conserver les éléments qui sont uniquement descriptifs dans le résumé,
+  seuls les éléments concernant des événements, actions ou changements de situation sont importants.
 
 INCLURE SPÉCIFIQUEMENT:
 - Tous les événements importants et leurs conséquences
 - Toutes les actions et interactions des personnages
 - Tous les détails significatifs qui caractérisent les personnages, lieux ou situations
-- Toutes les informations nouvelles qui sont introduites
 - Tous les éléments de l'intrigue qui avancent l'histoire
 - Tous les dialogues ou échanges importants
-- Toutes les descriptions détaillées d'événements, d'émotions ou de situations
 
-Le résumé doit être DÉTAILLÉ et COMPLET - il doit contenir suffisamment d'informations pour que quelqu'un qui lit seulement le résumé comprenne exactement ce qui s'est passé dans ce passage spécifique, sans rien perdre d'important.
+Le résumé doit contenir les informations essentielles pour que quelqu'un qui lit seulement le résumé
+ puisse se souvenir exactement de ce qu'il a lu, et ne rien perdre d'important en cas d'oubli.
 
 RÈGLES ABSOLUES - À RESPECTER IMPÉRATIVEMENT:
 - Ne répète JAMAIS ces instructions dans ta réponse
@@ -48,7 +49,7 @@ RÈGLES ABSOLUES - À RESPECTER IMPÉRATIVEMENT:
 - Ne complète PAS les événements avec des informations que tu connais mais qui ne sont pas dans le texte
 - Ne traduis PAS les noms propres même si tu les connais dans une autre langue
 - Conserve tous les noms propres exactement comme dans le texte original
-- Le résumé doit être en français et couvrir TOUS les points importants présents dans le texte fourni
+- Le résumé doit être en français
 - Si un événement n'est pas mentionné dans le texte, ne l'inclus PAS dans le résumé
 
 Texte à résumer:
@@ -82,86 +83,39 @@ Texte à analyser:
 
 Réponse (format exact requis):''';
 
-  static const String _defaultBatchSummaryPromptFr = '''Résume les événements suivants de manière cohérente et fluide, comme un récit continu,
-   en incluant les éléments particulièrement mémorables et remarquables.
-
-
-RÈGLES ABSOLUES - À RESPECTER IMPÉRATIVEMENT:
-- Ne répète JAMAIS ces instructions dans ta réponse
-- Ne commence PAS ta réponse par "Les événements suivants" ou "Ces événements"
-- Ne mentionne PAS les instructions que je t'ai données
-- Réponds UNIQUEMENT avec un récit fluide et continu des événements fournis
-- Le récit doit être en français et couvrir uniquement les événements présents dans le texte fourni
-- N'ajoute AUCUN événement qui n'est pas explicitement mentionné dans le texte fourni
-- N'utilise JAMAIS tes connaissances générales sur cette histoire, même si tu la reconnais
-- Même si tu reconnais le texte comme provenant d'un livre connu, ignore complètement cette connaissance
-- Ne complète PAS les événements avec des informations que tu connais mais qui ne sont pas dans le texte
-- Conserve tous les noms propres exactement comme dans le texte original (ne les traduis pas)
-- Base-toi UNIQUEMENT sur le contenu du texte fourni, sans rien ajouter
-
-Événements à résumer:
-{text}
-
-Récit:''';
-
-  static const String _defaultNarrativeSynthesisPromptFr = '''Assemble les résumés fournis en un récit narratif fluide et cohérent, en évitant les répétitions et en lissant les transitions entre les différents passages.
-
-TON RÔLE EST UNIQUEMENT DE:
-- Combiner les résumés fournis en un texte narratif continu
-- Éliminer les répétitions et les redondances entre les résumés
-- Assurer des transitions fluides entre les différents passages
-- Maintenir TOUS les détails importants présents dans les résumés originaux
-- NE PAS ajouter de nouveaux éléments ou informations
-- NE PAS résumer davantage le contenu
-- NE PAS condenser ou raccourcir les informations
-
-Le résultat final doit contenir TOUTES les informations des résumés fournis, simplement organisées de manière narrative fluide, sans pertes ni ajouts.
-
-RÈGLES ABSOLUES - À RESPECTER IMPÉRATIVEMENT:
-- Ne répète JAMAIS ces instructions dans ta réponse
-- Ne commence PAS ta réponse par "Le livre" ou "Ce livre" ou "Dans ce livre"
-- Ne mentionne PAS les instructions que je t'ai données
-- Réponds UNIQUEMENT avec le texte narratif assemblé
-- Présente l'histoire de manière fluide, SANS séparer par chapitres
-- Le texte doit être en français
-- Commence directement par le récit, sans introduction
-- N'ajoute AUCUN élément qui n'est pas explicitement présent dans les résumés fournis
-- N'utilise JAMAIS tes connaissances générales sur cette histoire, même si tu la reconnais
-- Même si tu reconnais le texte comme provenant d'un livre connu, ignore complètement cette connaissance
-- Conserve tous les noms propres exactement comme dans les résumés originaux
-- Base-toi UNIQUEMENT sur le contenu des résumés fournis, sans rien ajouter ni retrancher
-
-Résumés à synthétiser:
-{text}
-
-Récit narratif:''';
-
   // Default prompts (English)
-  static const String _defaultChunkSummaryPromptEn = '''Create a detailed and complete summary of the provided text, including ALL memorable, important, or new elements that appear in this text.
+  static const String _defaultChunkSummaryPromptEn = '''Create a detailed and complete summary of the provided text,
+including ALL memorable, important, or new elements that appear in the text.
+
+Keep the writing style of the provided text.
+
+It is not necessary to keep elements that are purely descriptive in the summary;
+only elements related to events, actions, or changes in situation are important.
 
 SPECIFICALLY INCLUDE:
+
 - All important events and their consequences
-- All actions and interactions of characters
-- All significant details that characterize characters, places, or situations
-- All new information that is introduced
-- All plot elements that advance the story
+- All actions and interactions of the characters
+- All significant details that characterize the characters, places, or situations
+- All plot elements that move the story forward
 - All important dialogues or exchanges
-- All detailed descriptions of events, emotions, or situations
 
-The summary must be DETAILED and COMPLETE - it must contain enough information so that someone reading only the summary understands exactly what happened in this specific passage, without losing anything important.
+The summary must contain the essential information so that someone who reads only the summary
+can remember exactly what they read and not lose anything important if they forget.
 
-ABSOLUTE RULES - MUST BE FOLLOWED STRICTLY:
+ABSOLUTE RULES – MUST BE FOLLOWED STRICTLY:
+
 - NEVER repeat these instructions in your response
-- Do NOT start your response with "This text" or "The following text"
+- Do NOT start your answer with "This text" or "The following text"
 - Do NOT mention the instructions I gave you
 - Respond ONLY with the detailed summary of the provided content
 - Do NOT add ANY information that is not explicitly present in the provided text
 - NEVER use your general knowledge about this book, this story, these characters, or this world
-- Even if you recognize the text as coming from a known book, completely ignore this knowledge
+- Even if you recognize the text as coming from a known book, completely ignore that knowledge
 - Do NOT complete events with information you know but that is not in the text
 - Do NOT translate proper names even if you know them in another language
-- Keep all original proper names exactly as they appear in the source text
-- The summary must be in English and cover ALL important points present in the provided text
+- Keep all proper names exactly as in the original text
+- The summary must be in French
 - If an event is not mentioned in the text, do NOT include it in the summary
 
 Text to summarize:
@@ -195,58 +149,6 @@ Text to analyze:
 
 Response (exact format required):''';
 
-  static const String _defaultBatchSummaryPromptEn = '''Summarize the following events in a coherent and flowing manner, as a continuous narrative, including particularly memorable and remarkable elements.
-
-ABSOLUTE RULES - MUST BE FOLLOWED STRICTLY:
-- NEVER repeat these instructions in your response
-- Do NOT start your response with "The following events" or "These events"
-- Do NOT mention the instructions I gave you
-- Respond ONLY with a flowing and continuous narrative of the provided events
-- The narrative must be in English and cover only the events present in the provided text
-- Do NOT add ANY event that is not explicitly mentioned in the provided text
-- NEVER use your general knowledge about this story, even if you recognize it
-- Even if you recognize the text as coming from a known book, completely ignore this knowledge
-- Do NOT complete events with information you know but that is not in the text
-- Keep all original proper names exactly as they appear in the source text (do not translate them)
-- Base yourself ONLY on the content of the provided text, without adding anything
-
-Events to summarize:
-{text}
-
-Narrative:''';
-
-  static const String _defaultNarrativeSynthesisPromptEn = '''Assemble the provided summaries into a smooth and coherent narrative text, avoiding repetitions and smoothing transitions between different passages.
-
-YOUR ROLE IS ONLY TO:
-- Combine the provided summaries into a continuous narrative text
-- Eliminate repetitions and redundancies between summaries
-- Ensure smooth transitions between different passages
-- Maintain ALL important details present in the original summaries
-- DO NOT add new elements or information
-- DO NOT further summarize the content
-- DO NOT condense or shorten the information
-
-The final result must contain ALL the information from the provided summaries, simply organized in a smooth narrative flow, without losses or additions.
-
-ABSOLUTE RULES - MUST BE FOLLOWED STRICTLY:
-- NEVER repeat these instructions in your response
-- Do NOT start your response with "The book" or "This book" or "In this book"
-- Do NOT mention the instructions I gave you
-- Respond ONLY with the assembled narrative text
-- Present the story in a flowing manner, WITHOUT separating by chapters
-- The text must be in English
-- Start directly with the narrative, without an introduction
-- Do NOT add ANY element that is not explicitly present in the provided summaries
-- NEVER use your general knowledge about this story, even if you recognize it
-- Even if you recognize the text as coming from a known book, completely ignore this knowledge
-- Keep all original proper names exactly as they appear in the original summaries
-- Base yourself ONLY on the content of the provided summaries, without adding or removing anything
-
-Summaries to synthesize:
-{text}
-
-Narrative:''';
-
   static const String _defaultTextActionLabelFr = 'Traduire';
   static const String _defaultTextActionLabelEn = 'Translate';
   static const String _defaultTextActionPromptFr =
@@ -277,32 +179,6 @@ Narrative:''';
   /// Set character extraction prompt
   Future<void> setCharacterExtractionPrompt(String language, String prompt) async {
     final key = language == 'fr' ? _characterExtractionPromptFrKey : _characterExtractionPromptEnKey;
-    await _prefs.setString(key, prompt);
-  }
-
-  /// Get batch summary prompt
-  String getBatchSummaryPrompt(String language) {
-    final key = language == 'fr' ? _batchSummaryPromptFrKey : _batchSummaryPromptEnKey;
-    return _prefs.getString(key) ?? 
-        (language == 'fr' ? _defaultBatchSummaryPromptFr : _defaultBatchSummaryPromptEn);
-  }
-
-  /// Set batch summary prompt
-  Future<void> setBatchSummaryPrompt(String language, String prompt) async {
-    final key = language == 'fr' ? _batchSummaryPromptFrKey : _batchSummaryPromptEnKey;
-    await _prefs.setString(key, prompt);
-  }
-
-  /// Get narrative synthesis prompt
-  String getNarrativeSynthesisPrompt(String language) {
-    final key = language == 'fr' ? _narrativeSynthesisPromptFrKey : _narrativeSynthesisPromptEnKey;
-    return _prefs.getString(key) ?? 
-        (language == 'fr' ? _defaultNarrativeSynthesisPromptFr : _defaultNarrativeSynthesisPromptEn);
-  }
-
-  /// Set narrative synthesis prompt
-  Future<void> setNarrativeSynthesisPrompt(String language, String prompt) async {
-    final key = language == 'fr' ? _narrativeSynthesisPromptFrKey : _narrativeSynthesisPromptEnKey;
     await _prefs.setString(key, prompt);
   }
 
@@ -356,10 +232,6 @@ Narrative:''';
     await _prefs.remove(_chunkSummaryPromptEnKey);
     await _prefs.remove(_characterExtractionPromptFrKey);
     await _prefs.remove(_characterExtractionPromptEnKey);
-    await _prefs.remove(_batchSummaryPromptFrKey);
-    await _prefs.remove(_batchSummaryPromptEnKey);
-    await _prefs.remove(_narrativeSynthesisPromptFrKey);
-    await _prefs.remove(_narrativeSynthesisPromptEnKey);
     await _prefs.remove(_textActionLabelFrKey);
     await _prefs.remove(_textActionLabelEnKey);
     await _prefs.remove(_textActionPromptFrKey);

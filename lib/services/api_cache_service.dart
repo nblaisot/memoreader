@@ -54,14 +54,20 @@ class ApiCacheService {
   /// Compute a hash of the full request payload
   /// 
   /// This includes all request parameters: model, messages, max_tokens, temperature, etc.
+  /// The hash includes the provider name to ensure OpenAI and Mistral responses are cached separately.
   /// The hash is used as the cache key to ensure identical requests return cached responses.
-  String computeRequestHash(Map<String, dynamic> requestPayload) {
+  /// 
+  /// [provider] - The provider name (e.g., 'openai', 'mistral') - will be included in the hash
+  /// [requestPayload] - The full request payload to hash
+  String computeRequestHash(String provider, Map<String, dynamic> requestPayload) {
     // Sort keys to ensure consistent hashing regardless of key order
     final sortedPayload = Map.fromEntries(
       requestPayload.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
     );
     final jsonString = jsonEncode(sortedPayload);
-    final bytes = utf8.encode(jsonString);
+    // Include provider name in the hash to separate OpenAI and Mistral caches
+    final combinedString = '$provider:$jsonString';
+    final bytes = utf8.encode(combinedString);
     final hash = sha256.convert(bytes);
     return hash.toString();
   }

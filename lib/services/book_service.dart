@@ -9,6 +9,7 @@ import 'dart:convert';
 import '../models/book.dart';
 import '../models/reading_progress.dart';
 import 'summary_database_service.dart';
+import 'api_cache_service.dart';
 
 class BookService {
   static const String _booksKey = 'books';
@@ -340,13 +341,19 @@ class BookService {
       // Delete reading progress
       await prefs.remove('$_progressKey${book.id}');
       
-      // Delete summary cache and chunks
+      // Delete summary and cache data
       try {
         final summaryDbService = SummaryDatabaseService();
         await summaryDbService.deleteBookSummaries(book.id);
       } catch (e) {
-        // Don't throw - summary deletion is best effort
         debugPrint('Failed to delete summaries: $e');
+      }
+
+      try {
+        final apiCacheService = ApiCacheService();
+        await apiCacheService.clearCacheForBook(book.id);
+      } catch (e) {
+        debugPrint('Failed to clear API cache: $e');
       }
     } catch (e) {
       throw Exception('Failed to delete book: $e');

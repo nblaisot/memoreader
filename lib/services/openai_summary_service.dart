@@ -61,8 +61,8 @@ class OpenAISummaryService implements SummaryService {
         'temperature': 0.7,
       };
 
-      // Compute hash of the full request payload for caching
-      final requestHash = _cacheService.computeRequestHash(requestPayload);
+      // Compute hash of the full request payload for caching (includes provider name)
+      final requestHash = _cacheService.computeRequestHash(_provider, requestPayload);
 
       // Check cache if bookId is provided
       if (bookId != null) {

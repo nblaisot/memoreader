@@ -11,7 +11,6 @@ import 'summary_debug_screen.dart';
 
 enum SummaryType {
   fromBeginning,
-  sinceLastTime,
   characters,
 }
 
@@ -37,6 +36,7 @@ class SummaryScreen extends StatefulWidget {
 
 class _SummaryScreenState extends State<SummaryScreen> {
   final SettingsService _settingsService = SettingsService();
+  final ScrollController _scrollController = ScrollController();
   double _fontSize = 18.0;
   bool _isLoading = true;
   String _summary = '';
@@ -59,6 +59,12 @@ class _SummaryScreenState extends State<SummaryScreen> {
     super.didChangeDependencies();
     // Reload font size when screen becomes visible
     _loadFontSize();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSummary() async {
@@ -106,17 +112,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
       );
 
       String summary;
-      if (summaryType == SummaryType.sinceLastTime) {
-        debugPrint('[SummaryScreen] Calling getSummarySinceLastTime...');
-        summary = await widget.enhancedSummaryService.getSummarySinceLastTime(
-          widget.book,
-          widget.progress,
-          languageCode,
-          preparedEngineText: widget.engineFullText,
-          onCacheHit: cacheHitCallback,
-        );
-        debugPrint('[SummaryScreen] getSummarySinceLastTime completed, summary length: ${summary.length}');
-      } else if (summaryType == SummaryType.characters) {
+      if (summaryType == SummaryType.characters) {
         debugPrint('[SummaryScreen] Calling getCharactersSummary...');
         summary = await widget.enhancedSummaryService.getCharactersSummary(
           widget.book,
@@ -157,6 +153,15 @@ class _SummaryScreenState extends State<SummaryScreen> {
           _statusMessage = null;
         });
         debugPrint('[SummaryScreen] State updated, loading complete');
+        
+        // Auto-scroll to bottom for "from beginning" summaries
+        if (widget.summaryType == SummaryType.fromBeginning) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scrollController.hasClients && mounted) {
+              _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+            }
+          });
+        }
       }
     } catch (e, stackTrace) {
       debugPrint('[SummaryScreen] Error in _loadSummary: $e');
@@ -206,20 +211,7 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
     try {
       // Clear the cache for the specific summary type
-      switch (widget.summaryType) {
-        case SummaryType.fromBeginning:
-          await widget.enhancedSummaryService
-              .resetGeneralSummary(widget.book.id);
-          break;
-        case SummaryType.sinceLastTime:
-          await widget.enhancedSummaryService
-              .resetSinceLastTimeSummary(widget.book.id);
-          break;
-        case SummaryType.characters:
-          await widget.enhancedSummaryService
-              .resetCharactersSummary(widget.book.id);
-          break;
-      }
+      await widget.enhancedSummaryService.deleteBookSummaries(widget.book.id);
 
       // Close the summary screen and show toast message
       if (mounted) {
@@ -250,8 +242,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
   String _titleForSummaryType(AppLocalizations l10n) {
     switch (widget.summaryType) {
-      case SummaryType.sinceLastTime:
-        return l10n.summarySinceLastTime;
       case SummaryType.characters:
         return l10n.summaryCharacters;
       case SummaryType.fromBeginning:
@@ -312,7 +302,9 @@ class _SummaryScreenState extends State<SummaryScreen> {
             Expanded(
               child: Scrollbar(
                 thumbVisibility: true,
+                controller: _scrollController,
                 child: SingleChildScrollView(
+                  controller: _scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                   child: MarkdownBody(
                     data: _summary,

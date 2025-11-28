@@ -13,7 +13,6 @@ Future<void> showReaderMenu({
   required VoidCallback onGoToChapter,
   required VoidCallback onGoToPercentage,
   required VoidCallback onShowSummaryFromBeginning,
-  required VoidCallback onShowSummarySinceLastTime,
   required VoidCallback onShowCharactersSummary,
   required VoidCallback onReturnToLibrary,
 }) {
@@ -42,8 +41,6 @@ Future<void> showReaderMenu({
         onGoToPercentage: () => handleAction(onGoToPercentage),
         onShowSummaryFromBeginning:
             () => handleAction(onShowSummaryFromBeginning),
-        onShowSummarySinceLastTime:
-            () => handleAction(onShowSummarySinceLastTime),
         onShowCharactersSummary: () => handleAction(onShowCharactersSummary),
         onReturnToLibrary: () => handleAction(onReturnToLibrary),
       );
@@ -75,7 +72,6 @@ class _ReaderMenuDialog extends StatefulWidget {
     required this.onGoToChapter,
     required this.onGoToPercentage,
     required this.onShowSummaryFromBeginning,
-    required this.onShowSummarySinceLastTime,
     required this.onShowCharactersSummary,
     required this.onReturnToLibrary,
   });
@@ -87,7 +83,6 @@ class _ReaderMenuDialog extends StatefulWidget {
   final VoidCallback onGoToChapter;
   final VoidCallback onGoToPercentage;
   final VoidCallback onShowSummaryFromBeginning;
-  final VoidCallback onShowSummarySinceLastTime;
   final VoidCallback onShowCharactersSummary;
   final VoidCallback onReturnToLibrary;
 
@@ -103,7 +98,6 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
     final l10n = AppLocalizations.of(context);
     final summariesTitle = l10n?.summariesSectionTitle ?? 'Summaries';
     final fromBeginningLabel = l10n?.summaryFromBeginning ?? 'From the Beginning';
-    final sinceLastTimeLabel = l10n?.summarySinceLastTime ?? 'Since last time';
     final charactersLabel = l10n?.summaryCharacters ?? 'Characters';
 
     return SafeArea(
@@ -176,12 +170,6 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
                       leading: const Icon(Icons.auto_stories),
                       title: Text(fromBeginningLabel),
                       onTap: widget.onShowSummaryFromBeginning,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.history_toggle_off),
-                      title: Text(sinceLastTimeLabel),
-                      onTap: widget.onShowSummarySinceLastTime,
                       contentPadding: EdgeInsets.zero,
                     ),
                     ListTile(

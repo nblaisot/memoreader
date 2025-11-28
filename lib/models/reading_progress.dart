@@ -6,6 +6,7 @@ class ReadingProgress {
   final String? contentCfi;
   final double? progress;
   final int? currentCharacterIndex; // Exact character position for pagination engine
+  final int? lastVisibleCharacterIndex; // Last character that was visible on screen
 
   ReadingProgress({
     required this.bookId,
@@ -14,6 +15,7 @@ class ReadingProgress {
     this.contentCfi,
     this.progress,
     this.currentCharacterIndex,
+    this.lastVisibleCharacterIndex,
   });
 
   Map<String, dynamic> toJson() {
@@ -24,6 +26,7 @@ class ReadingProgress {
       'contentCfi': contentCfi,
       'progress': progress,
       'currentCharacterIndex': currentCharacterIndex,
+      'lastVisibleCharacterIndex': lastVisibleCharacterIndex,
     };
   }
 
@@ -35,6 +38,7 @@ class ReadingProgress {
       contentCfi: json['contentCfi'] as String?,
       progress: (json['progress'] as num?)?.toDouble(),
       currentCharacterIndex: json['currentCharacterIndex'] as int?,
+      lastVisibleCharacterIndex: json['lastVisibleCharacterIndex'] as int?,
     );
   }
 
@@ -45,6 +49,7 @@ class ReadingProgress {
     String? contentCfi,
     double? progress,
     int? currentCharacterIndex,
+    int? lastVisibleCharacterIndex,
   }) {
     return ReadingProgress(
       bookId: bookId ?? this.bookId,
@@ -53,6 +58,8 @@ class ReadingProgress {
       contentCfi: contentCfi ?? this.contentCfi,
       progress: progress ?? this.progress,
       currentCharacterIndex: currentCharacterIndex ?? this.currentCharacterIndex,
+      lastVisibleCharacterIndex:
+          lastVisibleCharacterIndex ?? this.lastVisibleCharacterIndex,
     );
   }
 }

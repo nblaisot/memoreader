@@ -210,8 +210,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
       // Generate summaries for the book that was just read (if it has progress)
       // Use fresh progress after reload
       final progress = _bookProgress[book.id];
-      final hasRealProgress =
-          progress != null && (progress.currentCharacterIndex ?? 0) > 0;
+      final hasRealProgress = progress != null &&
+          ((progress.lastVisibleCharacterIndex ??
+                  progress.currentCharacterIndex ??
+                  0) >
+              0);
       if (hasRealProgress) {
         final appLocale = Localizations.localeOf(context);
         final languageCode = appLocale.languageCode;
@@ -236,8 +239,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     for (final book in books) {
       final progress = progressMap[book.id];
-      final hasRealProgress =
-          progress != null && (progress.currentCharacterIndex ?? 0) > 0;
+      final hasRealProgress = progress != null &&
+          ((progress.lastVisibleCharacterIndex ??
+                  progress.currentCharacterIndex ??
+                  0) >
+              0);
       if (hasRealProgress) {
         // Generate in background without waiting (void method, completely non-blocking)
         // generateSummariesIfNeeded handles errors internally
