@@ -259,6 +259,22 @@
   "@summaryFoundInCache": {
     "description": "Message de statut lorsque le résumé est récupéré du cache"
   },
+  "summariesDeleteAction": "Supprimer les résumés",
+  "@summariesDeleteAction": {
+    "description": "Action du menu pour supprimer tous les résumés d'un livre"
+  },
+  "summariesDeleteConfirmTitle": "Supprimer les résumés ?",
+  "@summariesDeleteConfirmTitle": {
+    "description": "Titre de la boîte de dialogue de confirmation pour la suppression des résumés"
+  },
+  "summariesDeleteConfirmBody": "Cela supprimera définitivement tous les résumés mis en cache pour ce livre. Continuer ?",
+  "@summariesDeleteConfirmBody": {
+    "description": "Texte explicatif pour l'action de suppression des résumés"
+  },
+  "summariesDeleteConfirmButton": "Supprimer les résumés",
+  "@summariesDeleteConfirmButton": {
+    "description": "Libellé du bouton de confirmation pour supprimer les résumés"
+  },
   "errorGeneratingSummary": "Erreur lors de la génération du résumé : {error}",
   "@errorGeneratingSummary": {
     "placeholders": {

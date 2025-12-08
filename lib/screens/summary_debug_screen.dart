@@ -24,6 +24,15 @@ class _SummaryDebugScreenState extends State<SummaryDebugScreen> {
   final Map<int, bool> _showingSourceText = {};
   final Map<int, String> _sourceTexts = {};
   final Map<int, bool> _loadingSourceText = {};
+  final Map<int, ScrollController> _sourceScrollControllers = {};
+
+  @override
+  void dispose() {
+    for (final controller in _sourceScrollControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -71,6 +80,7 @@ class _SummaryDebugScreenState extends State<SummaryDebugScreen> {
         _showingSourceText[chunkIndex] = true;
         _loadingSourceText[chunkIndex] = false;
       });
+      _scrollSourceTextToEnd(chunkIndex);
     } catch (e) {
       debugPrint('Error loading source text for chunk $chunkIndex: $e');
       setState(() {
@@ -85,6 +95,25 @@ class _SummaryDebugScreenState extends State<SummaryDebugScreen> {
     setState(() {
       final currentValue = _showingSourceText[chunkIndex] ?? false;
       _showingSourceText[chunkIndex] = !currentValue;
+    });
+    if (_showingSourceText[chunkIndex] == true) {
+      _scrollSourceTextToEnd(chunkIndex);
+    }
+  }
+
+  ScrollController _controllerForChunk(int chunkIndex) {
+    return _sourceScrollControllers.putIfAbsent(
+      chunkIndex,
+      () => ScrollController(),
+    );
+  }
+
+  void _scrollSourceTextToEnd(int chunkIndex) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final controller = _sourceScrollControllers[chunkIndex];
+      if (controller != null && controller.hasClients) {
+        controller.jumpTo(controller.position.maxScrollExtent);
+      }
     });
   }
 
@@ -129,11 +158,10 @@ class _SummaryDebugScreenState extends State<SummaryDebugScreen> {
                               'Caractères: ${chunk.startCharacterIndex ?? 'N/A'} - ${chunk.endCharacterIndex ?? 'N/A'}',
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
-                            if (chunk.createdAt != null)
-                              Text(
-                                'Créé: ${_formatDate(chunk.createdAt!)}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
+                            Text(
+                              'Créé: ${_formatDate(chunk.createdAt)}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
                             if (chunk.tokenCount != null)
                               Text(
                                 'Tokens estimés: ${chunk.tokenCount}',
@@ -222,7 +250,7 @@ class _SummaryDebugScreenState extends State<SummaryDebugScreen> {
                                       Container(
                                         padding: const EdgeInsets.all(12),
                                         decoration: BoxDecoration(
-                                          color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+                                          color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
                                           borderRadius: BorderRadius.circular(8),
                                           border: Border.all(
                                             color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
@@ -230,6 +258,7 @@ class _SummaryDebugScreenState extends State<SummaryDebugScreen> {
                                         ),
                                         constraints: const BoxConstraints(maxHeight: 300),
                                         child: SingleChildScrollView(
+                                          controller: _controllerForChunk(chunk.chunkIndex),
                                           child: Text(
                                             _sourceTexts[chunk.chunkIndex]!,
                                             style: Theme.of(context).textTheme.bodyMedium?.copyWith(

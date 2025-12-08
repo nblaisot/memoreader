@@ -398,6 +398,19 @@ class AppLocalizationsFr extends AppLocalizations {
   String get summaryFoundInCache => 'Résumé trouvé dans le cache';
 
   @override
+  String get summariesDeleteAction => 'Supprimer les résumés';
+
+  @override
+  String get summariesDeleteConfirmTitle => 'Supprimer les résumés ?';
+
+  @override
+  String get summariesDeleteConfirmBody =>
+      'Cela supprimera définitivement tous les résumés mis en cache pour ce livre. Continuer ?';
+
+  @override
+  String get summariesDeleteConfirmButton => 'Supprimer les résumés';
+
+  @override
   String errorGeneratingSummary(String error) {
     return 'Erreur lors de la génération du résumé : $error';
   }

@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
-import 'package:memoreader/screens/reader/document_model.dart';
 import 'package:memoreader/utils/css_resolver.dart';
 
 void main() {

@@ -7,7 +7,10 @@ plugins {
 
 android {
     namespace = "com.example.memoreader"
-    compileSdk = flutter.compileSdkVersion
+    // Explicitly set compileSdk to 35 for 16 KB page size support (Android 15+ requirement)
+    compileSdk = 35
+    // Ensure NDK r26+ for 16 KB page size support
+    // Flutter will use the appropriate NDK version, but we can override if needed
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -25,7 +28,8 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        // Explicitly set targetSdk to 35 for 16 KB page size support (Android 15+ requirement)
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

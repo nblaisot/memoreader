@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -50,7 +49,7 @@ void main() {
                 maxWidth: 400,
                 maxHeight: 800,
                 textHeightBehavior: const TextHeightBehavior(),
-                textScaler: MediaQueryData.fromWindow(WidgetsBinding.instance.window).textScaler,
+                textScaler: MediaQueryData.fromView(WidgetsBinding.instance.window).textScaler,
                 actionLabel: 'Translate',
                 onSelectionAction: (_) {},
                 onSelectionChanged: (hasSelection, _) {

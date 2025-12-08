@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../screens/reader/document_model.dart';
 import 'immediate_text_selection_controls.dart';

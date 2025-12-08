@@ -776,6 +776,30 @@ abstract class AppLocalizations {
   /// **'Summary found in cache'**
   String get summaryFoundInCache;
 
+  /// Menu action to delete all summaries for a book
+  ///
+  /// In en, this message translates to:
+  /// **'Delete summaries'**
+  String get summariesDeleteAction;
+
+  /// Title for the confirmation dialog when deleting summaries
+  ///
+  /// In en, this message translates to:
+  /// **'Delete summaries?'**
+  String get summariesDeleteConfirmTitle;
+
+  /// Body text explaining the delete summaries action
+  ///
+  /// In en, this message translates to:
+  /// **'This will permanently remove every cached summary for this book. Continue?'**
+  String get summariesDeleteConfirmBody;
+
+  /// Confirmation button label for deleting summaries
+  ///
+  /// In en, this message translates to:
+  /// **'Delete summaries'**
+  String get summariesDeleteConfirmButton;
+
   /// Error generating summary message
   ///
   /// In en, this message translates to:

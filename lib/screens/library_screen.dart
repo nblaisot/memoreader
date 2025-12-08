@@ -6,7 +6,6 @@ import 'package:file_picker/file_picker.dart';
 import '../models/book.dart';
 import '../models/reading_progress.dart';
 import '../services/book_service.dart';
-import '../services/background_summary_service.dart';
 import '../services/app_state_service.dart';
 import 'reader_screen.dart';
 import 'settings_screen.dart';
@@ -202,58 +201,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
       ),
     ).then((_) async {
       // User returned from reading a book
-      // Reload books to refresh progress first
       await _loadBooks();
-
       await _appStateService.clearLastOpenedBook();
-
-      // Generate summaries for the book that was just read (if it has progress)
-      // Use fresh progress after reload
-      final progress = _bookProgress[book.id];
-      final hasRealProgress = progress != null &&
-          ((progress.lastVisibleCharacterIndex ??
-                  progress.currentCharacterIndex ??
-                  0) >
-              0);
-      if (hasRealProgress) {
-        final appLocale = Localizations.localeOf(context);
-        final languageCode = appLocale.languageCode;
-        // Generate in background without blocking - fire and forget
-        // generateSummariesIfNeeded is now void and completely non-blocking
-        BackgroundSummaryService().generateSummariesIfNeeded(
-          book,
-          progress,
-          languageCode,
-        );
-      }
     });
-  }
-
-  /// Trigger background summary generation for all books that need it
-  void _triggerBackgroundSummaryGeneration(
-    List<Book> books,
-    Map<String, ReadingProgress> progressMap,
-  ) {
-    final appLocale = Localizations.localeOf(context);
-    final languageCode = appLocale.languageCode;
-
-    for (final book in books) {
-      final progress = progressMap[book.id];
-      final hasRealProgress = progress != null &&
-          ((progress.lastVisibleCharacterIndex ??
-                  progress.currentCharacterIndex ??
-                  0) >
-              0);
-      if (hasRealProgress) {
-        // Generate in background without waiting (void method, completely non-blocking)
-        // generateSummariesIfNeeded handles errors internally
-        BackgroundSummaryService().generateSummariesIfNeeded(
-          book,
-          progress,
-          languageCode,
-        );
-      }
-    }
   }
 
   Widget _buildBooksGrid(AppLocalizations l10n) {

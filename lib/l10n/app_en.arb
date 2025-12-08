@@ -533,6 +533,22 @@
   "@summaryFoundInCache": {
     "description": "Status message when summary is retrieved from cache"
   },
+  "summariesDeleteAction": "Delete summaries",
+  "@summariesDeleteAction": {
+    "description": "Menu action to delete all summaries for a book"
+  },
+  "summariesDeleteConfirmTitle": "Delete summaries?",
+  "@summariesDeleteConfirmTitle": {
+    "description": "Title for the confirmation dialog when deleting summaries"
+  },
+  "summariesDeleteConfirmBody": "This will permanently remove every cached summary for this book. Continue?",
+  "@summariesDeleteConfirmBody": {
+    "description": "Body text explaining the delete summaries action"
+  },
+  "summariesDeleteConfirmButton": "Delete summaries",
+  "@summariesDeleteConfirmButton": {
+    "description": "Confirmation button label for deleting summaries"
+  },
   "errorGeneratingSummary": "Error generating summary: {error}",
   "@errorGeneratingSummary": {
     "description": "Error generating summary message",

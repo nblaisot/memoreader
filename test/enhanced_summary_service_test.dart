@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:memoreader/models/book.dart';
 import 'package:memoreader/models/reading_progress.dart';
@@ -24,6 +25,9 @@ class _RecordingSummaryService implements SummaryService {
     prompts.add(prompt);
     return 'summary-${prompts.length}';
   }
+
+  @override
+  Future<bool> isAvailable() async => true;
 }
 
 void main() {

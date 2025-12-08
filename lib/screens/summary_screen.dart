@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
@@ -98,14 +97,11 @@ class _SummaryScreenState extends State<SummaryScreen> {
 
       debugPrint('[SummaryScreen] Language code: $languageCode, calling summary service...');
       
-      // Track if we get a cache hit
-      bool cacheHitDetected = false;
-      final cacheHitCallback = () {
-        cacheHitDetected = true;
+      void cacheHitCallback() {
         if (mounted) {
           _updateStatusMessage(l10n.summaryFoundInCache);
         }
-      };
+      }
 
       _updateStatusMessage(
         l10n.summaryStatusCalling(widget.enhancedSummaryService.serviceName),
@@ -202,41 +198,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
       setState(() {
         _fontSize = fontSize;
       });
-    }
-  }
-
-  Future<void> _resetCurrentSummary() async {
-    if (_isLoading) return;
-    final l10n = AppLocalizations.of(context)!;
-
-    try {
-      // Clear the cache for the specific summary type
-      await widget.enhancedSummaryService.deleteBookSummaries(widget.book.id);
-
-      // Close the summary screen and show toast message
-      if (mounted) {
-        // Get the messenger before popping - it will use the root ScaffoldMessenger
-        final messenger = ScaffoldMessenger.of(context);
-        
-        // Pop the summary screen
-        Navigator.of(context).pop();
-        
-        // Show toast message after the screen is popped
-        // Using post-frame callback ensures the reader screen is active
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          messenger.showSnackBar(
-            SnackBar(
-              content: Text(l10n.summaryDeleted),
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.resetSummariesError)),
-      );
     }
   }
 
@@ -399,11 +360,6 @@ class _SummaryScreenState extends State<SummaryScreen> {
                   ) ??
                   const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
-          ),
-          IconButton(
-            tooltip: l10n.summaryReset,
-            onPressed: _isLoading ? null : _resetCurrentSummary,
-            icon: const Icon(Icons.delete_outline),
           ),
           IconButton(
             tooltip: 'Voir les résumés intermédiaires (Debug)',

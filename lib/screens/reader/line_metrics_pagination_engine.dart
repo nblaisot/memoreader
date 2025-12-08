@@ -348,7 +348,7 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
       totalCharacters: _totalCharacters,
       cursor: _isComplete ? null : cursorSnapshot,
     );
-    _ongoingSave = _cacheManager!
+    _ongoingSave = _cacheManager
         .save(_bookId, _layoutKey, entry)
         .catchError((_) => null);
     await _ongoingSave;
@@ -396,8 +396,7 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
     if (_isComplete) {
       return null;
     }
-    if (_cursor == null) {
-      _cursor = PaginationCursorSnapshot(
+    _cursor ??= PaginationCursorSnapshot(
         blockIndex: 0,
         globalCharIndex: 0,
         globalWordIndex: 0,
@@ -407,7 +406,6 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
           tokenPointer: 0,
         ),
       );
-    }
 
     while (_cursor!.blockIndex < _blocks.length) {
       final block = _blocks[_cursor!.blockIndex];

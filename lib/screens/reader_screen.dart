@@ -1,14 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' show PointerDeviceKind;
 import 'package:epubx/epubx.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' as material;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart'
     show PointerCancelEvent, PointerDownEvent, PointerMoveEvent, PointerUpEvent, kPrimaryButton, kTouchSlop;
-import 'package:meta/meta.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -33,7 +30,6 @@ import 'reader/page_content_view.dart';
 import 'reader/tap_zones.dart';
 import 'reader/reader_menu.dart';
 import 'reader/navigation_helper.dart';
-import 'reader/immediate_text_selection_controls.dart';
 import 'routes.dart';
 import 'settings_screen.dart';
 import 'summary_screen.dart';
@@ -1111,7 +1107,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                   const SizedBox(height: 4),
                   LinearProgressIndicator(
                     value: _progress,
-                    backgroundColor: theme.colorScheme.surfaceVariant,
+                    backgroundColor: theme.colorScheme.surfaceContainerHighest,
                   ),
                 ],
               ),
@@ -1181,8 +1177,55 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       onGoToPercentage: _showGoToPercentageDialog,
       onShowSummaryFromBeginning: () => _openSummary(SummaryType.fromBeginning),
       onShowCharactersSummary: () => _openSummary(SummaryType.characters),
+      onDeleteSummaries: () => unawaited(_confirmAndDeleteSummaries()),
       onReturnToLibrary: _returnToLibrary,
     ));
+  }
+
+  Future<void> _confirmAndDeleteSummaries() async {
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.summariesDeleteConfirmTitle),
+        content: Text(l10n.summariesDeleteConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: Text(l10n.summariesDeleteConfirmButton),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    if (!await _ensureSummaryServiceReady()) {
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      await _summaryService!.deleteBookSummaries(widget.book.id);
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.summaryDeleted)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text(l10n.resetSummariesError)),
+      );
+    }
   }
 
   Future<void> _returnToLibrary() {
@@ -1524,7 +1567,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: SingleChildScrollView(
@@ -1544,7 +1587,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceVariant,
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: SingleChildScrollView(
@@ -1672,7 +1715,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     final blocks = <DocumentBlock>[];
     bool isFirstBlock = true;
     _InlineCollector? activeCollector;
-    final imageResolver = (String src) => _resolveImageBytes(src, images);
+    Uint8List? imageResolver(String src) => _resolveImageBytes(src, images);
 
     bool isResultEmpty(_InlineContentResult result) {
       final cleaned = result.text.replaceAll('\uFFFC', '').trim();

@@ -341,7 +341,7 @@ class BackgroundSummaryService {
                     0);
         if (hasCharacterProgress) {
           // Generate in background without waiting
-          generateSummariesIfNeeded(book, progress!, languageCode);
+          generateSummariesIfNeeded(book, progress, languageCode);
         }
       }
     } catch (e) {

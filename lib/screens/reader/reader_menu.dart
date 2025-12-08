@@ -14,6 +14,7 @@ Future<void> showReaderMenu({
   required VoidCallback onGoToPercentage,
   required VoidCallback onShowSummaryFromBeginning,
   required VoidCallback onShowCharactersSummary,
+  required VoidCallback onDeleteSummaries,
   required VoidCallback onReturnToLibrary,
 }) {
   return showGeneralDialog<void>(
@@ -42,6 +43,7 @@ Future<void> showReaderMenu({
         onShowSummaryFromBeginning:
             () => handleAction(onShowSummaryFromBeginning),
         onShowCharactersSummary: () => handleAction(onShowCharactersSummary),
+        onDeleteSummaries: () => handleAction(onDeleteSummaries),
         onReturnToLibrary: () => handleAction(onReturnToLibrary),
       );
     },
@@ -73,6 +75,7 @@ class _ReaderMenuDialog extends StatefulWidget {
     required this.onGoToPercentage,
     required this.onShowSummaryFromBeginning,
     required this.onShowCharactersSummary,
+    required this.onDeleteSummaries,
     required this.onReturnToLibrary,
   });
 
@@ -84,6 +87,7 @@ class _ReaderMenuDialog extends StatefulWidget {
   final VoidCallback onGoToPercentage;
   final VoidCallback onShowSummaryFromBeginning;
   final VoidCallback onShowCharactersSummary;
+  final VoidCallback onDeleteSummaries;
   final VoidCallback onReturnToLibrary;
 
   @override
@@ -179,6 +183,12 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
                       contentPadding: EdgeInsets.zero,
                     ),
                     ListTile(
+                      leading: const Icon(Icons.delete_outline),
+                      title: Text(l10n?.summariesDeleteAction ?? 'Supprimer les résumés'),
+                      onTap: widget.onDeleteSummaries,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    ListTile(
                       leading: const Icon(Icons.arrow_back),
                       title: const Text('Retour à la librairie'),
                       onTap: widget.onReturnToLibrary,
@@ -220,7 +230,7 @@ class _FontScaleSelector extends StatelessWidget {
           onPressed: isAtMin ? null : onDecrement,
           tooltip: 'Réduire la taille',
           style: IconButton.styleFrom(
-            backgroundColor: theme.colorScheme.surfaceVariant,
+            backgroundColor: theme.colorScheme.surfaceContainerHighest,
             foregroundColor: isAtMin 
                 ? theme.colorScheme.onSurface.withValues(alpha: 0.38)
                 : theme.colorScheme.onSurface,
@@ -239,7 +249,7 @@ class _FontScaleSelector extends StatelessWidget {
           onPressed: isAtMax ? null : onIncrement,
           tooltip: 'Augmenter la taille',
           style: IconButton.styleFrom(
-            backgroundColor: theme.colorScheme.surfaceVariant,
+            backgroundColor: theme.colorScheme.surfaceContainerHighest,
             foregroundColor: isAtMax 
                 ? theme.colorScheme.onSurface.withValues(alpha: 0.38)
                 : theme.colorScheme.onSurface,

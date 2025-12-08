@@ -393,6 +393,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get summaryFoundInCache => 'Summary found in cache';
 
   @override
+  String get summariesDeleteAction => 'Delete summaries';
+
+  @override
+  String get summariesDeleteConfirmTitle => 'Delete summaries?';
+
+  @override
+  String get summariesDeleteConfirmBody =>
+      'This will permanently remove every cached summary for this book. Continue?';
+
+  @override
+  String get summariesDeleteConfirmButton => 'Delete summaries';
+
+  @override
   String errorGeneratingSummary(String error) {
     return 'Error generating summary: $error';
   }

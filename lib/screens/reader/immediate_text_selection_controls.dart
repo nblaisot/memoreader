@@ -108,10 +108,6 @@ class ImmediateTextSelectionControls extends MaterialTextSelectionControls {
     );
   }
 
-  @override
-  Size getHandleSize(double textLineHeight) {
-    return super.getHandleSize(textLineHeight);
-  }
 
   /// Custom method to build enhanced toolbar with our actions
   Widget buildEnhancedToolbar({
