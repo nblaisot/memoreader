@@ -22,16 +22,7 @@ class ImmediateTextSelectionControls extends MaterialTextSelectionControls {
   final bool isProcessingAction;
   final String Function()? getSelectedText;
 
-  @override
-  Widget buildHandle(
-    BuildContext context,
-    TextSelectionHandleType type,
-    double textLineHeight, [
-    VoidCallback? onTap,
-  ]) {
-    // Use native Material handles but ensure they appear immediately
-    return super.buildHandle(context, type, textLineHeight, onTap);
-  }
+
 
   @override
   Widget buildToolbar(
@@ -99,10 +90,27 @@ class ImmediateTextSelectionControls extends MaterialTextSelectionControls {
 
     debugPrint('Returning enhanced system toolbar with ${enhancedItems.length} items');
 
+    // Calculate a safe anchor point
+    // selectionMidpoint can sometimes be too high for large blocks or multi-line selections
+    // We try to anchor to the top-center of the selection rect formed by endpoints
+    Offset anchor = selectionMidpoint;
+    if (endpoints.isNotEmpty) {
+      final start = endpoints.first.point;
+      final end = endpoints.last.point;
+      // Use the top Y of the first point, but horizontally centered between start and end (or just start)
+      // Actually, standard behavior is usually centered on the selection.
+      // But if the user says "too high", maybe we should lower it.
+      // Let's rely on the framework's detailed geometry if possible, but here we just have points.
+      
+      // If we use the raw endpoints, we can compute a rect.
+      final rect = Rect.fromPoints(start, end);
+      anchor = rect.topCenter;
+    }
+
     // Return the enhanced system toolbar
     return AdaptiveTextSelectionToolbar.buttonItems(
       anchors: TextSelectionToolbarAnchors(
-        primaryAnchor: selectionMidpoint,
+        primaryAnchor: anchor,
       ),
       buttonItems: enhancedItems,
     );

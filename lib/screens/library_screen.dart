@@ -54,13 +54,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       final books = await _bookService.getAllBooks();
       
-      // Load progress for all books
+      // Load progress for all books in parallel
+      final progressFutures = books.map((book) => _bookService.getReadingProgress(book.id));
+      final progressList = await Future.wait(progressFutures);
+      
       final progressMap = <String, ReadingProgress>{};
-
-      for (final book in books) {
-        final progress = await _bookService.getReadingProgress(book.id);
+      for (int i = 0; i < books.length; i++) {
+        final progress = progressList[i];
         if (progress != null) {
-          progressMap[book.id] = progress;
+          progressMap[books[i].id] = progress;
         }
       }
 

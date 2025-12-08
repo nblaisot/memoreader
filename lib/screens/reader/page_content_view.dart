@@ -156,40 +156,21 @@ class _PageContentViewState extends State<PageContentView> {
                   // Update internal state
                   _selectedText = newSelectedText ?? '';
 
-                  // Show system toolbar immediately if we have a selection
-                  final shouldShowToolbar = hasSelection && (_selectedText.isNotEmpty || cause == SelectionChangedCause.longPress);
-                  debugPrint('Selection changed - hasSelection: $hasSelection, selectedText: "$_selectedText", cause: $cause, shouldShowToolbar: $shouldShowToolbar');
-
-                  if (shouldShowToolbar) {
-                    debugPrint('Forcing system toolbar to show immediately');
-
-                    // Force toolbar immediately with synchronous call and rebuild
+                  // Only show toolbar if we have a valid selection
+                  if (hasSelection && _selectedText.isNotEmpty) {
                     final editableTextState = _selectableTextKey.currentContext
                         ?.findAncestorStateOfType<EditableTextState>();
                     if (editableTextState != null) {
-                      debugPrint('Calling showToolbar synchronously');
-                      editableTextState.showToolbar();
-
-                      // Force a rebuild to ensure UI updates immediately
-                      if (mounted) {
-                        setState(() {});
-                      }
-
-                      // Also schedule multiple additional calls
-                      for (int i = 0; i < 10; i++) {
-                        Future.delayed(Duration(milliseconds: i * 50), () {
-                          if (mounted) {
-                            final state = _selectableTextKey.currentContext
-                                ?.findAncestorStateOfType<EditableTextState>();
-                            if (state != null) {
-                              debugPrint('Calling showToolbar async attempt ${i + 1}');
-                              state.showToolbar();
-                              // Force rebuild on each call
-                              setState(() {});
-                            }
-                          }
-                        });
-                      }
+                      // Schedule toolbar to show on next frame to ensure layout is complete
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                         // Add a small delay to ensure the engine has fully processed the selection geometry
+                         // This is necessary because sometimes on the very first selection, the overlay isn't quite ready
+                         Future.delayed(const Duration(milliseconds: 100), () {
+                           if (mounted) {
+                             editableTextState.showToolbar();
+                           }
+                         });
+                      });
                     }
                   }
 
@@ -243,38 +224,20 @@ class _PageContentViewState extends State<PageContentView> {
               
               // Update internal state
               _selectedText = selected;
-              final shouldShowToolbar = hasSelection && (_selectedText.isNotEmpty || cause == SelectionChangedCause.longPress);
-
-              if (shouldShowToolbar) {
-                debugPrint('Forcing system toolbar to show immediately for block');
-
-                // Force toolbar immediately with synchronous call and rebuild
+              // Only show toolbar if we have a valid selection
+              if (hasSelection && _selectedText.isNotEmpty) {
                 final editableTextState = _selectableTextKey.currentContext
                     ?.findAncestorStateOfType<EditableTextState>();
                 if (editableTextState != null) {
-                  debugPrint('Calling showToolbar synchronously for block');
-                  editableTextState.showToolbar();
-
-                  // Force a rebuild to ensure UI updates immediately
-                  if (mounted) {
-                    setState(() {});
-                  }
-
-                  // Also schedule multiple additional calls
-                  for (int i = 0; i < 10; i++) {
-                    Future.delayed(Duration(milliseconds: i * 50), () {
-                      if (mounted) {
-                        final state = _selectableTextKey.currentContext
-                            ?.findAncestorStateOfType<EditableTextState>();
-                        if (state != null) {
-                          debugPrint('Calling showToolbar async for block attempt ${i + 1}');
-                          state.showToolbar();
-                          // Force rebuild on each call
-                          setState(() {});
-                        }
-                      }
-                    });
-                  }
+                   // Schedule toolbar to show on next frame
+                   WidgetsBinding.instance.addPostFrameCallback((_) {
+                     // Add a small delay to ensure the engine has fully processed the selection geometry
+                     Future.delayed(const Duration(milliseconds: 100), () {
+                       if (mounted) {
+                         editableTextState.showToolbar();
+                       }
+                     });
+                   });
                 }
               }
 
