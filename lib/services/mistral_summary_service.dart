@@ -50,7 +50,7 @@ class MistralSummaryService implements SummaryService {
 
       // Build the request payload
       final requestPayload = {
-        'model': 'mistral-small-latest', // Good balance of quality and cost
+        'model': 'mistral-large-latest', // Best quality, large context
         'messages': [
           {
             'role': 'system',
@@ -61,7 +61,7 @@ class MistralSummaryService implements SummaryService {
             'content': safePrompt,
           },
         ],
-        'max_tokens': 2000, // Increased to allow for longer summaries with larger context
+        'max_tokens': 4000, // Increased for detailed summaries with larger context
         'temperature': 0.7,
       };
 

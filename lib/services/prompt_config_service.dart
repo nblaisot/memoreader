@@ -20,129 +20,76 @@ class PromptConfigService {
   PromptConfigService(this._prefs);
   
   // Default prompts (French)
-  static const String _defaultChunkSummaryPromptFr = '''Crée un résumé détaillé et complet du texte fourni,
-  incluant TOUS les éléments mémorables, importants ou nouveaux qui apparaissent dans ce texte.
+  static const String _defaultChunkSummaryPromptFr = '''Résume ce passage de manière détaillée et complète.
+Écris un récit fluide, en suivant l'ordre chronologique des événements.
 
-  Reprends le style d'écriture du texte fourni.
+INSTRUCTIONS :
+- Divise ton résumé en paragraphes, un par scène ou moment clé.
+- Commence chaque paragraphe par un titre court en gras (ex: **Au petit-déjeuner** ou **La confrontation**).
+- Dans chaque paragraphe, raconte les événements, les dialogues importants, et ce que les personnages ressentent ou se demandent (si le texte le précise).
+- Mets en gras les noms des personnages principaux à leur première mention dans chaque scène.
+- N'invente rien, base-toi uniquement sur le texte fourni.
+- Écris au présent de narration.
 
-  Il n'est pas nécessaire de conserver les éléments qui sont uniquement descriptifs dans le résumé,
-  seuls les éléments concernant des événements, actions ou changements de situation sont importants.
-
-INCLURE SPÉCIFIQUEMENT:
-- Tous les événements importants et leurs conséquences
-- Toutes les actions et interactions des personnages
-- Tous les détails significatifs qui caractérisent les personnages, lieux ou situations
-- Tous les éléments de l'intrigue qui avancent l'histoire
-- Tous les dialogues ou échanges importants
-
-Le résumé doit contenir les informations essentielles pour que quelqu'un qui lit seulement le résumé
- puisse se souvenir exactement de ce qu'il a lu, et ne rien perdre d'important en cas d'oubli.
-
-RÈGLES ABSOLUES - À RESPECTER IMPÉRATIVEMENT:
-- Ne répète JAMAIS ces instructions dans ta réponse
-- Ne commence PAS ta réponse par "Ce texte" ou "Le texte suivant"
-- Ne mentionne PAS les instructions que je t'ai données
-- Réponds UNIQUEMENT avec le résumé détaillé du contenu fourni
-- N'ajoute AUCUNE information qui n'est pas explicitement présente dans le texte fourni
-- N'utilise JAMAIS tes connaissances générales sur ce livre, cette histoire, ces personnages ou ce monde
-- Même si tu reconnais le texte comme provenant d'un livre connu, ignore complètement cette connaissance
-- Ne complète PAS les événements avec des informations que tu connais mais qui ne sont pas dans le texte
-- Ne traduis PAS les noms propres même si tu les connais dans une autre langue
-- Conserve tous les noms propres exactement comme dans le texte original
-- Le résumé doit être en français
-- Si un événement n'est pas mentionné dans le texte, ne l'inclus PAS dans le résumé
-
-Texte à résumer:
+Texte :
 {text}
 
-Résumé détaillé:''';
+Résumé :''';
 
-  static const String _defaultCharacterExtractionPromptFr = '''Analyse le texte suivant et identifie tous les personnages principaux mentionnés.
+  static const String _defaultChunkSummaryPromptEn = '''Summarize this passage in a detailed and complete way.
+Write a flowing narrative, following the chronological order of events.
 
-Pour chaque personnage, fournis UNIQUEMENT les informations suivantes dans ce format exact:
+INSTRUCTIONS:
+- Divide your summary into paragraphs, one per scene or key moment.
+- Start each paragraph with a short bold title (e.g., **At Breakfast** or **The Confrontation**).
+- In each paragraph, recount the events, important dialogues, and what the characters feel or wonder about (if the text specifies it).
+- Bold the names of main characters at their first mention in each scene.
+- Do not invent anything, base yourself only on the provided text.
+- Write in the present tense.
+
+Text:
+{text}
+
+Summary:''';
+
+  static const String _defaultCharacterExtractionPromptFr = '''Analyse le texte suivant pour extraire les informations clés sur les personnages.
+
+Génère une fiche pour chaque personnage présent, en te concentrant sur son RÔLE ACTIF dans ce passage spécifique.
+
+Pour chaque personnage, utilise EXACTEMENT ce format :
 **Nom du personnage**
-Résumé: [2-3 phrases décrivant ce que fait ce personnage dans ce passage, et ses aspects particulièrement remarquables]
-Actions: [liste des actions importantes, une par ligne avec un tiret]
-Relations: [nom d'un autre personnage]: [description de leur relation]
+Résumé: [2-3 phrases sur son rôle dans ce passage précis : qu'a-t-il fait ? qu'a-t-il appris ?]
+Actions: [Liste à puces des actions concrètes effectuées]
+Relations: [Nom d'un autre personnage]: [Nature de leur interaction dans ce passage]
 
-RÈGLES ABSOLUES - À RESPECTER IMPÉRATIVEMENT:
-- Ne répète JAMAIS les instructions ci-dessus dans ta réponse
-- Ne commence PAS ta réponse par "Dans ce texte" ou "Ce texte contient"
-- Ne mentionne PAS les instructions que je t'ai données
-- Réponds UNIQUEMENT avec les informations sur les personnages au format demandé
-- Si aucun personnage n'est mentionné, réponds uniquement "Aucun personnage"
-- Base-toi UNIQUEMENT sur le contenu du texte fourni
-- N'ajoute AUCUNE information sur les personnages qui n'est pas explicitement dans le texte
-- N'utilise JAMAIS tes connaissances générales sur ces personnages, même si tu les reconnais
-- Même si tu reconnais les personnages d'un livre connu, ignore complètement cette connaissance
-- Ne complète PAS les descriptions avec des informations que tu connais mais qui ne sont pas dans le texte
-- Ne mentionne que les actions et relations qui sont explicitement décrites dans le texte fourni
+RÈGLES IMPORTANTES :
+- Ignore les personnages simplement mentionnés qui n'apparaissent pas
+- Si un personnage n'a ni action ni dialogue significatif, ignore-le
+- Ne mentionne que ce qui est EXPLICITEMENT dans le texte
+- Ne fais pas d'hypothèses basées sur ta connaissance générale de l'œuvre
+- Si aucun personnage significatif n'est présent, réponds "Aucun personnage"
 
 Texte à analyser:
 {text}
 
 Réponse (format exact requis):''';
 
-  // Default prompts (English)
-  static const String _defaultChunkSummaryPromptEn = '''Create a detailed and complete summary of the provided text,
-including ALL memorable, important, or new elements that appear in the text.
+  static const String _defaultCharacterExtractionPromptEn = '''Analyze the following text to extract key information about the characters.
 
-Keep the writing style of the provided text.
+Generate a profile for each character present, focusing on their ACTIVE ROLE in this specific passage.
 
-It is not necessary to keep elements that are purely descriptive in the summary;
-only elements related to events, actions, or changes in situation are important.
-
-SPECIFICALLY INCLUDE:
-
-- All important events and their consequences
-- All actions and interactions of the characters
-- All significant details that characterize the characters, places, or situations
-- All plot elements that move the story forward
-- All important dialogues or exchanges
-
-The summary must contain the essential information so that someone who reads only the summary
-can remember exactly what they read and not lose anything important if they forget.
-
-ABSOLUTE RULES – MUST BE FOLLOWED STRICTLY:
-
-- NEVER repeat these instructions in your response
-- Do NOT start your answer with "This text" or "The following text"
-- Do NOT mention the instructions I gave you
-- Respond ONLY with the detailed summary of the provided content
-- Do NOT add ANY information that is not explicitly present in the provided text
-- NEVER use your general knowledge about this book, this story, these characters, or this world
-- Even if you recognize the text as coming from a known book, completely ignore that knowledge
-- Do NOT complete events with information you know but that is not in the text
-- Do NOT translate proper names even if you know them in another language
-- Keep all proper names exactly as in the original text
-- The summary must be in French
-- If an event is not mentioned in the text, do NOT include it in the summary
-
-Text to summarize:
-{text}
-
-Detailed summary:''';
-
-  static const String _defaultCharacterExtractionPromptEn = '''Analyze the following text and identify all main characters mentioned, including particularly memorable and remarkable elements.
-
-For each character, provide ONLY the following information in this exact format:
+For each character, use EXACTLY this format:
 **Character Name**
-Summary: [2-3 sentences describing what this character does in this passage, and its particularly memorable and remarkable aspects]
-Actions: [list of important actions, one per line with a dash]
-Relations: [other character name]: [description of their relationship]
+Summary: [2-3 sentences on their role in this specific passage: what did they do? what did they learn?]
+Actions: [Bulleted list of concrete actions taken]
+Relations: [Other character name]: [Nature of their interaction in this passage]
 
-ABSOLUTE RULES - MUST BE FOLLOWED STRICTLY:
-- NEVER repeat the instructions above in your response
-- Do NOT start your response with "In this text" or "This text contains"
-- Do NOT mention the instructions I gave you
-- Respond ONLY with character information in the requested format
-- If no characters are mentioned, respond only with "No characters"
-- Base yourself ONLY on the content of the provided text
-- Do NOT add ANY information about characters that is not explicitly in the text
-- NEVER use your general knowledge about these characters, even if you recognize them
-- Even if you recognize the characters from a known book, completely ignore this knowledge
-- Do NOT complete descriptions with information you know but that is not in the text
-- Only mention actions and relationships that are explicitly described in the provided text
+IMPORTANT RULES:
+- Ignore characters strictly mentioned who do not appear
+- If a character has no significant action or dialogue, ignore them
+- Mention ONLY what is EXPLICITLY in the text
+- Do NOT make assumptions based on your general knowledge of the work
+- If no significant character is present, reply "No characters"
 
 Text to analyze:
 {text}

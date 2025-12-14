@@ -30,6 +30,7 @@ import 'reader/page_content_view.dart';
 import 'reader/tap_zones.dart';
 import 'reader/reader_menu.dart';
 import 'reader/navigation_helper.dart';
+import 'reader/selection_warmup.dart';
 import 'routes.dart';
 import 'settings_screen.dart';
 import 'summary_screen.dart';
@@ -188,8 +189,17 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   @override
   void didChangeMetrics() {
     super.didChangeMetrics();
-    if (!_isLoading && mounted) {
-      _scheduleRepagination(retainCurrentPage: true);
+    
+    // Only schedule repagination if the screen size actually changed significantly.
+    // This prevents unnecessary expensive repagination when the keyboard opens/closes
+    // (which changes viewInsets but often not the available window size for our reader)
+    if (!_isLoading && mounted && _lastActualSize != null) {
+      final newSize = MediaQuery.of(context).size;
+      // Check if width or height changed by more than a small threshold
+      if ((newSize.width - _lastActualSize!.width).abs() > 1.0 || 
+          (newSize.height - _lastActualSize!.height).abs() > 1.0) {
+        _scheduleRepagination(retainCurrentPage: true);
+      }
     }
   }
 
@@ -682,7 +692,6 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       );
       await _bookService.saveReadingProgress(progress);
       _savedProgress = progress;
-      _logLastVisibleWords(page);
       // Note: updateLastReadingStop is NOT called here anymore
       // It's only called when actually leaving the reader screen
     } catch (_) {
@@ -865,7 +874,15 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     final controller = TextEditingController(
       text: (_progress * 100).clamp(0, 100).toStringAsFixed(1),
     );
+    final focusNode = FocusNode();
     String? errorText;
+
+    // Request focus after dialog is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (focusNode.canRequestFocus) {
+        focusNode.requestFocus();
+      }
+    });
 
     final result = await showDialog<double>(
       context: context,
@@ -894,6 +911,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
               title: const Text('Aller à un pourcentage'),
               content: TextField(
                 controller: controller,
+                focusNode: focusNode,
                 autofocus: true,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
@@ -921,6 +939,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     );
 
     controller.dispose();
+    focusNode.dispose();
 
     if (result != null && mounted) {
       // Use SchedulerBinding to ensure dialog is fully closed and widget tree is stable
@@ -936,23 +955,36 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   void _jumpToPercentage(double percentage) {
     if (!mounted) return;
     
-    final totalChars = _totalCharacterCount;
-    if (totalChars <= 0) {
-      return;
-    }
+    try {
+      // Safety check: ensure engine and book data are loaded
+      if (_engine == null || _totalCharacterCount <= 0) {
+        debugPrint('[ReaderScreen] Cannot jump to percentage: engine not ready');
+        return;
+      }
 
-    if (totalChars == 1) {
-      _scheduleRepagination(initialCharIndex: 0);
-      return;
-    }
+      final totalChars = _totalCharacterCount;
+      if (totalChars <= 0) {
+        return;
+      }
 
-    final normalized = percentage.clamp(0.0, 100.0);
-    final target = (normalized / 100.0) * (totalChars - 1);
-    final rounded = target.round();
-    final clamped = rounded < 0
-        ? 0
-        : (rounded >= totalChars ? totalChars - 1 : rounded);
-    _scheduleRepagination(initialCharIndex: clamped);
+      if (totalChars == 1) {
+        _scheduleRepagination(initialCharIndex: 0);
+        return;
+      }
+
+      final normalized = percentage.clamp(0.0, 100.0);
+      // Calculate target character index
+      final target = (normalized / 100.0) * (totalChars - 1);
+      final rounded = target.round();
+      final clamped = rounded.clamp(0, totalChars - 1);
+      
+      debugPrint('[ReaderScreen] Jumping to $normalized% -> char index $clamped');
+      _scheduleRepagination(initialCharIndex: clamped);
+    } catch (e, stack) {
+      debugPrint('[ReaderScreen] Error during jump to percentage: $e');
+      debugPrint('$stack');
+      // Adding a safe fallback or simply ignoring the failed jump
+    }
   }
 
   void _handlePageChanged(int pageIndex) {
@@ -1047,30 +1079,35 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       _buildPageContent(nextPage, metrics),
     ];
 
-    return Scaffold(
-      body: _ReaderGestureWrapper(
-        // Completely separate: reader gestures only work when no selection is active
-        isSelectionActive: _hasActiveSelection,
-        onPointerDown: _handlePointerDown,
-        onPointerMove: _handlePointerMove,
-        onPointerUp: _handlePointerUp,
-        onPointerCancel: _handlePointerCancel,
-        child: Stack(
-          children: [
-            PageView.builder(
-              controller: _pageController,
-              itemCount: pages.length,
-              onPageChanged: _handlePageChanged,
-              itemBuilder: (context, index) => pages[index],
-            ),
-            if (_showProgressBar)
-              Positioned(
-                bottom: 24,
-                left: 24,
-                right: 24,
-                child: _buildProgressIndicator(theme),
+    // Wrap with SelectionWarmup to pre-trigger text selection code paths
+    // This reduces JIT compilation delay on first selection in debug mode
+    return SelectionWarmup(
+      child: Scaffold(
+        resizeToAvoidBottomInset: false, // Prevent repagination when keyboard opens (e.g. for dialogs)
+        body: _ReaderGestureWrapper(
+          // Completely separate: reader gestures only work when no selection is active
+          isSelectionActive: _hasActiveSelection,
+          onPointerDown: _handlePointerDown,
+          onPointerMove: _handlePointerMove,
+          onPointerUp: _handlePointerUp,
+          onPointerCancel: _handlePointerCancel,
+          child: Stack(
+            children: [
+              PageView.builder(
+                controller: _pageController,
+                itemCount: pages.length,
+                onPageChanged: _handlePageChanged,
+                itemBuilder: (context, index) => pages[index],
               ),
-          ],
+              if (_showProgressBar)
+                Positioned(
+                  bottom: 24,
+                  left: 24,
+                  right: 24,
+                  child: _buildProgressIndicator(theme),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -1358,7 +1395,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         _progress =
             _calculateProgressForPage(currentPage, totalChars: updatedTotalChars);
         _lastVisibleCharacterIndex = currentPage.endCharIndex;
-        _logLastVisibleWords(currentPage);
+        // Don't log here, this is called frequently during background pagination
       } else {
         _lastVisibleCharacterIndex = null;
       }

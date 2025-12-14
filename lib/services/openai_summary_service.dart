@@ -38,15 +38,18 @@ class OpenAISummaryService implements SummaryService {
     try {
       // Use the prompt as-is - it already contains anti-leakage instructions
       // from EnhancedSummaryService. Only truncate if necessary for token limits.
-      // GPT-3.5-turbo has 4096 token context, leave room for response
-      final maxLength = 12000; // Conservative limit to leave room for response
+      // GPT-4o has 128K token context (512K characters with ~4 chars/token)
+      // Reserve ~4K tokens for response, use ~124K tokens for input
+      // 124K tokens × 4 chars/token = ~496K characters
+      // Use conservative 400K to account for prompt overhead
+      final maxLength = 400000; // Allow full use of 128K token context
       final safePrompt = prompt.length > maxLength
           ? '${prompt.substring(0, maxLength)}...'
           : prompt;
 
       // Build the request payload
       final requestPayload = {
-        'model': 'gpt-3.5-turbo',
+        'model': 'gpt-4o',
         'messages': [
           {
             'role': 'system',
@@ -57,7 +60,7 @@ class OpenAISummaryService implements SummaryService {
             'content': safePrompt,
           },
         ],
-        'max_tokens': 1000, // Increased to allow for longer summaries
+        'max_tokens': 4000, // Increased for detailed summaries
         'temperature': 0.7,
       };
 
