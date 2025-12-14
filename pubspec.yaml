@@ -39,7 +39,7 @@ dependencies:
   epubx: ^4.0.0
 
   # Handle file sharing/opening intents
-  receive_sharing_intent_plus: ^1.0.1
+  receive_sharing_intent: ^1.4.5
   
   # Path utilities
   path: ^1.9.0

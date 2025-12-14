@@ -742,31 +742,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     }
   }
 
-  void _incrementFontScale() {
-    const step = 0.1;
-    final newScale = (_fontScale + step).clamp(0.5, 2.0);
-    if ((newScale - _fontScale).abs() < 0.01) {
-      return; // No change, already at limit
-    }
-    setState(() {
-      _fontScale = newScale;
-    });
-    unawaited(_settingsService.saveReaderFontScale(_fontScale));
-    _scheduleRepagination(retainCurrentPage: true);
-  }
 
-  void _decrementFontScale() {
-    const step = 0.1;
-    final newScale = (_fontScale - step).clamp(0.5, 2.0);
-    if ((newScale - _fontScale).abs() < 0.01) {
-      return; // No change, already at limit
-    }
-    setState(() {
-      _fontScale = newScale;
-    });
-    unawaited(_settingsService.saveReaderFontScale(_fontScale));
-    _scheduleRepagination(retainCurrentPage: true);
-  }
 
   Future<bool> _goToNextPage({bool resetPager = true}) async {
     final engine = _engine;
@@ -1207,8 +1183,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     unawaited(showReaderMenu(
       context: context,
       fontScale: _fontScale,
-      onFontScaleIncrement: _incrementFontScale,
-      onFontScaleDecrement: _decrementFontScale,
+      onFontScaleChanged: _updateFontScale,
       hasChapters: _chapterEntries.isNotEmpty,
       onGoToChapter: _showChapterSelector,
       onGoToPercentage: _showGoToPercentageDialog,
@@ -1217,6 +1192,17 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       onDeleteSummaries: () => unawaited(_confirmAndDeleteSummaries()),
       onReturnToLibrary: _returnToLibrary,
     ));
+  }
+
+  void _updateFontScale(double newScale) {
+    if ((newScale - _fontScale).abs() < 0.01) {
+      return; // No change
+    }
+    setState(() {
+      _fontScale = newScale;
+    });
+    unawaited(_settingsService.saveReaderFontScale(_fontScale));
+    _scheduleRepagination(retainCurrentPage: true);
   }
 
   Future<void> _confirmAndDeleteSummaries() async {

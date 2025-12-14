@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:receive_sharing_intent_plus/receive_sharing_intent_plus.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:memoreader/services/book_service.dart';
 import 'package:memoreader/models/book.dart';
 
@@ -20,7 +20,7 @@ class SharingService {
 
   void initialize() {
     // For sharing or opening file coming from outside the app while the app is in the memory
-    _intentDataStreamSubscription = ReceiveSharingIntentPlus
+    _intentDataStreamSubscription = ReceiveSharingIntent.instance
         .getMediaStream()
         .listen((List<SharedMediaFile> value) {
       _handleSharedFiles(value);
@@ -29,11 +29,11 @@ class SharingService {
     });
 
     // For sharing or opening file coming from outside the app while the app is closed
-    ReceiveSharingIntentPlus
+    ReceiveSharingIntent.instance
         .getInitialMedia()
         .then((List<SharedMediaFile> value) {
       _handleSharedFiles(value);
-      ReceiveSharingIntentPlus.reset();
+      ReceiveSharingIntent.instance.reset();
     });
   }
 

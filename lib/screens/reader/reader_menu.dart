@@ -1,4 +1,7 @@
+// ignore_for_file: unused_element
+
 import 'dart:async';
+
 
 import 'package:flutter/material.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
@@ -7,8 +10,7 @@ import 'package:memoreader/l10n/app_localizations.dart';
 Future<void> showReaderMenu({
   required BuildContext context,
   required double fontScale,
-  required VoidCallback onFontScaleIncrement,
-  required VoidCallback onFontScaleDecrement,
+  required ValueChanged<double> onFontScaleChanged,
   required bool hasChapters,
   required VoidCallback onGoToChapter,
   required VoidCallback onGoToPercentage,
@@ -34,9 +36,8 @@ Future<void> showReaderMenu({
       }
 
       return _ReaderMenuDialog(
-        fontScale: fontScale,
-        onFontScaleIncrement: onFontScaleIncrement,
-        onFontScaleDecrement: onFontScaleDecrement,
+        initialFontScale: fontScale,
+        onFontScaleChanged: onFontScaleChanged,
         hasChapters: hasChapters,
         onGoToChapter: () => handleAction(onGoToChapter),
         onGoToPercentage: () => handleAction(onGoToPercentage),
@@ -67,9 +68,8 @@ Future<void> showReaderMenu({
 
 class _ReaderMenuDialog extends StatefulWidget {
   const _ReaderMenuDialog({
-    required this.fontScale,
-    required this.onFontScaleIncrement,
-    required this.onFontScaleDecrement,
+    required this.initialFontScale,
+    required this.onFontScaleChanged,
     required this.hasChapters,
     required this.onGoToChapter,
     required this.onGoToPercentage,
@@ -79,9 +79,8 @@ class _ReaderMenuDialog extends StatefulWidget {
     required this.onReturnToLibrary,
   });
 
-  final double fontScale;
-  final VoidCallback onFontScaleIncrement;
-  final VoidCallback onFontScaleDecrement;
+  final double initialFontScale;
+  final ValueChanged<double> onFontScaleChanged;
   final bool hasChapters;
   final VoidCallback onGoToChapter;
   final VoidCallback onGoToPercentage;
@@ -95,6 +94,35 @@ class _ReaderMenuDialog extends StatefulWidget {
 }
 
 class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
+  late double _currentFontScale;
+  
+  // Base font size used in reader_screen.dart
+  static const double _baseFontSize = 18.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentFontScale = widget.initialFontScale;
+  }
+
+  void _updateFontScale(double newScale) {
+    final clampedScale = newScale.clamp(0.5, 3.0);
+    if ((clampedScale - _currentFontScale).abs() < 0.01) return;
+
+    setState(() {
+      _currentFontScale = clampedScale;
+    });
+    // Notify parent immediately so the reader background updates in real-time
+    widget.onFontScaleChanged(clampedScale);
+  }
+
+  void _incrementFont() {
+    _updateFontScale(_currentFontScale + 0.1);
+  }
+
+  void _decrementFont() {
+    _updateFontScale(_currentFontScale - 0.1);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -145,9 +173,10 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
                     Text('Taille du texte'),
                     const SizedBox(height: 8),
                     _FontScaleSelector(
-                      fontScale: widget.fontScale,
-                      onIncrement: widget.onFontScaleIncrement,
-                      onDecrement: widget.onFontScaleDecrement,
+                      fontScale: _currentFontScale,
+                      baseFontSize: _baseFontSize,
+                      onIncrement: _incrementFont,
+                      onDecrement: _decrementFont,
                     ),
                     const SizedBox(height: 8),
                     if (widget.hasChapters)
@@ -208,19 +237,25 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
 class _FontScaleSelector extends StatelessWidget {
   const _FontScaleSelector({
     required this.fontScale,
+    required this.baseFontSize,
     required this.onIncrement,
     required this.onDecrement,
   });
 
   final double fontScale;
+  final double baseFontSize;
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isAtMin = fontScale <= 0.5;
-    final isAtMax = fontScale >= 2.0;
+    // Determine limits based on logic in _updateFontScale (clamp 0.5 to 3.0)
+    final isAtMin = fontScale <= 0.5 + 0.01; 
+    final isAtMax = fontScale >= 3.0 - 0.01;
+    
+    // Calculate accurate effective font size
+    final effectiveSize = (baseFontSize * fontScale).round();
     
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -237,10 +272,16 @@ class _FontScaleSelector extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 16),
-        Text(
-          '${(fontScale * 100).toStringAsFixed(0)}%',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.w500,
+        // Display absolute size (e.g. "18", "20") instead of percentage
+        Container(
+          constraints: const BoxConstraints(minWidth: 40),
+          alignment: Alignment.center,
+          child: Text(
+            effectiveSize.toString(),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+              fontSize: 16,
+            ),
           ),
         ),
         const SizedBox(width: 16),
