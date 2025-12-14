@@ -37,6 +37,9 @@ dependencies:
   
   # EPUB parsing and reading
   epubx: ^4.0.0
+
+  # Handle file sharing/opening intents
+  receive_sharing_intent_plus: ^1.0.1
   
   # Path utilities
   path: ^1.9.0

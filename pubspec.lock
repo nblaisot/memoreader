@@ -397,6 +397,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.2.2"
+  receive_sharing_intent_plus:
+    dependency: "direct main"
+    description:
+      name: receive_sharing_intent_plus
+      sha256: "89020b3c72a0c70409c07f549ae7fc614a56278ecc9bde0a637e49918e00b083"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
   shared_preferences:
     dependency: "direct main"
     description:

@@ -7,6 +7,7 @@ import '../models/book.dart';
 import '../models/reading_progress.dart';
 import '../services/book_service.dart';
 import '../services/app_state_service.dart';
+import '../services/sharing_service.dart';
 import 'reader_screen.dart';
 import 'settings_screen.dart';
 
@@ -26,6 +27,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _isImporting = false;
   String? _errorMessage;
   bool _isListView = false;
+  StreamSubscription? _sharingSubscription;
 
   @override
   void initState() {
@@ -33,6 +35,27 @@ class _LibraryScreenState extends State<LibraryScreen> {
     unawaited(_loadLibraryViewPreference());
     _loadBooks();
     unawaited(_appStateService.clearLastOpenedBook());
+
+    // Listen to books imported via "Open with"
+    _sharingSubscription = SharingService().onBookImported.listen((book) {
+      if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.bookImportedSuccessfully),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        _loadBooks();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sharingSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadLibraryViewPreference() async {

@@ -6,6 +6,7 @@ import 'screens/routes.dart';
 import 'screens/splash_screen.dart';
 import 'services/settings_service.dart';
 import 'services/background_summary_service.dart';
+import 'services/sharing_service.dart';
 import 'utils/app_colors.dart';
 
 void main() {
@@ -32,6 +33,8 @@ class MyAppState extends State<MyApp> {
     _loadLanguagePreference();
     // Initialize background summary service
     BackgroundSummaryService().initialize();
+    // Initialize sharing service to handle "Open with" intents
+    SharingService().initialize();
   }
 
   Future<void> _loadLanguagePreference() async {
@@ -50,6 +53,7 @@ class MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'MemoReader',
       theme: ThemeData(
         colorScheme: AppColors.colorScheme,

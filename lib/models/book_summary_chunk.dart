@@ -12,6 +12,7 @@ class BookSummaryChunk {
   final int? startCharacterIndex;
   final int? endCharacterIndex;
   final String? contentHash;
+  final String? sourceText; // Actual source text sent to LLM
   final List<SummaryEvent>? _events;
   final List<ChunkCharacterNote>? _characterNotes;
 
@@ -27,6 +28,7 @@ class BookSummaryChunk {
     this.startCharacterIndex,
     this.endCharacterIndex,
     this.contentHash,
+    this.sourceText,
     List<SummaryEvent>? events,
     List<ChunkCharacterNote>? characterNotes,
   })  : _events = events,
@@ -58,6 +60,7 @@ class BookSummaryChunk {
       'startCharacterIndex': startCharacterIndex,
       'endCharacterIndex': endCharacterIndex,
       'contentHash': contentHash,
+      'sourceText': sourceText,
     };
   }
 
@@ -77,6 +80,7 @@ class BookSummaryChunk {
       startCharacterIndex: json['startCharacterIndex'] as int?,
       endCharacterIndex: json['endCharacterIndex'] as int?,
       contentHash: json['contentHash'] as String?,
+      sourceText: json['sourceText'] as String?,
       events: StructuredSummaryCodec.decodeEvents(json['eventsJson'] as String?),
       characterNotes:
           StructuredSummaryCodec.decodeCharacterNotes(json['characterNotesJson'] as String?),

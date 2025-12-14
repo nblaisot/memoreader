@@ -153,9 +153,16 @@ class _SummaryScreenState extends State<SummaryScreen> {
         // Auto-scroll to bottom for "from beginning" summaries
         if (widget.summaryType == SummaryType.fromBeginning) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_scrollController.hasClients && mounted) {
-              _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-            }
+            // Add a small delay to ensure Markdown rendering is complete
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (_scrollController.hasClients && mounted) {
+                _scrollController.animateTo(
+                  _scrollController.position.maxScrollExtent,
+                  duration: const Duration(milliseconds: 500),
+                  curve: Curves.easeOut,
+                );
+              }
+            });
           });
         }
       }
@@ -221,14 +228,42 @@ class _SummaryScreenState extends State<SummaryScreen> {
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
               const CircularProgressIndicator(),
               const SizedBox(height: 16),
-              Text(l10n.generatingSummary),
-              if (_statusMessage?.isNotEmpty == true) ...[
-                const SizedBox(height: 8),
-                Text(_statusMessage!),
-              ],
+              Text(_statusMessage ?? l10n.summaryStatusPreparing),
+              const SizedBox(height: 16),
+              
+              // Progress bar
+              StreamBuilder<double>(
+                stream: widget.enhancedSummaryService.progressStream,
+                initialData: 0.0,
+                builder: (context, snapshot) {
+                  final progress = snapshot.data ?? 0.0;
+                  if (progress <= 0 || progress >= 1.0) {
+                    return const SizedBox.shrink();
+                  }
+                  
+                  return Container(
+                    width: 200,
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Column(
+                      children: [
+                        LinearProgressIndicator(
+                          value: progress,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${(progress * 100).toInt()}%',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
             ],
           ),
         ),

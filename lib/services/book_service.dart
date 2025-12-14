@@ -50,12 +50,34 @@ class BookService {
       if (!await epubFile.exists()) {
         throw Exception('EPUB file does not exist');
       }
-      
-      // Copy the file to app storage
+
+      // Read the EPUB first to check metadata before copying
+      final epubBytes = await epubFile.readAsBytes();
+      final epub = await EpubReader.readBook(epubBytes);
+
+      final title = epub.Title?.isNotEmpty == true ? epub.Title! : 'Unknown Title';
+      final author = epub.Author?.isNotEmpty == true ? epub.Author! : 'Unknown Author';
+
+      // Check for existing book with same title and author
+      final allBooks = await getAllBooks();
+      final existingBook = allBooks.firstWhere(
+        (b) => b.title == title && b.author == author,
+        orElse: () => Book(
+            id: '', 
+            title: '', 
+            author: '', 
+            filePath: '', 
+            dateAdded: DateTime.now()
+        ),
+      );
+
+      if (existingBook.id.isNotEmpty) {
+        debugPrint('Book already exists: ${existingBook.title}');
+        return existingBook;
+      }
+
+      // If not exists, copy the file to app storage
       final storedPath = await copyEpubFile(epubFile);
-      
-      // Parse the EPUB to get metadata
-      final epub = await EpubReader.readBook(await epubFile.readAsBytes());
       
       final bookId = _uuid.v4();
       
@@ -70,8 +92,8 @@ class BookService {
       
       final book = Book(
         id: bookId,
-        title: epub.Title?.isNotEmpty == true ? epub.Title! : 'Unknown Title',
-        author: epub.Author?.isNotEmpty == true ? epub.Author! : 'Unknown Author',
+        title: title,
+        author: author,
         coverImagePath: coverImagePath,
         filePath: storedPath,
         dateAdded: DateTime.now(),

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
@@ -110,14 +111,14 @@ class ChunkingConfig {
   /// Resolve appropriate configuration based on the summary service
   static ChunkingConfig resolve(SummaryService summaryService) {
     if (summaryService is OpenAISummaryService) {
-      // OpenAI: Generous limits, efficient batch processing
-      // Context size: 8K-128K tokens depending on model
+      // OpenAI: Reduced chunk size to ensure detailed "scene-by-scene" summaries
+      // effectively fit within the output limit without aggressive compression.
       return const ChunkingConfig(
-        maxChunkTokens: 3000,
-        overlapTokens: 200,
+        maxChunkTokens: 12000, 
+        overlapTokens: 1500,
         maxChunksPerBatch: 6,
-        maxAggregateTokens: 15000,
-        safetyFactor: 0.85,  // High safety factor
+        maxAggregateTokens: 100000,
+        safetyFactor: 0.90,
       );
     }
 
@@ -125,24 +126,24 @@ class ChunkingConfig {
     // Note: We use runtime type check to avoid circular dependency
     final serviceName = summaryService.serviceName.toLowerCase();
     if (serviceName.contains('mistral')) {
-      // Mistral: Similar to OpenAI, good context windows
-      // Context size: 8K-32K tokens depending on model (mistral-small: 32K)
+      // Mistral: Similar reduction for detail preservation
       return const ChunkingConfig(
-        maxChunkTokens: 28000,
-        overlapTokens: 400,
+        maxChunkTokens: 12000,
+        overlapTokens: 1500,
         maxChunksPerBatch: 6,
-        maxAggregateTokens: 60000,  // Keep well below full context
-        safetyFactor: 0.85,  // High safety factor
+        maxAggregateTokens: 100000,
+        safetyFactor: 0.90,
       );
     }
 
     // Default fallback for unknown providers
+    // Modern LLMs generally support at least 8k
     return const ChunkingConfig(
-      maxChunkTokens: 5000,
-      overlapTokens: 180,
+      maxChunkTokens: 8000,
+      overlapTokens: 500,
       maxChunksPerBatch: 4,
       maxAggregateTokens: 20000,
-      safetyFactor: 0.75,
+      safetyFactor: 0.80,
     );
   }
 }
@@ -156,10 +157,15 @@ class ChunkingConfig {
 /// and adds database caching, incremental processing, and session tracking.
 class EnhancedSummaryService {
   final SummaryService _baseSummaryService;
+  final SharedPreferences _prefs;
   final SummaryDatabaseService _dbService = SummaryDatabaseService();
   final BookService _bookService = BookService();
   final ChunkingConfig _chunkConfig;
   final PromptConfigService _promptConfigService;
+  
+  // Progress stream
+  final _progressController = StreamController<double>.broadcast();
+  Stream<double> get progressStream => _progressController.stream;
 
   static const int _charactersPerToken = 4;
 
@@ -171,9 +177,9 @@ class EnhancedSummaryService {
   int get _chunkCharacterSize => math.max(_charactersPerToken, _safeChunkTokens * _charactersPerToken);
   int get _chunkOverlapCharacters => math.max(0, _chunkOverlapTokens * _charactersPerToken);
 
-  EnhancedSummaryService(this._baseSummaryService, SharedPreferences prefs)
+  EnhancedSummaryService(this._baseSummaryService, this._prefs)
       : _chunkConfig = ChunkingConfig.resolve(_baseSummaryService),
-        _promptConfigService = PromptConfigService(prefs);
+        _promptConfigService = PromptConfigService(_prefs);
 
   String get serviceName => _baseSummaryService.serviceName;
 
@@ -397,25 +403,28 @@ class EnhancedSummaryService {
     final chunks = <_ChunkDefinition>[];
     final int chunkSize = _chunkCharacterSize;
     final int overlapSize = math.min(_chunkOverlapCharacters, chunkSize ~/ 2);
+    // Maximum distance to search forward for a paragraph break
+    const int maxForwardSearch = 4000;
+    // Minimum chunk size (to avoid tiny chunks at the end)
+    final int minChunkSize = chunkSize ~/ 3;
 
     int start = 0;
     while (start < text.length) {
-      int end = math.min(start + chunkSize, text.length);
+      int targetEnd = math.min(start + chunkSize, text.length);
 
-      if (end < text.length) {
-        final searchWindowStart = math.max(start, end - 800);
-        final window = text.substring(searchWindowStart, end);
-        int breakOffset = window.lastIndexOf('\n\n');
-        breakOffset = breakOffset >= 0 ? breakOffset : window.lastIndexOf('\n');
-        breakOffset = breakOffset >= 0 ? breakOffset : window.lastIndexOf('. ');
-        if (breakOffset >= 0) {
-          final candidate = searchWindowStart + breakOffset + 1;
-          if (candidate > start + 400) {
-            end = candidate;
-          }
+      // If we're not at the end of the text, find a good break point
+      int end = targetEnd;
+      if (targetEnd < text.length) {
+        end = _findParagraphBoundary(text, targetEnd, maxForwardSearch);
+        
+        // Ensure minimum chunk size (don't let chunks get too small)
+        if (end - start < minChunkSize && targetEnd < text.length) {
+          // If the chunk would be too small, extend to the original target
+          end = targetEnd;
         }
       }
 
+      // Safety check
       if (end <= start) {
         end = math.min(start + chunkSize, text.length);
       }
@@ -429,20 +438,84 @@ class EnhancedSummaryService {
         text: chunkText,
         hash: hash,
       ));
+      
+      debugPrint('[SummaryDebug] Created chunk ${chunks.length - 1}: $start-$end (${chunkText.length} chars)');
 
       if (end >= text.length) {
         break;
       }
 
-      final nextStart = end - overlapSize;
-      if (nextStart <= start) {
-        start = end;
-      } else {
-        start = nextStart;
-      }
+      // Next chunk starts exactly where this one ended (no overlap)
+      start = end;
     }
 
     return chunks;
+  }
+
+  /// Find the nearest paragraph boundary at or after the target position.
+  /// Searches forward up to [maxSearch] characters for a break.
+  /// Falls back to sentence boundary, then to target position.
+  int _findParagraphBoundary(String text, int targetPosition, int maxSearch) {
+    final searchEnd = math.min(targetPosition + maxSearch, text.length);
+    
+    // First, try to find a double newline (paragraph break) forward
+    int breakPos = text.indexOf('\n\n', targetPosition);
+    if (breakPos >= 0 && breakPos < searchEnd) {
+      // Return the position right after the paragraph break
+      return breakPos + 2;
+    }
+    
+    // No paragraph break found, try single newline
+    breakPos = text.indexOf('\n', targetPosition);
+    if (breakPos >= 0 && breakPos < searchEnd) {
+      return breakPos + 1;
+    }
+    
+    // No newline found, try sentence boundary (. ! ?)
+    for (int i = targetPosition; i < searchEnd; i++) {
+      final char = text[i];
+      if ((char == '.' || char == '!' || char == '?') && 
+          i + 1 < text.length && 
+          (text[i + 1] == ' ' || text[i + 1] == '\n')) {
+        return i + 1;
+      }
+    }
+    
+    // No good break found, return the target position
+    return targetPosition;
+  }
+
+  /// Find the nearest word boundary at or before the target position.
+  /// Searches backward for whitespace or newlines.
+  int _findWordBoundaryBackward(String text, int targetPosition) {
+    if (targetPosition >= text.length) {
+      targetPosition = text.length;
+    }
+    if (targetPosition <= 0) {
+      return 0;
+    }
+    
+    // Search backward for a good break point
+    for (int i = targetPosition; i > 0; i--) {
+      final char = text[i - 1];
+      // Look for paragraph break first
+      if (i > 1 && text.substring(i - 2, i) == '\n\n') {
+        return i;
+      }
+      // Then sentence boundary
+      if ((char == '.' || char == '!' || char == '?') && 
+          i < text.length && 
+          (text[i] == ' ' || text[i] == '\n')) {
+        return i + 1;
+      }
+      // Finally, word boundary (space after character)
+      if (char == ' ' || char == '\n') {
+        return i;
+      }
+    }
+    
+    // No good break found, return the target position
+    return targetPosition;
   }
 
   Future<_PreparedTextData> _prepareTextData(
@@ -502,14 +575,30 @@ class EnhancedSummaryService {
     );
   }
 
+  /// Ensure all chunks have summaries generated (incremental)
   Future<void> _ensureChunkSummaries(
     Book book,
     List<_ChunkDefinition> chunks,
     String language,
   ) async {
+    if (chunks.isEmpty) {
+      return;
+    }
+    
+    // Notify progress 0% at start
+    _progressController.add(0.0);
+    
     debugPrint('[SummaryDebug] _ensureChunkSummaries: Starting for ${chunks.length} chunks');
+    
+    int processedCount = 0;
+    
     for (final chunk in chunks) {
       debugPrint('[SummaryDebug] _ensureChunkSummaries: Processing chunk ${chunk.index} (${chunk.start}-${chunk.end})');
+      
+      // Update progress
+      final progress = processedCount / chunks.length;
+      _progressController.add(progress);
+      
       final existing = await _dbService.getSummaryChunk(book.id, chunk.index);
 
       if (existing != null && existing.contentHash == chunk.hash) {
@@ -529,17 +618,20 @@ class EnhancedSummaryService {
             startCharacterIndex: chunk.start,
             endCharacterIndex: chunk.end,
             contentHash: existing.contentHash,
+            sourceText: existing.sourceText ?? chunk.text, // Preserve or add sourceText
             events: existing.events,
             characterNotes: existing.characterNotes,
           );
           await _dbService.saveSummaryChunk(updatedChunk);
         }
+        processedCount++;
         continue;
       }
 
       final chunkText = chunk.text.trim();
       if (chunkText.isEmpty) {
         debugPrint('[SummaryDebug] _ensureChunkSummaries: Chunk ${chunk.index} text is empty, skipping');
+        processedCount++;
         continue;
       }
 
@@ -563,6 +655,7 @@ class EnhancedSummaryService {
             summary.contains('[Summary generation failed') ||
             summary.contains('Exception:')) {
           debugPrint('Invalid summary generated for chunk ${chunk.index}, skipping cache');
+          processedCount++;
           continue;
         }
 
@@ -576,6 +669,7 @@ class EnhancedSummaryService {
           startCharacterIndex: chunk.start,
           endCharacterIndex: chunk.end,
           contentHash: chunk.hash,
+          sourceText: chunkText, // Store the actual source text sent to LLM
         );
 
         await _dbService.saveSummaryChunk(summaryChunk);
@@ -584,7 +678,14 @@ class EnhancedSummaryService {
         debugPrint('[SummaryDebug] _ensureChunkSummaries: Error generating summary for chunk ${chunk.index}: $e');
         debugPrint('[SummaryDebug] _ensureChunkSummaries: Stack trace: $stackTrace');
       }
+      
+      processedCount++;
+      // Update progress after each chunk
+      _progressController.add(processedCount / chunks.length);
     }
+    
+    // Notify completion
+    _progressController.add(1.0);
     debugPrint('[SummaryDebug] _ensureChunkSummaries: Completed for all chunks');
   }
 
@@ -855,7 +956,6 @@ class EnhancedSummaryService {
     bool skipLengthLimit = false,
   }) async {
     try {
-      // Limit text size to prevent crashes in native libraries
       // The text should already be plain text, but extract just in case
       String plainText = text;
       if (text.contains('<')) {
@@ -863,13 +963,10 @@ class EnhancedSummaryService {
         plainText = _extractTextFromHtml(text);
       }
       
-      // Use extremely conservative limits to avoid crashes
-      // The local summary service will further limit this on macOS (to ~200 chars)
-      // So we pre-limit here to be safe
-      final maxTextLength = 500; // Conservative pre-limit
-      final safeText = skipLengthLimit || plainText.length <= maxTextLength
-          ? plainText
-          : '${plainText.substring(0, maxTextLength)}...';
+      // NOTE: We no longer truncate here. Cloud APIs (OpenAI, Mistral) can handle
+      // the full chunk text (~48,000 chars / 12,000 tokens). The individual
+      // API services have their own truncation logic if needed.
+      final safeText = plainText;
 
       if (kDebugMode) {
         final preview = plainText.length > 200
@@ -1006,11 +1103,16 @@ class EnhancedSummaryService {
     final summaryTexts = chunks.map((c) => c.summaryText.trim()).where((s) => s.isNotEmpty).toList();
     
     if (summaryTexts.isEmpty) {
+      debugPrint('[SummaryDebug] _generateGeneralSummary: No valid summary texts found from ${chunks.length} chunks');
       return GeneralSummaryPayload(narrative: 'No content available.');
     }
 
+    debugPrint('[SummaryDebug] _generateGeneralSummary: Combining ${summaryTexts.length} chunks.');
+    debugPrint('[SummaryDebug] Chunk lengths: ${summaryTexts.map((s) => s.length).join(', ')}');
+
     // Simple case: single chunk
     if (summaryTexts.length == 1) {
+      debugPrint('[SummaryDebug] _generateGeneralSummary: Single chunk path');
       return GeneralSummaryPayload(
         narrative: summaryTexts.first,
         keyEvents: allEvents,
@@ -1020,6 +1122,7 @@ class EnhancedSummaryService {
     // Multiple chunks: simple concatenation
     // Chunks are already well-formed summaries, so they should stitch together naturally
     final narrative = summaryTexts.join('\n\n').trim();
+    debugPrint('[SummaryDebug] _generateGeneralSummary: Combined narrative length: ${narrative.length}');
 
     return GeneralSummaryPayload(
       narrative: narrative,

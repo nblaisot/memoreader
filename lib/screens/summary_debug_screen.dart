@@ -61,20 +61,29 @@ class _SummaryDebugScreenState extends State<SummaryDebugScreen> {
 
   Future<void> _loadSourceText(int chunkIndex) async {
     final chunk = _chunks.firstWhere((c) => c.chunkIndex == chunkIndex);
-    if (chunk.startCharacterIndex == null || chunk.endCharacterIndex == null) {
-      return;
-    }
-
+    
     setState(() {
       _loadingSourceText[chunkIndex] = true;
     });
 
     try {
-      final sourceText = await widget.enhancedSummaryService.extractTextForCharacterRange(
-        widget.book,
-        chunk.startCharacterIndex!,
-        chunk.endCharacterIndex!,
-      );
+      String sourceText;
+      
+      // Use stored sourceText if available (new chunks)
+      if (chunk.sourceText != null && chunk.sourceText!.isNotEmpty) {
+        sourceText = chunk.sourceText!;
+      } 
+      // Fallback to extraction for old chunks without stored text
+      else if (chunk.startCharacterIndex != null && chunk.endCharacterIndex != null) {
+        sourceText = await widget.enhancedSummaryService.extractTextForCharacterRange(
+          widget.book,
+          chunk.startCharacterIndex!,
+          chunk.endCharacterIndex!,
+        );
+      } else {
+        sourceText = 'Texte source non disponible (indices manquants)';
+      }
+      
       setState(() {
         _sourceTexts[chunkIndex] = sourceText;
         _showingSourceText[chunkIndex] = true;

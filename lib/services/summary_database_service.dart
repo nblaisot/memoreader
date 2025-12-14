@@ -24,7 +24,7 @@ class SummaryDatabaseService {
 
     return await openDatabase(
       dbFile,
-      version: 12,  // Increment version for reading interruptions tracking
+      version: 13,  // Increment version for sourceText column
       onCreate: (db, version) async {
         // Create summary_chunks table
         await db.execute('''
@@ -352,6 +352,16 @@ class SummaryDatabaseService {
             await db.execute('''
               ALTER TABLE summary_cache 
               ADD COLUMN readingInterruptionsJson TEXT
+            ''');
+          } catch (e) {
+            // Column might already exist, ignore
+          }
+        }
+        if (oldVersion < 13) {
+          try {
+            await db.execute('''
+              ALTER TABLE summary_chunks
+              ADD COLUMN sourceText TEXT
             ''');
           } catch (e) {
             // Column might already exist, ignore

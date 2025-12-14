@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 
 import '../../screens/reader/document_model.dart';
 import 'immediate_text_selection_controls.dart';
@@ -127,6 +128,7 @@ class _PageContentViewState extends State<PageContentView> {
                 combinedSpan,
                 textHeightBehavior: widget.textHeightBehavior,
                 textScaler: widget.textScaler,
+                dragStartBehavior: DragStartBehavior.down,
                 selectionControls: ImmediateTextSelectionControls(
                   onSelectionAction: widget.onSelectionAction,
                   actionLabel: widget.actionLabel,
@@ -163,13 +165,9 @@ class _PageContentViewState extends State<PageContentView> {
                     if (editableTextState != null) {
                       // Schedule toolbar to show on next frame to ensure layout is complete
                       WidgetsBinding.instance.addPostFrameCallback((_) {
-                         // Add a small delay to ensure the engine has fully processed the selection geometry
-                         // This is necessary because sometimes on the very first selection, the overlay isn't quite ready
-                         Future.delayed(const Duration(milliseconds: 100), () {
-                           if (mounted) {
-                             editableTextState.showToolbar();
-                           }
-                         });
+                        if (mounted) {
+                          editableTextState.showToolbar();
+                        }
                       });
                     }
                   }
@@ -197,6 +195,7 @@ class _PageContentViewState extends State<PageContentView> {
             textAlign: block.textAlign,
             textHeightBehavior: widget.textHeightBehavior,
             textScaler: widget.textScaler,
+            dragStartBehavior: DragStartBehavior.down,
             selectionControls: ImmediateTextSelectionControls(
               onSelectionAction: widget.onSelectionAction,
               actionLabel: widget.actionLabel,
@@ -229,14 +228,11 @@ class _PageContentViewState extends State<PageContentView> {
                 final editableTextState = _selectableTextKey.currentContext
                     ?.findAncestorStateOfType<EditableTextState>();
                 if (editableTextState != null) {
-                   // Schedule toolbar to show on next frame
+                   // Schedule toolbar to show on next frame to ensure layout is complete
                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                     // Add a small delay to ensure the engine has fully processed the selection geometry
-                     Future.delayed(const Duration(milliseconds: 100), () {
-                       if (mounted) {
-                         editableTextState.showToolbar();
-                       }
-                     });
+                     if (mounted) {
+                       editableTextState.showToolbar();
+                     }
                    });
                 }
               }
