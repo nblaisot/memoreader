@@ -30,6 +30,15 @@ class BookService {
     }
   }
 
+  Future<String> getCoversDirectory() async {
+    final booksDir = await getBooksDirectory();
+    final coversDir = Directory('$booksDir/covers');
+    if (!await coversDir.exists()) {
+      await coversDir.create(recursive: true);
+    }
+    return coversDir.path;
+  }
+
   Future<String> copyEpubFile(File sourceFile) async {
     try {
       if (!await sourceFile.exists()) {
@@ -241,15 +250,24 @@ class BookService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final booksJson = prefs.getStringList(_booksKey) ?? [];
+      
+      // Get directories once for all books
+      final booksDir = await getBooksDirectory();
+      final coversDir = await getCoversDirectory();
+      
       return booksJson.map((json) {
         try {
-          return Book.fromJson(jsonDecode(json));
+          return Book.fromJson(
+            jsonDecode(json),
+            booksDirectory: booksDir,
+            coversDirectory: coversDir,
+          );
         } catch (e) {
-          // Skip corrupted book entries
+          debugPrint('Error loading book from JSON: $e');
           return null;
         }
       }).whereType<Book>().toList()
-        ..sort((a, b) => b.dateAdded.compareTo(a.dateAdded)); // Sort by date added, newest first
+        ..sort((a, b) => b.dateAdded.compareTo(a.dateAdded));
     } catch (e) {
       throw Exception('Failed to load books: $e');
     }
@@ -280,6 +298,25 @@ class BookService {
       await prefs.setStringList(_booksKey, booksJson);
     } catch (e) {
       throw Exception('Failed to save book: $e');
+    }
+  }
+
+  Future<void> updateBook(Book book) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final books = await getAllBooks();
+      
+      // Find and replace the book with the same ID
+      final index = books.indexWhere((b) => b.id == book.id);
+      if (index == -1) {
+        throw Exception('Book not found: ${book.id}');
+      }
+      
+      books[index] = book;
+      final booksJson = books.map((b) => jsonEncode(b.toJson())).toList();
+      await prefs.setStringList(_booksKey, booksJson);
+    } catch (e) {
+      throw Exception('Failed to update book: $e');
     }
   }
 

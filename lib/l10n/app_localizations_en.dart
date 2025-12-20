@@ -37,6 +37,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get bookFileNotFound =>
+      'Book file not found. The file may have been moved or deleted.';
+
+  @override
   String get noBooksInLibrary => 'No books in your library';
 
   @override

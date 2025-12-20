@@ -77,20 +77,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
     try {
       final books = await _bookService.getAllBooks();
       
+      // Validate book files and load progress in parallel
+      final validationFutures = books.map((book) => _validateBookFile(book));
+      final validatedBooks = await Future.wait(validationFutures);
+      
       // Load progress for all books in parallel
-      final progressFutures = books.map((book) => _bookService.getReadingProgress(book.id));
+      final progressFutures = validatedBooks.map((book) => _bookService.getReadingProgress(book.id));
       final progressList = await Future.wait(progressFutures);
       
       final progressMap = <String, ReadingProgress>{};
-      for (int i = 0; i < books.length; i++) {
+      for (int i = 0; i < validatedBooks.length; i++) {
         final progress = progressList[i];
         if (progress != null) {
-          progressMap[books[i].id] = progress;
+          progressMap[validatedBooks[i].id] = progress;
         }
       }
 
       setState(() {
-        _books = books;
+        _books = validatedBooks;
         _bookProgress = progressMap;
         _isLoading = false;
       });
@@ -111,6 +115,47 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<Book> _validateBookFile(Book book) async {
+    try {
+      final file = File(book.filePath);
+      final exists = await file.exists();
+      
+      if (!exists && book.isValid) {
+        // File doesn't exist but book is marked as valid - update it
+        final invalidBook = Book(
+          id: book.id,
+          title: book.title,
+          author: book.author,
+          coverImagePath: book.coverImagePath,
+          filePath: book.filePath,
+          dateAdded: book.dateAdded,
+          isValid: false,
+        );
+        // Save the updated status
+        await _bookService.updateBook(invalidBook);
+        return invalidBook;
+      } else if (exists && !book.isValid) {
+        // File exists but book is marked as invalid - update it
+        final validBook = Book(
+          id: book.id,
+          title: book.title,
+          author: book.author,
+          coverImagePath: book.coverImagePath,
+          filePath: book.filePath,
+          dateAdded: book.dateAdded,
+          isValid: true,
+        );
+        await _bookService.updateBook(validBook);
+        return validBook;
+      }
+      
+      return book;
+    } catch (e) {
+      debugPrint('Error validating book ${book.title}: $e');
+      return book;
     }
   }
 
@@ -218,6 +263,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   void _openBook(Book book) {
+    // Don't open invalid books
+    if (!book.isValid) {
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.bookFileNotFound),
+          backgroundColor: Colors.orange,
+          action: SnackBarAction(
+            label: l10n.delete,
+            textColor: Colors.white,
+            onPressed: () => _deleteBookFromLibrary(book, l10n),
+          ),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+    
     unawaited(_appStateService.setLastOpenedBook(book.id));
     Navigator.push(
       context,
@@ -343,30 +406,46 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Widget _buildGridBookCard(Book book, int index, AppLocalizations l10n) {
     final progressInfo = _getProgressInfo(book);
-    return Card(
-      elevation: 2,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: () => _openBook(book),
-        onLongPress: () => _showDeleteDialog(book, index),
-        splashColor: Colors.transparent,
-        highlightColor: Colors.transparent,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _buildCoverImage(book),
-            if (_isBookCompleted(book))
-              Positioned.fill(
-                child: _buildReadWatermark(),
+    return Opacity(
+      opacity: book.isValid ? 1.0 : 0.5,
+      child: Card(
+        elevation: 2,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: InkWell(
+          onTap: () => _openBook(book),
+          onLongPress: () => _showDeleteDialog(book, index),
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _buildCoverImage(book),
+              if (!book.isValid)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black54,
+                    child: const Center(
+                      child: Icon(
+                        Icons.error_outline,
+                        color: Colors.white,
+                        size: 48,
+                      ),
+                    ),
+                  ),
+                ),
+              if (_isBookCompleted(book))
+                Positioned.fill(
+                  child: _buildReadWatermark(),
+                ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: _buildBookMenu(book, l10n, onDarkBackground: true),
               ),
-            Positioned(
-              top: 8,
-              right: 8,
-              child: _buildBookMenu(book, l10n, onDarkBackground: true),
-            ),
-            _buildGridInfoOverlay(book, progressInfo),
-          ],
+              _buildGridInfoOverlay(book, progressInfo),
+            ],
+          ),
         ),
       ),
     );
@@ -443,35 +522,48 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget _buildListBookCard(Book book, int index, AppLocalizations l10n) {
     final progressInfo = _getProgressInfo(book);
     final theme = Theme.of(context);
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => _openBook(book),
-        onLongPress: () => _showDeleteDialog(book, index),
-        splashColor: Colors.transparent,
-        highlightColor: Colors.transparent,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 90,
-                height: 130,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _buildCoverImage(book),
-                      if (_isBookCompleted(book))
-                        Positioned.fill(child: _buildReadWatermark()),
-                    ],
+    return Opacity(
+      opacity: book.isValid ? 1.0 : 0.5,
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _openBook(book),
+          onLongPress: () => _showDeleteDialog(book, index),
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 90,
+                  height: 130,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _buildCoverImage(book),
+                        if (!book.isValid)
+                          Container(
+                            color: Colors.black54,
+                            child: const Center(
+                              child: Icon(
+                                Icons.error_outline,
+                                color: Colors.white,
+                                size: 32,
+                              ),
+                            ),
+                          ),
+                        if (_isBookCompleted(book))
+                          Positioned.fill(child: _buildReadWatermark()),
+                      ],
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -516,6 +608,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 

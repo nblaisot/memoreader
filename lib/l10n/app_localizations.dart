@@ -146,6 +146,12 @@ abstract class AppLocalizations {
   /// **'Error loading books: {error}'**
   String errorLoadingBooks(String error);
 
+  /// Error message when book file is missing
+  ///
+  /// In en, this message translates to:
+  /// **'Book file not found. The file may have been moved or deleted.'**
+  String get bookFileNotFound;
+
   /// Message when library is empty
   ///
   /// In en, this message translates to:

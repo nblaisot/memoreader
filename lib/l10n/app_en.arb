@@ -42,6 +42,10 @@
       }
     }
   },
+  "bookFileNotFound": "Book file not found. The file may have been moved or deleted.",
+  "@bookFileNotFound": {
+    "description": "Error message when book file is missing"
+  },
   "noBooksInLibrary": "No books in your library",
   "@noBooksInLibrary": {
     "description": "Message when library is empty"

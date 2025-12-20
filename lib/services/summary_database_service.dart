@@ -24,7 +24,7 @@ class SummaryDatabaseService {
 
     return await openDatabase(
       dbFile,
-      version: 13,  // Increment version for sourceText column
+      version: 14,  // Incremented to fix sourceText column in existing databases
       onCreate: (db, version) async {
         // Create summary_chunks table
         await db.execute('''
@@ -41,6 +41,7 @@ class SummaryDatabaseService {
             startCharacterIndex INTEGER,
             endCharacterIndex INTEGER,
             contentHash TEXT,
+            sourceText TEXT,
             UNIQUE(bookId, chunkIndex)
           )
         ''');
@@ -358,6 +359,17 @@ class SummaryDatabaseService {
           }
         }
         if (oldVersion < 13) {
+          try {
+            await db.execute('''
+              ALTER TABLE summary_chunks
+              ADD COLUMN sourceText TEXT
+            ''');
+          } catch (e) {
+            // Column might already exist, ignore
+          }
+        }
+        if (oldVersion < 14) {
+          // Ensure sourceText column exists (fixes bug where v13 onCreate didn't include it)
           try {
             await db.execute('''
               ALTER TABLE summary_chunks

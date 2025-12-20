@@ -22,6 +22,7 @@
       }
     }
   },
+  "bookFileNotFound": "Fichier du livre introuvable. Le fichier a peut-être été déplacé ou supprimé.",
   "noBooksInLibrary": "Aucun livre dans votre bibliothèque",
   "tapToImportEpub": "Appuyez sur le bouton + pour importer un EPUB",
   "deleteBook": "Supprimer le livre",

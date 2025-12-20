@@ -181,9 +181,42 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     WakelockPlus.disable();
     
     // Always update reading stop when leaving reader (all interruptions are tracked)
-    _updateLastReadingStopOnExit();
+    // Only if the book was actually loaded
+    if (_epubBook != null) {
+      _updateLastReadingStopOnExit();
+    }
     
     super.dispose();
+  }
+
+  /// Safely navigate back to the library, cleaning up resources
+  void _goBackToLibrary() {
+    debugPrint('[ReaderScreen] _goBackToLibrary called');
+    debugPrint('[ReaderScreen] mounted: $mounted');
+    debugPrint('[ReaderScreen] canPop: ${Navigator.of(context).canPop()}');
+    
+    // Disable wake lock before leaving
+    WakelockPlus.disable();
+    
+    // Clear the last opened book since we're going back due to an error
+    unawaited(_appStateService.clearLastOpenedBook());
+    
+    // Navigate back - try different approaches
+    if (mounted) {
+      final navigator = Navigator.of(context);
+      debugPrint('[ReaderScreen] Navigator.canPop(): ${navigator.canPop()}');
+      
+      if (navigator.canPop()) {
+        debugPrint('[ReaderScreen] Calling Navigator.pop()');
+        navigator.pop();
+      } else {
+        // If we can't pop, try to go to root
+        debugPrint('[ReaderScreen] Cannot pop, trying popUntil root');
+        navigator.popUntil((route) => route.isFirst);
+      }
+    } else {
+      debugPrint('[ReaderScreen] Widget is not mounted, cannot navigate');
+    }
   }
 
   @override
@@ -984,6 +1017,72 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    // Handle loading state - return early before LayoutBuilder
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _goBackToLibrary,
+          ),
+          title: Text(widget.book.title, overflow: TextOverflow.ellipsis),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Handle error state - return early before LayoutBuilder
+    if (_errorMessage != null) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _goBackToLibrary,
+          ),
+          title: const Text('Error'),
+        ),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: theme.colorScheme.error),
+                  const SizedBox(height: 16),
+                  Text(
+                    _errorMessage!,
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 24),
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 12,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _goBackToLibrary,
+                        icon: const Icon(Icons.arrow_back),
+                        label: const Text('Back to Library'),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: _loadBook,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Réessayer'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    
     return LayoutBuilder(
       builder: (context, constraints) {
         // Use LayoutBuilder to get actual widget size, especially important for foldable devices
@@ -1018,31 +1117,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   Widget _buildReaderContent(BuildContext context, Size actualSize, _PageMetrics metrics) {
     final theme = Theme.of(context);
 
-    if (_isLoading) {
-      return Scaffold(
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_errorMessage != null) {
-      return Scaffold(
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.error_outline, size: 64, color: theme.colorScheme.error),
-                const SizedBox(height: 16),
-                Text(_errorMessage!, textAlign: TextAlign.center),
-                const SizedBox(height: 16),
-                ElevatedButton(onPressed: _loadBook, child: const Text('Réessayer')),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
+    // Note: Loading and error states are now handled in build() before LayoutBuilder
 
     // Build three pages: previous, current, and next
     final previousPage = _engine?.getPage(_currentPageIndex - 1);
