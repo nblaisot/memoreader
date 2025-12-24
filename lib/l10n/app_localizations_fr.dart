@@ -15,13 +15,13 @@ class AppLocalizationsFr extends AppLocalizations {
   String get library => 'Bibliothèque';
 
   @override
-  String get importEpub => 'Importer EPUB';
+  String get importEpub => 'Importer un livre';
 
   @override
   String get importing => 'Importation...';
 
   @override
-  String get importingEpub => 'Importation de l\'EPUB...';
+  String get importingEpub => 'Importation du livre...';
 
   @override
   String get bookImportedSuccessfully => 'Livre importé avec succès !';
@@ -44,7 +44,8 @@ class AppLocalizationsFr extends AppLocalizations {
   String get noBooksInLibrary => 'Aucun livre dans votre bibliothèque';
 
   @override
-  String get tapToImportEpub => 'Appuyez sur le bouton + pour importer un EPUB';
+  String get tapToImportEpub =>
+      'Appuyez sur le bouton + pour importer un fichier EPUB ou TXT';
 
   @override
   String get deleteBook => 'Supprimer le livre';
@@ -232,7 +233,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String textSelectionActionDescription(Object language, Object text) {
-    return 'Personnalisez l\'action affichée lors de la sélection de texte. Vous pouvez utiliser $text pour le texte sélectionné et $language pour la langue de l\'application. Le prompt par défaut attend une réponse structurée avec les lignes "Original:", "Pronunciation:" et "Translation:".';
+    return 'Personnalisez l\'action affichée lors de la sélection de texte. Vous pouvez utiliser $text pour le texte sélectionné et $language pour la langue de l\'application.';
   }
 
   @override
@@ -477,4 +478,37 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get summaryCharacters => 'Personnages';
+
+  @override
+  String get pronunciation => 'Prononciation';
+
+  @override
+  String get translation => 'Traduction';
+
+  @override
+  String get savedWords => 'Mots sauvegardés';
+
+  @override
+  String get saveTranslation => 'Enregistrer';
+
+  @override
+  String get translationSaved => 'Traduction enregistrée';
+
+  @override
+  String get copyAsTsv => 'Copier en TSV';
+
+  @override
+  String get tsvCopied => 'Copié dans le presse-papiers';
+
+  @override
+  String get noSavedWords => 'Aucun mot sauvegardé';
+
+  @override
+  String get filterSavedWords => 'Filtrer...';
+
+  @override
+  String get deleteTranslation => 'Supprimer cette traduction ?';
+
+  @override
+  String get deleteTranslationConfirm => 'Supprimer';
 }

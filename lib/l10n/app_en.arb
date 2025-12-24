@@ -8,17 +8,17 @@
   "@library": {
     "description": "Library screen title"
   },
-  "importEpub": "Import EPUB",
+  "importEpub": "Import Book",
   "@importEpub": {
-    "description": "Import EPUB button label"
+    "description": "Import book button label (EPUB or TXT)"
   },
   "importing": "Importing...",
   "@importing": {
     "description": "Importing state label"
   },
-  "importingEpub": "Importing EPUB...",
+  "importingEpub": "Importing book...",
   "@importingEpub": {
-    "description": "Importing EPUB message"
+    "description": "Importing book message (EPUB or TXT)"
   },
   "bookImportedSuccessfully": "Book imported successfully!",
   "@bookImportedSuccessfully": {
@@ -50,9 +50,9 @@
   "@noBooksInLibrary": {
     "description": "Message when library is empty"
   },
-  "tapToImportEpub": "Tap the + button to import an EPUB",
+  "tapToImportEpub": "Tap the + button to import an EPUB or TXT file",
   "@tapToImportEpub": {
-    "description": "Instruction for importing EPUB"
+    "description": "Instruction for importing EPUB or TXT"
   },
   "deleteBook": "Delete Book",
   "@deleteBook": {
@@ -634,6 +634,50 @@
   "summaryCharacters": "Characters",
   "@summaryCharacters": {
     "description": "Summary type option - characters"
+  },
+  "pronunciation": "Pronunciation",
+  "@pronunciation": {
+    "description": "Label for pronunciation/romanization section in translation dialog"
+  },
+  "translation": "Translation",
+  "@translation": {
+    "description": "Label for translation section in translation dialog"
+  },
+  "savedWords": "Saved Words",
+  "@savedWords": {
+    "description": "Title for saved words screen and menu item"
+  },
+  "saveTranslation": "Save",
+  "@saveTranslation": {
+    "description": "Button to save a translation"
+  },
+  "translationSaved": "Translation saved",
+  "@translationSaved": {
+    "description": "Success message when translation is saved"
+  },
+  "copyAsTsv": "Copy as TSV",
+  "@copyAsTsv": {
+    "description": "Menu option to copy saved words as tab-separated values"
+  },
+  "tsvCopied": "Copied to clipboard",
+  "@tsvCopied": {
+    "description": "Success message when TSV is copied to clipboard"
+  },
+  "noSavedWords": "No saved words",
+  "@noSavedWords": {
+    "description": "Message when there are no saved translations"
+  },
+  "filterSavedWords": "Filter...",
+  "@filterSavedWords": {
+    "description": "Hint text for filter input field"
+  },
+  "deleteTranslation": "Delete this translation?",
+  "@deleteTranslation": {
+    "description": "Confirmation dialog title for deleting a translation"
+  },
+  "deleteTranslationConfirm": "Delete",
+  "@deleteTranslationConfirm": {
+    "description": "Confirm button for deleting a translation"
   }
 }
 

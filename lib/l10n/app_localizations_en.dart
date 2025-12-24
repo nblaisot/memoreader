@@ -15,13 +15,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get library => 'Library';
 
   @override
-  String get importEpub => 'Import EPUB';
+  String get importEpub => 'Import Book';
 
   @override
   String get importing => 'Importing...';
 
   @override
-  String get importingEpub => 'Importing EPUB...';
+  String get importingEpub => 'Importing book...';
 
   @override
   String get bookImportedSuccessfully => 'Book imported successfully!';
@@ -44,7 +44,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noBooksInLibrary => 'No books in your library';
 
   @override
-  String get tapToImportEpub => 'Tap the + button to import an EPUB';
+  String get tapToImportEpub =>
+      'Tap the + button to import an EPUB or TXT file';
 
   @override
   String get deleteBook => 'Delete Book';
@@ -231,7 +232,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String textSelectionActionDescription(Object language, Object text) {
-    return 'Customize the action displayed when selecting text. You can use $text for the selected text and $language for the application language. The default prompt expects a structured response with "Original:", "Pronunciation:", and "Translation:" lines.';
+    return 'Customize the action displayed when selecting text. You can use $text for the selected text and $language for the application language.';
   }
 
   @override
@@ -471,4 +472,37 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get summaryCharacters => 'Characters';
+
+  @override
+  String get pronunciation => 'Pronunciation';
+
+  @override
+  String get translation => 'Translation';
+
+  @override
+  String get savedWords => 'Saved Words';
+
+  @override
+  String get saveTranslation => 'Save';
+
+  @override
+  String get translationSaved => 'Translation saved';
+
+  @override
+  String get copyAsTsv => 'Copy as TSV';
+
+  @override
+  String get tsvCopied => 'Copied to clipboard';
+
+  @override
+  String get noSavedWords => 'No saved words';
+
+  @override
+  String get filterSavedWords => 'Filter...';
+
+  @override
+  String get deleteTranslation => 'Delete this translation?';
+
+  @override
+  String get deleteTranslationConfirm => 'Delete';
 }
