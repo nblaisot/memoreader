@@ -232,7 +232,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String textSelectionActionDescription(Object language, Object text) {
-    return 'Personnalisez l\'action affichée lors de la sélection de texte. Vous pouvez utiliser $text pour le texte sélectionné et $language pour la langue de l\'application.';
+    return 'Personnalisez l\'action affichée lors de la sélection de texte. Vous pouvez utiliser $text pour le texte sélectionné et $language pour la langue de l\'application. Le prompt par défaut attend une réponse structurée avec les lignes "Original:", "Pronunciation:" et "Translation:".';
   }
 
   @override

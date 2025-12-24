@@ -1592,10 +1592,19 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         return;
       }
 
+      // Parse the structured response
+      final parsedResult = _parseSelectionActionResult(
+        originalText: trimmed,
+        generatedText: response.trim(),
+      );
+
       await _showSelectionResultDialog(
         originalText: trimmed,
         generatedText: response.trim(),
         actionLabel: label,
+        parsedOriginal: parsedResult.originalFromResponse,
+        pronunciation: parsedResult.pronunciation,
+        translation: parsedResult.translation,
       );
     } catch (e, stack) {
       debugPrint('Error executing selection action: $e');
@@ -1621,6 +1630,9 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     required String originalText,
     required String generatedText,
     required String actionLabel,
+    String? parsedOriginal,
+    String? pronunciation,
+    String? translation,
   }) async {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context)!;
@@ -1689,7 +1701,13 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: SingleChildScrollView(
-                        child: SelectableText(generatedText),
+                        child: _buildSelectionResultContent(
+                          context: context,
+                          generatedText: generatedText,
+                          parsedOriginal: parsedOriginal,
+                          pronunciation: pronunciation,
+                          translation: translation,
+                        ),
                       ),
                     ),
                   ),
@@ -1699,6 +1717,118 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
           ),
         );
       },
+    );
+  }
+
+  /// Parse a structured response of the form:
+  /// Original: ...
+  /// Pronunciation: ...
+  /// Translation: ...
+  ///
+  /// Falls back gracefully when the format is not respected.
+  _ParsedSelectionActionResult _parseSelectionActionResult({
+    required String originalText,
+    required String generatedText,
+  }) {
+    final lines = generatedText
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+
+    String? originalFromResponse;
+    String? pronunciation;
+    String? translation;
+
+    for (final line in lines) {
+      if (line.startsWith('Original:')) {
+        originalFromResponse =
+            line.substring('Original:'.length).trim();
+      } else if (line.startsWith('Pronunciation:')) {
+        pronunciation =
+            line.substring('Pronunciation:'.length).trim();
+      } else if (line.startsWith('Translation:')) {
+        translation =
+            line.substring('Translation:'.length).trim();
+      }
+    }
+
+    // If translation is missing but we have some content, treat the whole
+    // response as the translation to avoid losing information.
+    translation ??= generatedText.trim().isNotEmpty
+        ? generatedText.trim()
+        : null;
+
+    // For original, prefer the model's echo if present, otherwise the
+    // user's selected text.
+    originalFromResponse ??=
+        originalText.trim().isNotEmpty ? originalText.trim() : null;
+
+    return _ParsedSelectionActionResult(
+      originalFromResponse: originalFromResponse,
+      pronunciation:
+          pronunciation != null && pronunciation.isNotEmpty
+              ? pronunciation
+              : null,
+      translation: translation != null && translation.isNotEmpty
+          ? translation
+          : null,
+    );
+  }
+
+  /// Build the widget that displays the result of the selection action.
+  /// If structured fields are available, show them as separate labeled
+  /// sections; otherwise fall back to the raw generated text.
+  Widget _buildSelectionResultContent({
+    required BuildContext context,
+    required String generatedText,
+    String? parsedOriginal,
+    String? pronunciation,
+    String? translation,
+  }) {
+    final hasStructured = parsedOriginal != null ||
+        pronunciation != null ||
+        translation != null;
+
+    if (!hasStructured) {
+      return SelectableText(generatedText);
+    }
+
+    final children = <Widget>[];
+
+    if (parsedOriginal != null) {
+      children.add(
+        SelectableText(
+          'Original: $parsedOriginal',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      );
+      children.add(const SizedBox(height: 8));
+    }
+
+    if (pronunciation != null) {
+      children.add(
+        SelectableText(
+          'Pronunciation: $pronunciation',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      );
+      children.add(const SizedBox(height: 8));
+    }
+
+    if (translation != null) {
+      children.add(
+        SelectableText(
+          'Translation: $translation',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
     );
   }
 
@@ -2449,6 +2579,20 @@ class _ChapterSelectorDialogState extends State<_ChapterSelectorDialog> {
       ),
     );
   }
+}
+
+/// Small holder for a parsed selection action result.
+/// Keeps both the raw response and the structured fields when available.
+class _ParsedSelectionActionResult {
+  const _ParsedSelectionActionResult({
+    required this.originalFromResponse,
+    this.pronunciation,
+    this.translation,
+  });
+
+  final String? originalFromResponse;
+  final String? pronunciation;
+  final String? translation;
 }
 
 /// Chapter tile with pulsating effect when navigation is in progress.

@@ -231,7 +231,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String textSelectionActionDescription(Object language, Object text) {
-    return 'Customize the action displayed when selecting text. You can use $text for the selected text and $language for the application language.';
+    return 'Customize the action displayed when selecting text. You can use $text for the selected text and $language for the application language. The default prompt expects a structured response with "Original:", "Pronunciation:", and "Translation:" lines.';
   }
 
   @override
