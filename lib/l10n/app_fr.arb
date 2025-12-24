@@ -2,9 +2,9 @@
   "@@locale": "fr",
   "appTitle": "MemoReader",
   "library": "Bibliothèque",
-  "importEpub": "Importer EPUB",
+  "importEpub": "Importer un livre",
   "importing": "Importation...",
-  "importingEpub": "Importation de l'EPUB...",
+  "importingEpub": "Importation du livre...",
   "bookImportedSuccessfully": "Livre importé avec succès !",
   "errorImportingBook": "Erreur lors de l'importation du livre : {error}",
   "@errorImportingBook": {
@@ -24,7 +24,7 @@
   },
   "bookFileNotFound": "Fichier du livre introuvable. Le fichier a peut-être été déplacé ou supprimé.",
   "noBooksInLibrary": "Aucun livre dans votre bibliothèque",
-  "tapToImportEpub": "Appuyez sur le bouton + pour importer un EPUB",
+  "tapToImportEpub": "Appuyez sur le bouton + pour importer un fichier EPUB ou TXT",
   "deleteBook": "Supprimer le livre",
   "confirmDeleteBook": "Êtes-vous sûr de vouloir supprimer \"{title}\" ?",
   "@confirmDeleteBook": {
@@ -307,6 +307,50 @@
   "summarySinceLastTime": "Depuis la dernière fois",
   "summaryCharacters": "Personnages",
   "horizontalPaddingSaved": "Padding horizontal enregistré. Les modifications s'appliqueront lors de la réouverture d'un livre.",
-  "verticalPaddingSaved": "Padding vertical enregistré. Les modifications s'appliqueront lors de la réouverture d'un livre."
+  "verticalPaddingSaved": "Padding vertical enregistré. Les modifications s'appliqueront lors de la réouverture d'un livre.",
+  "pronunciation": "Prononciation",
+  "@pronunciation": {
+    "description": "Libellé pour la section prononciation/romanisation dans le dialogue de traduction"
+  },
+  "translation": "Traduction",
+  "@translation": {
+    "description": "Libellé pour la section traduction dans le dialogue de traduction"
+  },
+  "savedWords": "Mots sauvegardés",
+  "@savedWords": {
+    "description": "Titre pour l'écran des mots sauvegardés et l'élément de menu"
+  },
+  "saveTranslation": "Enregistrer",
+  "@saveTranslation": {
+    "description": "Bouton pour enregistrer une traduction"
+  },
+  "translationSaved": "Traduction enregistrée",
+  "@translationSaved": {
+    "description": "Message de succès lorsqu'une traduction est enregistrée"
+  },
+  "copyAsTsv": "Copier en TSV",
+  "@copyAsTsv": {
+    "description": "Option de menu pour copier les mots sauvegardés en valeurs séparées par des tabulations"
+  },
+  "tsvCopied": "Copié dans le presse-papiers",
+  "@tsvCopied": {
+    "description": "Message de succès lorsque le TSV est copié dans le presse-papiers"
+  },
+  "noSavedWords": "Aucun mot sauvegardé",
+  "@noSavedWords": {
+    "description": "Message lorsqu'il n'y a pas de traductions sauvegardées"
+  },
+  "filterSavedWords": "Filtrer...",
+  "@filterSavedWords": {
+    "description": "Texte d'indice pour le champ de filtre"
+  },
+  "deleteTranslation": "Supprimer cette traduction ?",
+  "@deleteTranslation": {
+    "description": "Titre de la boîte de dialogue de confirmation pour supprimer une traduction"
+  },
+  "deleteTranslationConfirm": "Supprimer",
+  "@deleteTranslationConfirm": {
+    "description": "Bouton de confirmation pour supprimer une traduction"
+  }
 }
 

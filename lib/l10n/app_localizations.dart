@@ -110,10 +110,10 @@ abstract class AppLocalizations {
   /// **'Library'**
   String get library;
 
-  /// Import EPUB button label
+  /// Import book button label (EPUB or TXT)
   ///
   /// In en, this message translates to:
-  /// **'Import EPUB'**
+  /// **'Import Book'**
   String get importEpub;
 
   /// Importing state label
@@ -122,10 +122,10 @@ abstract class AppLocalizations {
   /// **'Importing...'**
   String get importing;
 
-  /// Importing EPUB message
+  /// Importing book message (EPUB or TXT)
   ///
   /// In en, this message translates to:
-  /// **'Importing EPUB...'**
+  /// **'Importing book...'**
   String get importingEpub;
 
   /// Success message after importing a book
@@ -158,10 +158,10 @@ abstract class AppLocalizations {
   /// **'No books in your library'**
   String get noBooksInLibrary;
 
-  /// Instruction for importing EPUB
+  /// Instruction for importing EPUB or TXT
   ///
   /// In en, this message translates to:
-  /// **'Tap the + button to import an EPUB'**
+  /// **'Tap the + button to import an EPUB or TXT file'**
   String get tapToImportEpub;
 
   /// Delete book dialog title
@@ -913,6 +913,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Characters'**
   String get summaryCharacters;
+
+  /// Label for pronunciation/romanization section in translation dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Pronunciation'**
+  String get pronunciation;
+
+  /// Label for translation section in translation dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Translation'**
+  String get translation;
+
+  /// Title for saved words screen and menu item
+  ///
+  /// In en, this message translates to:
+  /// **'Saved Words'**
+  String get savedWords;
+
+  /// Button to save a translation
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get saveTranslation;
+
+  /// Success message when translation is saved
+  ///
+  /// In en, this message translates to:
+  /// **'Translation saved'**
+  String get translationSaved;
+
+  /// Menu option to copy saved words as tab-separated values
+  ///
+  /// In en, this message translates to:
+  /// **'Copy as TSV'**
+  String get copyAsTsv;
+
+  /// Success message when TSV is copied to clipboard
+  ///
+  /// In en, this message translates to:
+  /// **'Copied to clipboard'**
+  String get tsvCopied;
+
+  /// Message when there are no saved translations
+  ///
+  /// In en, this message translates to:
+  /// **'No saved words'**
+  String get noSavedWords;
+
+  /// Hint text for filter input field
+  ///
+  /// In en, this message translates to:
+  /// **'Filter...'**
+  String get filterSavedWords;
+
+  /// Confirmation dialog title for deleting a translation
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this translation?'**
+  String get deleteTranslation;
+
+  /// Confirm button for deleting a translation
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get deleteTranslationConfirm;
 }
 
 class _AppLocalizationsDelegate

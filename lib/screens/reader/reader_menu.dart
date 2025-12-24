@@ -14,6 +14,8 @@ Future<void> showReaderMenu({
   required bool hasChapters,
   required VoidCallback onGoToChapter,
   required VoidCallback onGoToPercentage,
+  required bool hasSavedWords,
+  required VoidCallback onShowSavedWords,
   required VoidCallback onShowSummaryFromBeginning,
   required VoidCallback onShowCharactersSummary,
   required VoidCallback onDeleteSummaries,
@@ -41,6 +43,8 @@ Future<void> showReaderMenu({
         hasChapters: hasChapters,
         onGoToChapter: () => handleAction(onGoToChapter),
         onGoToPercentage: () => handleAction(onGoToPercentage),
+        hasSavedWords: hasSavedWords,
+        onShowSavedWords: () => handleAction(onShowSavedWords),
         onShowSummaryFromBeginning:
             () => handleAction(onShowSummaryFromBeginning),
         onShowCharactersSummary: () => handleAction(onShowCharactersSummary),
@@ -73,6 +77,8 @@ class _ReaderMenuDialog extends StatefulWidget {
     required this.hasChapters,
     required this.onGoToChapter,
     required this.onGoToPercentage,
+    required this.hasSavedWords,
+    required this.onShowSavedWords,
     required this.onShowSummaryFromBeginning,
     required this.onShowCharactersSummary,
     required this.onDeleteSummaries,
@@ -84,6 +90,8 @@ class _ReaderMenuDialog extends StatefulWidget {
   final bool hasChapters;
   final VoidCallback onGoToChapter;
   final VoidCallback onGoToPercentage;
+  final bool hasSavedWords;
+  final VoidCallback onShowSavedWords;
   final VoidCallback onShowSummaryFromBeginning;
   final VoidCallback onShowCharactersSummary;
   final VoidCallback onDeleteSummaries;
@@ -190,6 +198,13 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
                       leading: const Icon(Icons.percent),
                       title: const Text('Aller à un pourcentage'),
                       onTap: widget.onGoToPercentage,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.bookmark),
+                      title: Text(l10n?.savedWords ?? 'Mots sauvegardés'),
+                      onTap: widget.hasSavedWords ? widget.onShowSavedWords : null,
+                      enabled: widget.hasSavedWords,
                       contentPadding: EdgeInsets.zero,
                     ),
                     const SizedBox(height: 4),

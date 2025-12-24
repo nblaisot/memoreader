@@ -41,10 +41,19 @@ class SharingService {
     if (files.isEmpty) return;
 
     for (final file in files) {
-      if (file.path.toLowerCase().endsWith('.epub')) {
+      final path = file.path.toLowerCase();
+      if (path.endsWith('.epub') || path.endsWith('.txt')) {
         try {
           debugPrint('Processing shared file: ${file.path}');
-          final importedBook = await _bookService.importEpub(File(file.path));
+          
+          // Determine file type and import accordingly
+          Book importedBook;
+          if (path.endsWith('.txt')) {
+            importedBook = await _bookService.importTxt(File(file.path));
+          } else {
+            importedBook = await _bookService.importEpub(File(file.path));
+          }
+          
           debugPrint('Imported (or found existing) book: ${importedBook.title}');
           _bookImportedController.add(importedBook);
         } catch (e) {

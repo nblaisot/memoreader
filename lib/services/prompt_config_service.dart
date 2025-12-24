@@ -99,9 +99,41 @@ Response (exact format required):''';
   static const String _defaultTextActionLabelFr = 'Traduire';
   static const String _defaultTextActionLabelEn = 'Translate';
   static const String _defaultTextActionPromptFr =
-      'Veuillez traduire le texte suivant en {language} :\n\n{text}';
+      '''Pour le mot ou la courte phrase suivante, fournis d'abord sa prononciation/romanisation en caractères latins, puis sa traduction en {language}.
+
+INSTRUCTIONS IMPORTANTES :
+- Pour les caractères chinois, utilise le pinyin standard avec les marques de ton.
+- Pour l'arabe, utilise une translittération latine courante.
+- Pour le russe, utilise une translittération latine courante.
+- Pour les langues utilisant déjà l'alphabet latin, tu peux répéter le mot comme prononciation ou fournir une syllabification si utile.
+
+FORMAT DE RÉPONSE EXACT (respecte-le strictement, sans texte supplémentaire) :
+Original: {text}
+Pronunciation: [prononciation en caractères latins]
+Translation: [traduction en {language}]
+
+Ne rajoute aucun texte avant ou après ces trois lignes. Réponds uniquement avec ces trois lignes exactement dans cet ordre.
+
+Mot ou phrase à traduire :
+{text}''';
   static const String _defaultTextActionPromptEn =
-      'Please translate the following text to {language}:\n\n{text}';
+      '''For the following word or short phrase, first provide its pronunciation/romanization in Latin characters, then its translation into {language}.
+
+IMPORTANT INSTRUCTIONS:
+- For Chinese characters, use standard pinyin with tone marks.
+- For Arabic, use a common Latin transliteration.
+- For Russian, use a common Latin transliteration.
+- For languages already using the Latin alphabet, you may repeat the word as pronunciation or provide syllabification if helpful.
+
+EXACT RESPONSE FORMAT (follow it strictly, with no additional text):
+Original: {text}
+Pronunciation: [pronunciation in Latin characters]
+Translation: [translation into {language}]
+
+Do not add any text before or after these three lines. Respond only with these three lines exactly in this order.
+
+Word or phrase to translate:
+{text}''';
 
   /// Get chunk summary prompt
   String getChunkSummaryPrompt(String language) {

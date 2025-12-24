@@ -22,6 +22,8 @@ import '../services/settings_service.dart';
 import '../services/summary_database_service.dart';
 import '../services/app_state_service.dart';
 import '../services/prompt_config_service.dart';
+import '../services/saved_translation_database_service.dart';
+import '../models/saved_translation.dart';
 import '../utils/html_text_extractor.dart';
 import '../utils/css_resolver.dart';
 import 'reader/document_model.dart';
@@ -34,6 +36,7 @@ import 'reader/selection_warmup.dart';
 import 'routes.dart';
 import 'settings_screen.dart';
 import 'summary_screen.dart';
+import 'saved_words_screen.dart';
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({super.key, required this.book});
@@ -68,6 +71,8 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   LineMetricsPaginationEngine? _engine;
   final SummaryDatabaseService _summaryDatabase = SummaryDatabaseService();
+  final SavedTranslationDatabaseService _translationDatabase = 
+      SavedTranslationDatabaseService();
 
   int _currentPageIndex = 0;
   int _totalPages = 0;
@@ -1255,18 +1260,25 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   }
 
   void _openReadingMenu() {
-    unawaited(showReaderMenu(
-      context: context,
-      fontScale: _fontScale,
-      onFontScaleChanged: _updateFontScale,
-      hasChapters: _chapterEntries.isNotEmpty,
-      onGoToChapter: _showChapterSelector,
-      onGoToPercentage: _showGoToPercentageDialog,
-      onShowSummaryFromBeginning: () => _openSummary(SummaryType.fromBeginning),
-      onShowCharactersSummary: () => _openSummary(SummaryType.characters),
-      onDeleteSummaries: () => unawaited(_confirmAndDeleteSummaries()),
-      onReturnToLibrary: _returnToLibrary,
-    ));
+    // Check if there are saved words for this book
+    _translationDatabase.getTranslationsCount(widget.book.id).then((count) {
+      if (!mounted) return;
+      
+      unawaited(showReaderMenu(
+        context: context,
+        fontScale: _fontScale,
+        onFontScaleChanged: _updateFontScale,
+        hasChapters: _chapterEntries.isNotEmpty,
+        onGoToChapter: _showChapterSelector,
+        onGoToPercentage: _showGoToPercentageDialog,
+        hasSavedWords: count > 0,
+        onShowSavedWords: _showSavedWords,
+        onShowSummaryFromBeginning: () => _openSummary(SummaryType.fromBeginning),
+        onShowCharactersSummary: () => _openSummary(SummaryType.characters),
+        onDeleteSummaries: () => unawaited(_confirmAndDeleteSummaries()),
+        onReturnToLibrary: _returnToLibrary,
+      ));
+    });
   }
 
   void _updateFontScale(double newScale) {
@@ -1463,6 +1475,14 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     });
   }
 
+  void _showSavedWords() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SavedWordsScreen(book: widget.book),
+      ),
+    );
+  }
+
   void _openSummary(SummaryType summaryType) async {
     if (_engine == null) return;
     final currentPage = _engine!.getPage(_currentPageIndex);
@@ -1592,10 +1612,19 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         return;
       }
 
+      // Parse the structured response
+      final parsedResult = _parseSelectionActionResult(
+        originalText: trimmed,
+        generatedText: response.trim(),
+      );
+
       await _showSelectionResultDialog(
         originalText: trimmed,
         generatedText: response.trim(),
         actionLabel: label,
+        parsedOriginal: parsedResult.originalFromResponse,
+        pronunciation: parsedResult.pronunciation,
+        translation: parsedResult.translation,
       );
     } catch (e, stack) {
       debugPrint('Error executing selection action: $e');
@@ -1617,19 +1646,44 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     }
   }
 
+  Future<void> _saveTranslation({
+    required String original,
+    required String pronunciation,
+    required String translation,
+  }) async {
+    final savedTranslation = SavedTranslation(
+      bookId: widget.book.id,
+      original: original,
+      pronunciation: pronunciation,
+      translation: translation,
+      createdAt: DateTime.now(),
+    );
+    
+    await _translationDatabase.saveTranslation(savedTranslation);
+  }
+
   Future<void> _showSelectionResultDialog({
     required String originalText,
     required String generatedText,
     required String actionLabel,
+    String? parsedOriginal,
+    String? pronunciation,
+    String? translation,
   }) async {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context)!;
     await showDialog<void>(
       context: context,
       builder: (context) {
+        final screenHeight = MediaQuery.of(context).size.height;
+        final maxDialogHeight = screenHeight * 0.75; // Use 75% of screen height
+        
         return Dialog(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 520, maxHeight: 520),
+            constraints: BoxConstraints(
+              maxWidth: 520,
+              maxHeight: maxDialogHeight,
+            ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
               child: Column(
@@ -1653,10 +1707,13 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   Text(
                     l10n.textSelectionSelectedTextLabel,
-                    style: Theme.of(context).textTheme.labelMedium,
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelMedium
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   Flexible(
@@ -1673,32 +1730,189 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    l10n.textSelectionActionResultLabel,
-                    style: Theme.of(context).textTheme.labelMedium,
-                  ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 20),
                   Flexible(
                     fit: FlexFit.loose,
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: SingleChildScrollView(
-                        child: SelectableText(generatedText),
+                    child: SingleChildScrollView(
+                      child: _buildSelectionResultContent(
+                        context: context,
+                        generatedText: generatedText,
+                        parsedOriginal: parsedOriginal,
+                        pronunciation: pronunciation,
+                        translation: translation,
                       ),
                     ),
                   ),
+                  if (pronunciation != null && translation != null) ...[
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          _saveTranslation(
+                            original: originalText,
+                            pronunciation: pronunciation,
+                            translation: translation,
+                          );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(l10n.translationSaved),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.bookmark_add),
+                        label: Text(l10n.saveTranslation),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  /// Parse a structured response of the form:
+  /// Original: ...
+  /// Pronunciation: ...
+  /// Translation: ...
+  ///
+  /// Falls back gracefully when the format is not respected.
+  _ParsedSelectionActionResult _parseSelectionActionResult({
+    required String originalText,
+    required String generatedText,
+  }) {
+    final lines = generatedText
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+
+    String? originalFromResponse;
+    String? pronunciation;
+    String? translation;
+
+    for (final line in lines) {
+      if (line.startsWith('Original:')) {
+        originalFromResponse =
+            line.substring('Original:'.length).trim();
+      } else if (line.startsWith('Pronunciation:')) {
+        pronunciation =
+            line.substring('Pronunciation:'.length).trim();
+      } else if (line.startsWith('Translation:')) {
+        translation =
+            line.substring('Translation:'.length).trim();
+      }
+    }
+
+    // If translation is missing but we have some content, treat the whole
+    // response as the translation to avoid losing information.
+    translation ??= generatedText.trim().isNotEmpty
+        ? generatedText.trim()
+        : null;
+
+    // For original, prefer the model's echo if present, otherwise the
+    // user's selected text.
+    originalFromResponse ??=
+        originalText.trim().isNotEmpty ? originalText.trim() : null;
+
+    return _ParsedSelectionActionResult(
+      originalFromResponse: originalFromResponse,
+      pronunciation:
+          pronunciation != null && pronunciation.isNotEmpty
+              ? pronunciation
+              : null,
+      translation: translation != null && translation.isNotEmpty
+          ? translation
+          : null,
+    );
+  }
+
+  /// Build the widget that displays the result of the selection action.
+  /// If structured fields are available, show them as separate labeled
+  /// sections; otherwise fall back to the raw generated text.
+  Widget _buildSelectionResultContent({
+    required BuildContext context,
+    required String generatedText,
+    String? parsedOriginal,
+    String? pronunciation,
+    String? translation,
+  }) {
+    final l10n = AppLocalizations.of(context)!;
+    final hasStructured = pronunciation != null || translation != null;
+
+    if (!hasStructured) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: SelectableText(generatedText),
+      );
+    }
+
+    final children = <Widget>[];
+
+    // Don't display the "Original:" section - it's already shown above
+    
+    if (pronunciation != null) {
+      children.add(
+        Text(
+          l10n.pronunciation,
+          style: Theme.of(context)
+              .textTheme
+              .labelMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+      );
+      children.add(const SizedBox(height: 8));
+      children.add(
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: SelectableText(pronunciation),
+        ),
+      );
+      children.add(const SizedBox(height: 16));
+    }
+
+    if (translation != null) {
+      children.add(
+        Text(
+          l10n.translation,
+          style: Theme.of(context)
+              .textTheme
+              .labelMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+      );
+      children.add(const SizedBox(height: 8));
+      children.add(
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: SelectableText(translation),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: children,
     );
   }
 
@@ -2449,6 +2663,20 @@ class _ChapterSelectorDialogState extends State<_ChapterSelectorDialog> {
       ),
     );
   }
+}
+
+/// Small holder for a parsed selection action result.
+/// Keeps both the raw response and the structured fields when available.
+class _ParsedSelectionActionResult {
+  const _ParsedSelectionActionResult({
+    required this.originalFromResponse,
+    this.pronunciation,
+    this.translation,
+  });
+
+  final String? originalFromResponse;
+  final String? pronunciation;
+  final String? translation;
 }
 
 /// Chapter tile with pulsating effect when navigation is in progress.

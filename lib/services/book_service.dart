@@ -10,6 +10,7 @@ import '../models/book.dart';
 import '../models/reading_progress.dart';
 import 'summary_database_service.dart';
 import 'api_cache_service.dart';
+import 'txt_to_epub_converter.dart';
 
 class BookService {
   static const String _booksKey = 'books';
@@ -51,6 +52,47 @@ class BookService {
       return destFile.path;
     } catch (e) {
       throw Exception('Failed to copy EPUB file: $e');
+    }
+  }
+
+  Future<Book> importTxt(File txtFile) async {
+    try {
+      if (!await txtFile.exists()) {
+        throw Exception('TXT file does not exist');
+      }
+
+      debugPrint('Converting TXT to EPUB: ${txtFile.path}');
+      
+      // Create a temporary EPUB file path
+      final booksDir = await getBooksDirectory();
+      final tempEpubPath = '$booksDir/${_uuid.v4()}_temp.epub';
+      
+      // Convert TXT to EPUB
+      final converter = TxtToEpubConverter();
+      final metadata = await converter.convertToEpub(
+        txtFile: txtFile,
+        outputEpubPath: tempEpubPath,
+      );
+      
+      debugPrint('TXT converted to EPUB. Title: ${metadata.title}, Author: ${metadata.author}');
+      
+      // Now import the generated EPUB file
+      final tempEpubFile = File(tempEpubPath);
+      final book = await importEpub(tempEpubFile);
+      
+      // Clean up the temporary EPUB file (it's been copied to final location by importEpub)
+      try {
+        if (await tempEpubFile.exists()) {
+          await tempEpubFile.delete();
+        }
+      } catch (e) {
+        debugPrint('Failed to delete temporary EPUB file: $e');
+      }
+      
+      return book;
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Failed to import TXT: $e');
     }
   }
 

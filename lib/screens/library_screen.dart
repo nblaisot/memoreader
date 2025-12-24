@@ -170,7 +170,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       debugPrint('Starting file picker...');
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['epub'],
+        allowedExtensions: ['epub', 'txt'],
         withData: false,
         withReadStream: false,
       );
@@ -218,8 +218,15 @@ class _LibraryScreenState extends State<LibraryScreen> {
           );
         }
         
-        // Import the book
-        await _bookService.importEpub(file);
+        // Import the book - determine type by extension
+        final extension = filePath.toLowerCase().split('.').last;
+        debugPrint('Importing file with extension: $extension');
+        
+        if (extension == 'txt') {
+          await _bookService.importTxt(file);
+        } else {
+          await _bookService.importEpub(file);
+        }
 
         if (mounted) {
           final l10n = AppLocalizations.of(context)!;
