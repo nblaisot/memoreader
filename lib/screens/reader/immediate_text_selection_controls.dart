@@ -35,12 +35,27 @@ class ImmediateTextSelectionControls extends MaterialTextSelectionControls {
     ValueListenable<ClipboardStatus>? clipboardStatus,
     Offset? lastSecondaryTapDownPosition,
   ) {
-    final currentSelectedText = getSelectedText?.call() ?? '';
+    String currentSelectedText = getSelectedText?.call() ?? '';
+    
+    // Fallback: If selected text is empty, try to get it from the delegate
+    if (currentSelectedText.isEmpty) {
+      final delegateText = delegate.textEditingValue.text;
+      final selection = delegate.textEditingValue.selection;
+      if (selection.isValid && !selection.isCollapsed) {
+        final start = selection.start.clamp(0, delegateText.length);
+        final end = selection.end.clamp(0, delegateText.length);
+        if (end > start) {
+          currentSelectedText = delegateText.substring(start, end);
+          debugPrint('buildToolbar: Using fallback text from delegate: "$currentSelectedText"');
+        }
+      }
+    }
+    
     debugPrint('buildToolbar called - selectedText: "$currentSelectedText", actionLabel: "$actionLabel"');
 
-    // If we don't have selected text, use the default toolbar
+    // If we still don't have selected text, use the default toolbar
     if (currentSelectedText.isEmpty) {
-      debugPrint('No selectedText, using default toolbar');
+      debugPrint('No selectedText after fallback, using default toolbar');
       return super.buildToolbar(
         context,
         globalEditableRegion,

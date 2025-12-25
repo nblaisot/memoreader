@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart' show DragStartBehavior;
 
 import '../../screens/reader/document_model.dart';
-import 'immediate_text_selection_controls.dart';
 
 class _BlockOffsetInfo {
   final int startOffset;
@@ -81,21 +80,11 @@ class _PageContentViewState extends State<PageContentView> {
   String _selectedText = '';
   int _selectionGeneration = 0;
   final List<_BlockOffsetInfo> _blockOffsets = [];
-  final GlobalKey _selectableTextKey = GlobalKey();
+  
 
   void _clearSelection() {
     _selectedText = '';
     _selectionGeneration++;
-    // Hide system toolbar
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        final editableTextState = _selectableTextKey.currentContext
-            ?.findAncestorStateOfType<EditableTextState>();
-        if (editableTextState != null) {
-          editableTextState.hideToolbar();
-        }
-      }
-    });
     // Only rebuild when explicitly clearing, not during selection changes
     if (mounted) {
       setState(() {});
@@ -122,47 +111,52 @@ class _PageContentViewState extends State<PageContentView> {
         height: widget.maxHeight,
         child: Stack(
           children: [
-            Center(
-              child: SelectableText.rich(
-                key: _selectableTextKey,
-                combinedSpan,
-                textHeightBehavior: widget.textHeightBehavior,
-                textScaler: widget.textScaler,
-                dragStartBehavior: DragStartBehavior.down,
-                selectionControls: ImmediateTextSelectionControls(
-                  onSelectionAction: widget.onSelectionAction,
-                  actionLabel: widget.actionLabel,
-                  clearSelection: _clearSelection,
-                  isProcessingAction: widget.isProcessingAction,
-                  getSelectedText: () => _selectedText,
-                ),
-                onSelectionChanged: (selection, cause) {
-                  final base = selection.baseOffset;
-                  final extent = selection.extentOffset;
-                  final valid = base >= 0 && extent >= 0;
-                  final hasSelection = valid &&
-                      (base != extent ||
-                          cause == SelectionChangedCause.longPress ||
-                          cause == SelectionChangedCause.drag);
+            SelectionArea(
+              contextMenuBuilder: (context, editableState) {
+                // Get the default menu items
+                final defaultItems = editableState.contextMenuButtonItems;
 
-                  // Update selected text
-                  String? newSelectedText;
-                  if (hasSelection && valid && base != extent) {
-                    final lower = base < extent ? base : extent;
-                    final upper = base < extent ? extent : base;
-                    newSelectedText = _extractSelectedText(lower, upper);
-                  } else {
-                    newSelectedText = '';
-                  }
+                // Insert "Traduire" at the beginning, after any copy/share options
+                final customItems = [
+                  ContextMenuButtonItem(
+                    label: widget.actionLabel,
+                    onPressed: () {
+                      final selectedText = _selectedText;
+                      if (selectedText.isNotEmpty && widget.onSelectionAction != null) {
+                        widget.onSelectionAction!(selectedText);
+                        _clearSelection();
+                      }
+                      // Hide the context menu
+                      editableState.hideToolbar();
+                    },
+                  ),
+                  ...defaultItems,
+                ];
 
-                  // Update internal state
-                  _selectedText = newSelectedText ?? '';
+                return AdaptiveTextSelectionToolbar.buttonItems(
+                  anchors: editableState.contextMenuAnchors,
+                  buttonItems: customItems,
+                );
+              },
+              onSelectionChanged: (selection) {
+                if (selection != null && selection.plainText.isNotEmpty) {
+                  // SelectedContent has plainText property with the selected text
+                  final selectedText = selection.plainText;
+                  final hasSelection = selectedText.isNotEmpty;
 
-                  // Let Flutter's SelectableText handle showing handles and toolbar
-                  // automatically - manual showToolbar() calls can interfere with
-                  // the selection overlay state and cause handles to not appear
+                  _selectedText = selectedText;
                   widget.onSelectionChanged?.call(hasSelection, _clearSelection);
-                },
+                } else {
+                  _selectedText = '';
+                  widget.onSelectionChanged?.call(false, _clearSelection);
+                }
+              },
+              child: Center(
+                child: Text.rich(
+                  combinedSpan,
+                  textHeightBehavior: widget.textHeightBehavior,
+                  textScaler: widget.textScaler,
+                ),
               ),
             ),
           ],
@@ -179,45 +173,52 @@ class _PageContentViewState extends State<PageContentView> {
 
       if (block is TextPageBlock) {
         children.add(
-          SelectableText.rich(
-            _buildRichTextSpan(block),
-            textAlign: block.textAlign,
-            textHeightBehavior: widget.textHeightBehavior,
-            textScaler: widget.textScaler,
-            dragStartBehavior: DragStartBehavior.down,
-            selectionControls: ImmediateTextSelectionControls(
-              onSelectionAction: widget.onSelectionAction,
-              actionLabel: widget.actionLabel,
-              clearSelection: _clearSelection,
-              isProcessingAction: widget.isProcessingAction,
-              getSelectedText: () => _selectedText,
-            ),
-            contextMenuBuilder: null, // Disable default context menu
-            onSelectionChanged: (selection, cause) {
-              final base = selection.baseOffset;
-              final extent = selection.extentOffset;
-              final valid = base >= 0 && extent >= 0;
-              final hasSelection = valid &&
-                  (base != extent ||
-                      cause == SelectionChangedCause.longPress ||
-                      cause == SelectionChangedCause.drag);
-              final lower = base < extent ? base : extent;
-              final upper = base < extent ? extent : base;
-              final selected = hasSelection && lower != upper
-                  ? block.text.substring(
-                      lower.clamp(0, block.text.length),
-                      upper.clamp(0, block.text.length),
-                    )
-                  : '';
-              
-              // Update internal state
-              _selectedText = selected;
+          SelectionArea(
+            contextMenuBuilder: (context, editableState) {
+              // Get the default menu items
+              final defaultItems = editableState.contextMenuButtonItems;
 
-              // Let Flutter's SelectableText handle showing handles and toolbar
-              // automatically - manual showToolbar() calls can interfere with
-              // the selection overlay state and cause handles to not appear
-              widget.onSelectionChanged?.call(hasSelection, _clearSelection);
+              // Insert "Traduire" at the beginning, after any copy/share options
+              final customItems = [
+                ContextMenuButtonItem(
+                  label: widget.actionLabel,
+                  onPressed: () {
+                    final selectedText = _selectedText;
+                    if (selectedText.isNotEmpty && widget.onSelectionAction != null) {
+                      widget.onSelectionAction!(selectedText);
+                      _clearSelection();
+                    }
+                    // Hide the context menu
+                    editableState.hideToolbar();
+                  },
+                ),
+                ...defaultItems,
+              ];
+
+              return AdaptiveTextSelectionToolbar.buttonItems(
+                anchors: editableState.contextMenuAnchors,
+                buttonItems: customItems,
+              );
             },
+            onSelectionChanged: (selection) {
+              if (selection != null && selection.plainText.isNotEmpty) {
+                // SelectedContent has plainText property with the selected text
+                final selectedText = selection.plainText;
+                final hasSelection = selectedText.isNotEmpty;
+
+                _selectedText = selectedText;
+                widget.onSelectionChanged?.call(hasSelection, _clearSelection);
+              } else {
+                _selectedText = '';
+                widget.onSelectionChanged?.call(false, _clearSelection);
+              }
+            },
+            child: Text.rich(
+              _buildRichTextSpan(block),
+              textAlign: block.textAlign,
+              textHeightBehavior: widget.textHeightBehavior,
+              textScaler: widget.textScaler,
+            ),
           ),
         );
       } else if (block is ImagePageBlock) {
@@ -311,6 +312,52 @@ class _PageContentViewState extends State<PageContentView> {
       }
     }
     return selectedParts.join(' ');
+  }
+
+  String _extractWordAtPosition(int position) {
+    // Find the block containing this position
+    for (final blockInfo in _blockOffsets) {
+      if (position >= blockInfo.startOffset && position < blockInfo.endOffset) {
+        final localPos = position - blockInfo.startOffset;
+        final text = blockInfo.block.text;
+        
+        if (localPos < 0 || localPos >= text.length) {
+          continue;
+        }
+        
+        // Find word boundaries
+        int start = localPos;
+        int end = localPos;
+        
+        // Move start backward to word start
+        while (start > 0 && _isWordChar(text[start - 1])) {
+          start--;
+        }
+        
+        // Move end forward to word end
+        while (end < text.length && _isWordChar(text[end])) {
+          end++;
+        }
+        
+        if (end > start) {
+          return text.substring(start, end);
+        }
+      }
+    }
+    return '';
+  }
+  
+  bool _isWordChar(String char) {
+    // Word characters: letters, digits, apostrophes, hyphens
+    // Using character class that matches word characters plus apostrophe and hyphen
+    if (char.isEmpty) return false;
+    final codeUnit = char.codeUnitAt(0);
+    // Match letters, digits, apostrophe (39), hyphen (45)
+    return (codeUnit >= 48 && codeUnit <= 57) || // digits 0-9
+        (codeUnit >= 65 && codeUnit <= 90) || // A-Z
+        (codeUnit >= 97 && codeUnit <= 122) || // a-z
+        codeUnit == 39 || // apostrophe
+        codeUnit == 45; // hyphen
   }
 
   TextSpan _buildRichTextSpan(TextPageBlock block) {
