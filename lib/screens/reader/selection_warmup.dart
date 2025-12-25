@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'immediate_text_selection_controls.dart';
 
 /// A utility widget that "warms up" the text selection system by pre-triggering
 /// the code paths that would normally run on first selection.
@@ -49,23 +50,29 @@ class _SelectionWarmupState extends State<SelectionWarmup> {
   void _performWarmup() {
     if (!mounted || _warmupComplete) return;
 
-    // Create an overlay entry with a hidden SelectableText
+    // Create overlay entry with SelectableText using ImmediateTextSelectionControls
     _overlayEntry = OverlayEntry(
       builder: (context) => Positioned(
-        // Position off-screen
         left: -1000,
         top: -1000,
         child: Opacity(
           opacity: 0,
           child: SizedBox(
-            width: 100,
-            height: 50,
+            width: 200, // Make it wider to accommodate toolbar
+            height: 100, // Make it taller
             child: Material(
               child: SelectableText(
-                'Warmup text for selection',
+                'Warmup text for selection system compilation',
                 key: _warmupKey,
+                selectionControls: ImmediateTextSelectionControls( // Use the same controls as the real app
+                  onSelectionAction: (text) {}, // Dummy callback
+                  actionLabel: 'Traduire', // Same label as real app
+                  clearSelection: () {}, // Dummy callback
+                  isProcessingAction: false,
+                  getSelectedText: () => 'selected text', // Dummy function
+                ),
                 onSelectionChanged: (selection, cause) {
-                  // Once selection happens, we've warmed up the selection system
+                  // Once selection happens, we've warmed up the system
                   if (selection.baseOffset != selection.extentOffset) {
                     _completeWarmup();
                   }
@@ -88,35 +95,35 @@ class _SelectionWarmupState extends State<SelectionWarmup> {
   void _triggerSelection() {
     if (!mounted || _warmupComplete) return;
 
-    // Try to trigger selection programmatically
     final editableState = _warmupKey.currentState;
     if (editableState != null) {
       try {
-        // Trigger selection by updating the text editing value
+        // Create a real selection to warm up the selection overlay system
         editableState.updateEditingValue(
           const TextEditingValue(
-            text: 'Warmup text for selection',
+            text: 'Warmup text for selection system compilation',
             selection: TextSelection(baseOffset: 0, extentOffset: 6),
           ),
         );
-        
-        // Show and immediately hide the toolbar to warm up that code path too
+
+        // Actually show the toolbar to warm up the custom buildToolbar logic
         editableState.showToolbar();
-        
-        // Schedule cleanup
-        Future.delayed(const Duration(milliseconds: 100), () {
+
+        // Keep it visible longer to ensure ALL code is compiled
+        Future.delayed(const Duration(milliseconds: 1000), () { // Increased from 500ms
           if (mounted) {
             editableState.hideToolbar();
+            editableState.updateEditingValue(
+              const TextEditingValue(text: 'Warmup text for selection system compilation'),
+            );
             _completeWarmup();
           }
         });
       } catch (e) {
-        // If programmatic selection fails, just complete warmup
         debugPrint('[SelectionWarmup] Warmup failed: $e');
         _completeWarmup();
       }
     } else {
-      // If we can't get the state, just complete warmup after a delay
       Future.delayed(const Duration(milliseconds: 200), () {
         _completeWarmup();
       });

@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' show PointerDeviceKind;
 import 'package:epubx/epubx.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart'
-    show PointerCancelEvent, PointerDownEvent, PointerMoveEvent, PointerUpEvent, kPrimaryButton, kTouchSlop;
+import 'package:flutter/gestures.dart' show PointerDownEvent, PointerUpEvent, PointerCancelEvent;
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -33,6 +31,7 @@ import 'reader/tap_zones.dart';
 import 'reader/reader_menu.dart';
 import 'reader/navigation_helper.dart';
 import 'reader/selection_warmup.dart';
+import 'reader/immediate_text_selection_controls.dart';
 import 'routes.dart';
 import 'settings_screen.dart';
 import 'summary_screen.dart';
@@ -103,11 +102,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   String? _selectionActionLabel;
   String? _selectionActionPrompt;
   Locale? _lastLocale;
-  int? _activeTapPointer;
-  Offset? _activeTapDownPosition;
-  DateTime? _activeTapDownTime;
-  bool _activeTapExceededSlop = false;
-  static const Duration _longPressThreshold = Duration(milliseconds: 450);
+  // Minimal pointer tracking for quick tap detection only
+  int? _activePointerId;
+  Offset? _activePointerDownPosition;
+  DateTime? _activePointerDownTime;
+  static const Duration _quickTapThreshold = Duration(milliseconds: 300);
+  // Pre-instantiated selection controls to avoid lazy loading and JIT delays
+  ImmediateTextSelectionControls? _sharedSelectionControls;
 
   @override
   void initState() {
@@ -130,6 +131,30 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       _lastLocale = locale;
       _loadSelectionActionConfig();
     }
+    // Initialize selection controls here since we need context for Localizations
+    if (_sharedSelectionControls == null) {
+      _initializeSelectionControls();
+    }
+  }
+  
+  void _initializeSelectionControls() {
+    // Force instantiation of selection controls to load all code paths
+    // This ensures JIT compilation happens upfront, not on first selection
+    final l10n = AppLocalizations.of(context);
+    final defaultActionLabel = l10n?.textSelectionDefaultLabel ?? 'Traduire';
+    final actionLabel = (_selectionActionLabel ?? defaultActionLabel).trim().isEmpty
+        ? defaultActionLabel
+        : (_selectionActionLabel ?? defaultActionLabel);
+    
+    _sharedSelectionControls = ImmediateTextSelectionControls(
+      onSelectionAction: _handleSelectionAction,
+      actionLabel: actionLabel,
+      clearSelection: () {}, // Will be set per page via callbacks
+      isProcessingAction: false,
+      getSelectedText: () => '', // Will be set per page via callbacks
+    );
+    
+    debugPrint('[ReaderScreen] Selection controls pre-instantiated');
   }
 
   Future<void> _loadVerticalPadding() async {
@@ -543,10 +568,67 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     return wordList.sublist(start).join(' ');
   }
 
-  void _handleTapUp(TapUpDetails details) {
-    final size = MediaQuery.of(context).size;
-    final action = determineTapAction(details.globalPosition, size);
-    debugPrint('[ReaderScreen] TapUp -> $action at ${details.globalPosition}');
+
+
+  void _handlePointerDown(PointerDownEvent event) {
+    // Only track if we don't already have an active pointer
+    if (_activePointerId != null) {
+      return;
+    }
+    _activePointerId = event.pointer;
+    _activePointerDownPosition = event.position;
+    _activePointerDownTime = DateTime.now();
+  }
+
+  void _handlePointerUp(PointerUpEvent event) {
+    // Only handle if this is our tracked pointer
+    if (event.pointer != _activePointerId) {
+      return;
+    }
+
+    final downTime = _activePointerDownTime;
+    final downPosition = _activePointerDownPosition;
+
+    // Reset tracking immediately
+    _resetPointerTracking();
+
+    // If selection is now active, clear it on tap
+    if (_hasActiveSelection) {
+      _clearSelectionCallback?.call();
+      return;
+    }
+
+    // Check if it was a quick tap (not a long press)
+    if (downTime != null) {
+      final duration = DateTime.now().difference(downTime);
+      if (duration > _quickTapThreshold) {
+        // Was a long press - ignore (SelectableText handled it)
+        return;
+      }
+    }
+
+    // It was a quick tap - determine tap zone and handle navigation
+    if (downPosition != null) {
+      _handleTapAtPosition(downPosition);
+    }
+  }
+
+  void _handlePointerCancel(PointerCancelEvent event) {
+    if (event.pointer == _activePointerId) {
+      _resetPointerTracking();
+    }
+  }
+
+  void _resetPointerTracking() {
+    _activePointerId = null;
+    _activePointerDownPosition = null;
+    _activePointerDownTime = null;
+  }
+
+  void _handleTapAtPosition(Offset position) {
+    final screenSize = MediaQuery.of(context).size;
+    final action = determineTapAction(position, screenSize);
+    debugPrint('[ReaderScreen] Tap -> $action at $position');
 
     switch (action) {
       case ReaderTapAction.showMenu:
@@ -573,135 +655,21 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     }
   }
 
-  void _resetTapTracking() {
-    _activeTapPointer = null;
-    _activeTapDownPosition = null;
-    _activeTapDownTime = null;
-    _activeTapExceededSlop = false;
-  }
-
-  void _handlePointerDown(PointerDownEvent event) {
-    // READER MODE ONLY: This method is only called when selection is NOT active
-    // 
-    // IMPORTANT: We only store the pointer info here for later reference.
-    // We do NOT claim or interfere with the gesture - SelectableText's gesture
-    // recognizer should be allowed to handle long presses for text selection.
-    // 
-    // The actual decision about whether to handle this as a tap (for navigation)
-    // happens in _handlePointerUp, where we check if it was a short tap (not
-    // long press) and didn't exceed slop (not a swipe).
-    if (!_shouldTrackPointer(event) || _activeTapPointer != null) {
-      return;
-    }
-    _activeTapPointer = event.pointer;
-    _activeTapDownPosition = event.position;
-    _activeTapDownTime = DateTime.now();
-    _activeTapExceededSlop = false;
-  }
-
-  void _handlePointerMove(PointerMoveEvent event) {
-    // READER MODE ONLY: This method is only called when selection is NOT active
-    // Only track if this is clearly a horizontal swipe gesture (page navigation)
-    // Vertical movement or small movements are ignored to allow text selection
-    if (event.pointer != _activeTapPointer) return;
-    final downPosition = _activeTapDownPosition;
-    if (downPosition == null) return;
-    
-    final delta = event.position - downPosition;
-    final horizontalDistance = delta.dx.abs();
-    final verticalDistance = delta.dy.abs();
-    
-    // Only treat as swipe if:
-    // 1. Significant horizontal movement (page swipe)
-    // 2. Horizontal movement is greater than vertical (not text selection drag)
-    // This allows SelectableText to handle vertical text selection without interference
-    if (!_activeTapExceededSlop && 
-        horizontalDistance > kTouchSlop * 3 && 
-        horizontalDistance > verticalDistance * 1.5) {
-      _activeTapExceededSlop = true;
-      debugPrint(
-          '[ReaderScreen] Reader mode: Horizontal swipe detected (h=$horizontalDistance, v=$verticalDistance) -> page navigation');
-    }
-  }
-
-  void _handlePointerCancel(PointerCancelEvent event) {
-    if (event.pointer == _activeTapPointer) {
-      debugPrint('[ReaderScreen] Pointer cancel (${event.pointer})');
-      _resetTapTracking();
-    }
-  }
-
-  void _handlePointerUp(PointerUpEvent event) {
-    // READER MODE ONLY: This method is only called when selection is NOT active
-    if (event.pointer != _activeTapPointer) {
-      return;
-    }
-
-    final now = DateTime.now();
-    final pressDuration =
-        _activeTapDownTime != null ? now.difference(_activeTapDownTime!) : null;
-    debugPrint(
-        '[ReaderScreen] Reader mode: Pointer up (${event.pointer}) duration=${pressDuration?.inMilliseconds}ms slopExceeded=$_activeTapExceededSlop');
-
-    // Long press detection: if user long-pressed, don't handle as tap
-    // The text selection system will handle it
-    if (pressDuration != null && pressDuration >= _longPressThreshold) {
-      debugPrint('[ReaderScreen] Reader mode: Long press detected; allowing text selection to handle');
-      _resetTapTracking();
-      return;
-    }
-
-    // If user dragged, don't handle as tap
-    if (_activeTapExceededSlop) {
-      _resetTapTracking();
-      return;
-    }
-
-    // Handle as a tap for reader navigation
-    _handleTapIfAllowed(TapUpDetails(
-      globalPosition: event.position,
-      localPosition: event.localPosition,
-      kind: event.kind,
-    ));
-
-    _resetTapTracking();
-  }
-
-  bool _shouldTrackPointer(PointerDownEvent event) {
-    switch (event.kind) {
-      case PointerDeviceKind.mouse:
-        return (event.buttons & kPrimaryButton) != 0;
-      case PointerDeviceKind.touch:
-      case PointerDeviceKind.stylus:
-      case PointerDeviceKind.invertedStylus:
-      case PointerDeviceKind.unknown:
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  void _handleTapIfAllowed(TapUpDetails details) {
-    // READER MODE ONLY: This method is only called when selection is NOT active
-    // Just handle the tap for navigation
-    _handleTapUp(details);
-  }
   void _handleSelectionChanged(bool hasSelection, VoidCallback clearSelection) {
     // STATE TRANSITION: Switch between reader mode and selection mode
     if (hasSelection) {
-      // Entering SELECTION MODE: disable all reader gestures
+      // Entering SELECTION MODE
       _clearSelectionCallback = clearSelection;
       _lastSelectionChangeTimestamp = DateTime.now();
-      // Clear any active reader gesture tracking
-      _resetTapTracking();
-      debugPrint('[ReaderScreen] STATE: Entering SELECTION MODE - reader gestures disabled');
+      _resetPointerTracking(); // Clear any pointer tracking when selection activates
+      debugPrint('[ReaderScreen] STATE: Entering SELECTION MODE');
     } else {
-      // Entering READER MODE: re-enable reader gestures
+      // Entering READER MODE
       _clearSelectionCallback = null;
       _lastSelectionChangeTimestamp = null;
       _selectionOwnerPointer = null;
-      _resetTapTracking();
-      debugPrint('[ReaderScreen] STATE: Entering READER MODE - reader gestures enabled');
+      _resetPointerTracking(); // Clear pointer tracking when selection deactivates
+      debugPrint('[ReaderScreen] STATE: Entering READER MODE');
     }
 
     if (_hasActiveSelection != hasSelection) {
@@ -1143,11 +1111,14 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     return SelectionWarmup(
       child: Scaffold(
         resizeToAvoidBottomInset: false, // Prevent repagination when keyboard opens (e.g. for dialogs)
-        body: _ReaderGestureWrapper(
-          // Completely separate: reader gestures only work when no selection is active
-          isSelectionActive: _hasActiveSelection,
+        body: Listener(
+          // Listener doesn't participate in gesture arena - it only observes pointer events
+          // This allows SelectableText to handle long presses without interference
+          // - Long press: handled by SelectableText for text selection (no interference)
+          // - Quick tap: detected here for navigation (menu, progress bar, page navigation)
+          // - Horizontal swipe: handled by PageView for page navigation
+          behavior: HitTestBehavior.translucent,
           onPointerDown: _handlePointerDown,
-          onPointerMove: _handlePointerMove,
           onPointerUp: _handlePointerUp,
           onPointerCancel: _handlePointerCancel,
           child: Stack(
@@ -1158,6 +1129,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                 onPageChanged: _handlePageChanged,
                 itemBuilder: (context, index) => pages[index],
               ),
+              // Progress indicator overlay
               if (_showProgressBar)
                 Positioned(
                   bottom: 24,
@@ -2759,52 +2731,6 @@ class _PulsatingChapterTileState extends State<_PulsatingChapterTile>
               : null,
         );
       },
-    );
-  }
-}
-
-/// Widget that completely separates reader navigation gestures from text selection.
-/// 
-/// When [isSelectionActive] is true, all reader gestures are completely disabled.
-/// When [isSelectionActive] is false, reader gestures work normally.
-/// 
-/// This ensures clean separation: either we're in READER MODE or SELECTION MODE,
-/// never both at the same time.
-class _ReaderGestureWrapper extends StatelessWidget {
-  const _ReaderGestureWrapper({
-    required this.isSelectionActive,
-    required this.onPointerDown,
-    required this.onPointerMove,
-    required this.onPointerUp,
-    required this.onPointerCancel,
-    required this.child,
-  });
-
-  final bool isSelectionActive;
-  final void Function(PointerDownEvent) onPointerDown;
-  final void Function(PointerMoveEvent) onPointerMove;
-  final void Function(PointerUpEvent) onPointerUp;
-  final void Function(PointerCancelEvent) onPointerCancel;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    // When selection is active, completely disable reader gesture handling
-    // This prevents any interference with text selection handle manipulation
-    if (isSelectionActive) {
-      return child;
-    }
-    
-    // In READER MODE: use Listener with deferToChild behavior
-    // This allows SelectableText to handle long press for selection while
-    // we track pointer events for tap navigation and swipe detection
-    return Listener(
-      behavior: HitTestBehavior.deferToChild,
-      onPointerDown: onPointerDown,
-      onPointerMove: onPointerMove,
-      onPointerUp: onPointerUp,
-      onPointerCancel: onPointerCancel,
-      child: child,
     );
   }
 }
