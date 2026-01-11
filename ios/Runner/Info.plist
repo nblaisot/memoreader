@@ -50,8 +50,10 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>EPUB Book</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
 			<key>LSHandlerRank</key>
-			<string>Alternate</string>
+			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>org.idpf.epub-container</string>
@@ -60,8 +62,10 @@
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>Text File</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
 			<key>LSHandlerRank</key>
-			<string>Alternate</string>
+			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>public.plain-text</string>

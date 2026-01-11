@@ -33,7 +33,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void initState() {
     super.initState();
     unawaited(_loadLibraryViewPreference());
-    _loadBooks();
+    // Delay loading books to ensure Flutter platform channels are ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 100), () {
+        _loadBooks();
+      });
+    });
     unawaited(_appStateService.clearLastOpenedBook());
 
     // Listen to books imported via "Open with"

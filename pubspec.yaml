@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 2.2.0+6
+version: 2.2.1+7
 
 environment:
   sdk: ^3.9.2
@@ -39,7 +39,9 @@ dependencies:
   epubx: ^4.0.0
 
   # Handle file sharing/opening intents
-  receive_sharing_intent: ^1.4.5
+  receive_sharing_intent: ^1.8.1
+  # Handle "Open with" from Files app (iOS/macOS)
+  open_file_handler: ^0.2.0
   
   # Path utilities
   path: ^1.9.0
@@ -53,7 +55,7 @@ dependencies:
   
   # Local storage for files and preferences
   path_provider: ^2.1.2
-  shared_preferences: ^2.2.3
+  shared_preferences: ^2.5.4
   
   # UUID for book identification
   uuid: ^4.3.3
