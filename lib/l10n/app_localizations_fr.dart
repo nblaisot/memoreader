@@ -511,4 +511,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get deleteTranslationConfirm => 'Supprimer';
+
+  @override
+  String get repaginating => 'Pagination...';
 }

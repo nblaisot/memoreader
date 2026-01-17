@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:epubx/epubx.dart';
 import 'package:flutter/foundation.dart';
@@ -27,6 +28,7 @@ import '../utils/css_resolver.dart';
 import 'reader/document_model.dart';
 import 'reader/line_metrics_pagination_engine.dart';
 import 'reader/page_content_view.dart';
+import 'reader/pagination_cache.dart';
 import 'reader/tap_zones.dart';
 import 'reader/reader_menu.dart';
 import 'reader/navigation_helper.dart';
@@ -69,6 +71,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   List<_ChapterEntry> _chapterEntries = [];
 
   LineMetricsPaginationEngine? _engine;
+  final PaginationCacheManager _cacheManager = const PaginationCacheManager();
   final SummaryDatabaseService _summaryDatabase = SummaryDatabaseService();
   final SavedTranslationDatabaseService _translationDatabase = 
       SavedTranslationDatabaseService();
@@ -92,6 +95,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   ReadingProgress? _savedProgress;
   Timer? _progressDebounce;
+  _PageMetrics? _currentPageMetrics; // Store current layout metrics for progress saving
   // Text selection state management
   // When a selection is active, tap-up events clear the selection instead of triggering actions
   bool _hasActiveSelection = false;
@@ -346,7 +350,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     });
   }
 
-  Future<void> _rebuildPagination(int startCharIndex, {Size? actualSize}) async {
+  Future<void> _rebuildPagination(int startCharIndex, {Size? actualSize, bool fastMode = false}) async {
     if (!mounted || _docBlocks.isEmpty) return;
 
     // Navigation state should already be set when chapter was selected
@@ -371,6 +375,15 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       sizeForMetrics ??= MediaQuery.of(context).size;
       final baseMetrics = _computePageMetrics(context, sizeForMetrics);
       final metrics = _adjustForUserPadding(baseMetrics);
+      
+      // Store current metrics for progress saving
+      _currentPageMetrics = metrics;
+      
+      // Check if layout matches saved progress (for cache reuse)
+      // If layout doesn't match, use fast mode for progressive pagination
+      if (!fastMode && _savedProgress != null) {
+        fastMode = !_layoutsMatch(_savedProgress, metrics);
+      }
 
       final previousEngine = _engine;
       previousEngine?.removeListener(_handleEngineUpdate);
@@ -387,7 +400,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         maxHeight: metrics.maxHeight,
         textHeightBehavior: metrics.textHeightBehavior,
         textScaler: metrics.textScaler,
-        cacheManager: null,
+        cacheManager: _cacheManager,
         viewportInsetBottom: metrics.viewportBottomInset,
       );
 
@@ -395,11 +408,25 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _clearNavigatingState();
         return;
       }
+      
+      // Use smaller window radius for fast mode to display content immediately
+      final windowRadius = fastMode ? 1 : 3;
       final targetPageIndex =
-          await engine.ensurePageForCharacter(startCharIndex, windowRadius: 1);
+          await engine.ensurePageForCharacter(startCharIndex, windowRadius: windowRadius);
       engine.addListener(_handleEngineUpdate);
-      unawaited(engine.ensureWindow(targetPageIndex, radius: 1));
-      unawaited(engine.startBackgroundPagination());
+      
+      // In fast mode, compute minimal window then continue in background
+      // In normal mode, compute larger window before continuing
+      if (fastMode) {
+        // Compute minimal window for immediate display
+        await engine.ensureWindow(targetPageIndex, radius: 1);
+        // Start background pagination immediately to continue computing pages
+        unawaited(engine.startBackgroundPagination());
+      } else {
+        // Normal mode: compute larger window, then continue
+        await engine.ensureWindow(targetPageIndex, radius: windowRadius);
+        unawaited(engine.startBackgroundPagination());
+      }
 
       if (!mounted) {
         _clearNavigatingState();
@@ -513,7 +540,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
   }
 
-_PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
+  _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     final adjustedWidth =
         math.max(120.0, metrics.maxWidth - _horizontalPadding * 2);
     final adjustedHeight =
@@ -528,6 +555,38 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       textScaler: metrics.textScaler,
       viewportBottomInset: adjustedInset,
     );
+  }
+
+  /// Compute layout key matching the pagination engine's layout key computation.
+  /// This is used to match saved layouts with current layout for cache reuse.
+  String _computeLayoutKey(_PageMetrics metrics) {
+    final buffer = StringBuffer()
+      ..write('v3|')
+      ..write(metrics.baseTextStyle.fontFamily ?? 'default')
+      ..write('|')
+      ..write((metrics.baseTextStyle.fontSize ?? 16.0).toStringAsFixed(2))
+      ..write('|')
+      ..write((metrics.baseTextStyle.height ?? 1.0).toStringAsFixed(2))
+      ..write('|')
+      ..write(metrics.maxWidth.toStringAsFixed(1))
+      ..write('|')
+      ..write(metrics.maxHeight.toStringAsFixed(1))
+      ..write('|')
+      ..write(metrics.textHeightBehavior.applyHeightToFirstAscent ? '1' : '0')
+      ..write(metrics.textHeightBehavior.applyHeightToLastDescent ? '1' : '0')
+      ..write('|')
+      ..write(metrics.textScaler.hashCode)
+      ..write('|')
+      ..write(metrics.viewportBottomInset.toStringAsFixed(1));
+    return base64UrlEncode(buffer.toString().codeUnits);
+  }
+
+  /// Check if current layout matches saved layout from progress.
+  /// Returns true if layouts are compatible (same layout key).
+  bool _layoutsMatch(ReadingProgress? progress, _PageMetrics currentMetrics) {
+    if (progress?.layoutKey == null) return false;
+    final currentLayoutKey = _computeLayoutKey(currentMetrics);
+    return progress!.layoutKey == currentLayoutKey;
   }
 
   void _scheduleProgressSave() {
@@ -692,12 +751,37 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   Future<void> _saveProgress(PageContent page) async {
     try {
       final pageProgress = _calculateProgressForPage(page);
+      
+      // Capture current layout metrics if available
+      String? layoutKey;
+      double? maxWidth;
+      double? maxHeight;
+      double? fontSize;
+      double? horizontalPadding;
+      double? verticalPadding;
+      
+      if (_currentPageMetrics != null) {
+        final metrics = _currentPageMetrics!;
+        layoutKey = _computeLayoutKey(metrics);
+        maxWidth = metrics.maxWidth;
+        maxHeight = metrics.maxHeight;
+        fontSize = metrics.baseTextStyle.fontSize;
+        horizontalPadding = _horizontalPadding;
+        verticalPadding = _verticalPadding;
+      }
+      
       final progress = ReadingProgress(
         bookId: widget.book.id,
         currentCharacterIndex: page.startCharIndex,
         lastVisibleCharacterIndex: page.endCharIndex,
         progress: pageProgress,
         lastRead: DateTime.now(),
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+        fontSize: fontSize,
+        horizontalPadding: horizontalPadding,
+        verticalPadding: verticalPadding,
+        layoutKey: layoutKey,
       );
       await _bookService.saveReadingProgress(progress);
       _savedProgress = progress;
@@ -1129,6 +1213,26 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                 onPageChanged: _handlePageChanged,
                 itemBuilder: (context, index) => pages[index],
               ),
+              // Repagination loading overlay
+              if (_isNavigating || _engine == null || currentPage == null)
+                Positioned.fill(
+                  child: Container(
+                    color: theme.scaffoldBackgroundColor.withOpacity(0.8),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 16),
+                          Text(
+                            AppLocalizations.of(context)?.repaginating ?? 'Repaginating...',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               // Progress indicator overlay
               if (_showProgressBar)
                 Positioned(
