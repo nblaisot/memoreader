@@ -113,25 +113,30 @@ class _PageContentViewState extends State<PageContentView> {
           children: [
             SelectionArea(
               contextMenuBuilder: (context, editableState) {
+                // Use the selected text from state (updated by onSelectionChanged)
+                final selectedText = _selectedText;
+
                 // Get the default menu items
                 final defaultItems = editableState.contextMenuButtonItems;
 
-                // Insert "Traduire" at the beginning, after any copy/share options
-                final customItems = [
-                  ContextMenuButtonItem(
-                    label: widget.actionLabel,
-                    onPressed: () {
-                      final selectedText = _selectedText;
-                      if (selectedText.isNotEmpty && widget.onSelectionAction != null) {
-                        widget.onSelectionAction!(selectedText);
+                // Insert custom action at the beginning
+                final trimmedText = selectedText.trim();
+                final customItems = <ContextMenuButtonItem>[];
+                
+                if (trimmedText.isNotEmpty && widget.onSelectionAction != null && !widget.isProcessingAction) {
+                  customItems.add(
+                    ContextMenuButtonItem(
+                      label: widget.actionLabel,
+                      onPressed: () {
+                        widget.onSelectionAction!(trimmedText);
                         _clearSelection();
-                      }
-                      // Hide the context menu
-                      editableState.hideToolbar();
-                    },
-                  ),
-                  ...defaultItems,
-                ];
+                        editableState.hideToolbar();
+                      },
+                    ),
+                  );
+                }
+                
+                customItems.addAll(defaultItems);
 
                 return AdaptiveTextSelectionToolbar.buttonItems(
                   anchors: editableState.contextMenuAnchors,
@@ -151,7 +156,8 @@ class _PageContentViewState extends State<PageContentView> {
                   widget.onSelectionChanged?.call(false, _clearSelection);
                 }
               },
-              child: Center(
+              child: Align(
+                alignment: Alignment.topCenter,
                 child: Text.rich(
                   combinedSpan,
                   textHeightBehavior: widget.textHeightBehavior,
@@ -175,25 +181,30 @@ class _PageContentViewState extends State<PageContentView> {
         children.add(
           SelectionArea(
             contextMenuBuilder: (context, editableState) {
+              // Use the selected text from state (updated by onSelectionChanged)
+              final selectedText = _selectedText;
+
               // Get the default menu items
               final defaultItems = editableState.contextMenuButtonItems;
 
-              // Insert "Traduire" at the beginning, after any copy/share options
-              final customItems = [
-                ContextMenuButtonItem(
-                  label: widget.actionLabel,
-                  onPressed: () {
-                    final selectedText = _selectedText;
-                    if (selectedText.isNotEmpty && widget.onSelectionAction != null) {
-                      widget.onSelectionAction!(selectedText);
+              // Insert custom action at the beginning
+              final trimmedText = selectedText.trim();
+              final customItems = <ContextMenuButtonItem>[];
+              
+              if (trimmedText.isNotEmpty && widget.onSelectionAction != null && !widget.isProcessingAction) {
+                customItems.add(
+                  ContextMenuButtonItem(
+                    label: widget.actionLabel,
+                    onPressed: () {
+                      widget.onSelectionAction!(trimmedText);
                       _clearSelection();
-                    }
-                    // Hide the context menu
-                    editableState.hideToolbar();
-                  },
-                ),
-                ...defaultItems,
-              ];
+                      editableState.hideToolbar();
+                    },
+                  ),
+                );
+              }
+              
+              customItems.addAll(defaultItems);
 
               return AdaptiveTextSelectionToolbar.buttonItems(
                 anchors: editableState.contextMenuAnchors,
@@ -245,7 +256,7 @@ class _PageContentViewState extends State<PageContentView> {
       height: widget.maxHeight,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.start,
         mainAxisSize: MainAxisSize.max,
         children: children,
       ),
