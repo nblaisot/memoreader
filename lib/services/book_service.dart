@@ -290,7 +290,27 @@ class BookService {
 
   Future<List<Book>> getAllBooks() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
+      // Retry mechanism for SharedPreferences channel initialization
+      SharedPreferences? prefs;
+      int retries = 3;
+      for (int i = 0; i < retries; i++) {
+        try {
+          prefs = await SharedPreferences.getInstance();
+          break;
+        } catch (e) {
+          if (i < retries - 1) {
+            debugPrint('SharedPreferences not ready, retrying... (${i + 1}/$retries)');
+            await Future.delayed(Duration(milliseconds: 100 * (i + 1)));
+          } else {
+            rethrow;
+          }
+        }
+      }
+      
+      if (prefs == null) {
+        throw Exception('Failed to initialize SharedPreferences after $retries attempts');
+      }
+      
       final booksJson = prefs.getStringList(_booksKey) ?? [];
       
       // Get directories once for all books

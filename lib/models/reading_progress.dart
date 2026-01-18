@@ -7,6 +7,13 @@ class ReadingProgress {
   final double? progress;
   final int? currentCharacterIndex; // Exact character position for pagination engine
   final int? lastVisibleCharacterIndex; // Last character that was visible on screen
+  // Layout parameters for fast startup and foldable phone support
+  final double? maxWidth;
+  final double? maxHeight;
+  final double? fontSize;
+  final double? horizontalPadding;
+  final double? verticalPadding;
+  final String? layoutKey; // Computed layout key for quick comparison
 
   ReadingProgress({
     required this.bookId,
@@ -16,6 +23,12 @@ class ReadingProgress {
     this.progress,
     this.currentCharacterIndex,
     this.lastVisibleCharacterIndex,
+    this.maxWidth,
+    this.maxHeight,
+    this.fontSize,
+    this.horizontalPadding,
+    this.verticalPadding,
+    this.layoutKey,
   });
 
   Map<String, dynamic> toJson() {
@@ -27,6 +40,12 @@ class ReadingProgress {
       'progress': progress,
       'currentCharacterIndex': currentCharacterIndex,
       'lastVisibleCharacterIndex': lastVisibleCharacterIndex,
+      'maxWidth': maxWidth,
+      'maxHeight': maxHeight,
+      'fontSize': fontSize,
+      'horizontalPadding': horizontalPadding,
+      'verticalPadding': verticalPadding,
+      'layoutKey': layoutKey,
     };
   }
 
@@ -39,6 +58,12 @@ class ReadingProgress {
       progress: (json['progress'] as num?)?.toDouble(),
       currentCharacterIndex: json['currentCharacterIndex'] as int?,
       lastVisibleCharacterIndex: json['lastVisibleCharacterIndex'] as int?,
+      maxWidth: (json['maxWidth'] as num?)?.toDouble(),
+      maxHeight: (json['maxHeight'] as num?)?.toDouble(),
+      fontSize: (json['fontSize'] as num?)?.toDouble(),
+      horizontalPadding: (json['horizontalPadding'] as num?)?.toDouble(),
+      verticalPadding: (json['verticalPadding'] as num?)?.toDouble(),
+      layoutKey: json['layoutKey'] as String?,
     );
   }
 
@@ -50,6 +75,12 @@ class ReadingProgress {
     double? progress,
     int? currentCharacterIndex,
     int? lastVisibleCharacterIndex,
+    double? maxWidth,
+    double? maxHeight,
+    double? fontSize,
+    double? horizontalPadding,
+    double? verticalPadding,
+    String? layoutKey,
   }) {
     return ReadingProgress(
       bookId: bookId ?? this.bookId,
@@ -60,6 +91,12 @@ class ReadingProgress {
       currentCharacterIndex: currentCharacterIndex ?? this.currentCharacterIndex,
       lastVisibleCharacterIndex:
           lastVisibleCharacterIndex ?? this.lastVisibleCharacterIndex,
+      maxWidth: maxWidth ?? this.maxWidth,
+      maxHeight: maxHeight ?? this.maxHeight,
+      fontSize: fontSize ?? this.fontSize,
+      horizontalPadding: horizontalPadding ?? this.horizontalPadding,
+      verticalPadding: verticalPadding ?? this.verticalPadding,
+      layoutKey: layoutKey ?? this.layoutKey,
     );
   }
 }

@@ -678,6 +678,10 @@
   "deleteTranslationConfirm": "Delete",
   "@deleteTranslationConfirm": {
     "description": "Confirm button for deleting a translation"
+  },
+  "repaginating": "Repaginating...",
+  "@repaginating": {
+    "description": "Message shown when the app is recalculating page layout"
   }
 }
 

@@ -6,50 +6,37 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
 
+enum ReaderMenuAction {
+  goToChapter,
+  goToPercentage,
+  showSavedWords,
+  showSummaryFromBeginning,
+  showCharactersSummary,
+  deleteSummaries,
+  openSettings,
+  returnToLibrary,
+}
+
 /// Displays the reader menu as a modal sheet that slides from the top.
-Future<void> showReaderMenu({
+Future<ReaderMenuAction?> showReaderMenu({
   required BuildContext context,
   required double fontScale,
   required ValueChanged<double> onFontScaleChanged,
   required bool hasChapters,
-  required VoidCallback onGoToChapter,
-  required VoidCallback onGoToPercentage,
   required bool hasSavedWords,
-  required VoidCallback onShowSavedWords,
-  required VoidCallback onShowSummaryFromBeginning,
-  required VoidCallback onShowCharactersSummary,
-  required VoidCallback onDeleteSummaries,
-  required VoidCallback onReturnToLibrary,
 }) {
-  return showGeneralDialog<void>(
+  return showGeneralDialog<ReaderMenuAction>(
     context: context,
     barrierDismissible: true,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     barrierColor: Colors.black54,
     transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
-      void closeMenu() {
-        Navigator.of(dialogContext).pop();
-      }
-
-      void handleAction(VoidCallback action) {
-        closeMenu();
-        Future.microtask(action);
-      }
-
       return _ReaderMenuDialog(
         initialFontScale: fontScale,
         onFontScaleChanged: onFontScaleChanged,
         hasChapters: hasChapters,
-        onGoToChapter: () => handleAction(onGoToChapter),
-        onGoToPercentage: () => handleAction(onGoToPercentage),
         hasSavedWords: hasSavedWords,
-        onShowSavedWords: () => handleAction(onShowSavedWords),
-        onShowSummaryFromBeginning:
-            () => handleAction(onShowSummaryFromBeginning),
-        onShowCharactersSummary: () => handleAction(onShowCharactersSummary),
-        onDeleteSummaries: () => handleAction(onDeleteSummaries),
-        onReturnToLibrary: () => handleAction(onReturnToLibrary),
       );
     },
     transitionBuilder: (context, animation, secondaryAnimation, child) {
@@ -75,27 +62,13 @@ class _ReaderMenuDialog extends StatefulWidget {
     required this.initialFontScale,
     required this.onFontScaleChanged,
     required this.hasChapters,
-    required this.onGoToChapter,
-    required this.onGoToPercentage,
     required this.hasSavedWords,
-    required this.onShowSavedWords,
-    required this.onShowSummaryFromBeginning,
-    required this.onShowCharactersSummary,
-    required this.onDeleteSummaries,
-    required this.onReturnToLibrary,
   });
 
   final double initialFontScale;
   final ValueChanged<double> onFontScaleChanged;
   final bool hasChapters;
-  final VoidCallback onGoToChapter;
-  final VoidCallback onGoToPercentage;
   final bool hasSavedWords;
-  final VoidCallback onShowSavedWords;
-  final VoidCallback onShowSummaryFromBeginning;
-  final VoidCallback onShowCharactersSummary;
-  final VoidCallback onDeleteSummaries;
-  final VoidCallback onReturnToLibrary;
 
   @override
   State<_ReaderMenuDialog> createState() => _ReaderMenuDialogState();
@@ -132,6 +105,10 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
     _updateFontScale(_currentFontScale - 0.1);
   }
 
+  void _selectAction(ReaderMenuAction action) {
+    Navigator.of(context).pop(action);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -139,6 +116,7 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
     final summariesTitle = l10n?.summariesSectionTitle ?? 'Summaries';
     final fromBeginningLabel = l10n?.summaryFromBeginning ?? 'From the Beginning';
     final charactersLabel = l10n?.summaryCharacters ?? 'Characters';
+    final settingsLabel = l10n?.settings ?? 'Settings';
 
     return SafeArea(
       child: Align(
@@ -191,20 +169,28 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
                       ListTile(
                         leading: const Icon(Icons.list),
                         title: const Text('Aller au chapitre'),
-                        onTap: widget.onGoToChapter,
+                        onTap: () => _selectAction(ReaderMenuAction.goToChapter),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ListTile(
                       leading: const Icon(Icons.percent),
                       title: const Text('Aller à un pourcentage'),
-                      onTap: widget.onGoToPercentage,
+                      onTap: () => _selectAction(ReaderMenuAction.goToPercentage),
                       contentPadding: EdgeInsets.zero,
                     ),
                     ListTile(
                       leading: const Icon(Icons.bookmark),
                       title: Text(l10n?.savedWords ?? 'Mots sauvegardés'),
-                      onTap: widget.hasSavedWords ? widget.onShowSavedWords : null,
+                      onTap: widget.hasSavedWords
+                          ? () => _selectAction(ReaderMenuAction.showSavedWords)
+                          : null,
                       enabled: widget.hasSavedWords,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.settings),
+                      title: Text(settingsLabel),
+                      onTap: () => _selectAction(ReaderMenuAction.openSettings),
                       contentPadding: EdgeInsets.zero,
                     ),
                     const SizedBox(height: 4),
@@ -217,25 +203,27 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
                     ListTile(
                       leading: const Icon(Icons.auto_stories),
                       title: Text(fromBeginningLabel),
-                      onTap: widget.onShowSummaryFromBeginning,
+                      onTap: () =>
+                          _selectAction(ReaderMenuAction.showSummaryFromBeginning),
                       contentPadding: EdgeInsets.zero,
                     ),
                     ListTile(
                       leading: const Icon(Icons.people_outline),
                       title: Text(charactersLabel),
-                      onTap: widget.onShowCharactersSummary,
+                      onTap: () =>
+                          _selectAction(ReaderMenuAction.showCharactersSummary),
                       contentPadding: EdgeInsets.zero,
                     ),
                     ListTile(
                       leading: const Icon(Icons.delete_outline),
                       title: Text(l10n?.summariesDeleteAction ?? 'Supprimer les résumés'),
-                      onTap: widget.onDeleteSummaries,
+                      onTap: () => _selectAction(ReaderMenuAction.deleteSummaries),
                       contentPadding: EdgeInsets.zero,
                     ),
                     ListTile(
                       leading: const Icon(Icons.arrow_back),
                       title: const Text('Retour à la librairie'),
-                      onTap: widget.onReturnToLibrary,
+                      onTap: () => _selectAction(ReaderMenuAction.returnToLibrary),
                       contentPadding: EdgeInsets.zero,
                     ),
                   ],

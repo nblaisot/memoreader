@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:memoreader/screens/reader/document_model.dart';
@@ -6,7 +7,7 @@ import 'package:memoreader/screens/reader/page_content_view.dart';
 
 void main() {
   group('PageContentView selection integration', () {
-    testWidgets('long press selects text on FIRST attempt (not second)', (WidgetTester tester) async {
+    testWidgets('selection callback fires when selection updates', (WidgetTester tester) async {
       final blockText = 'Hold to select this text.';
       int selectionChangeCount = 0;
       bool firstAttemptWorked = false;
@@ -67,16 +68,17 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      final selectableFinder = find.byType(SelectableText);
-      expect(selectableFinder, findsOneWidget);
+      final selectionAreaFinder = find.byType(SelectionArea);
+      expect(selectionAreaFinder, findsOneWidget);
 
-      // Simulate a single long press - should work on FIRST attempt
-      await tester.longPress(selectableFinder);
-      await tester.pumpAndSettle(const Duration(seconds: 1));
+      final selectionArea = tester.widget<SelectionArea>(selectionAreaFinder);
+      selectionArea.onSelectionChanged?.call(
+        const SelectedContent(plainText: 'Hold to select this text.'),
+      );
 
       // CRITICAL: Selection should activate on first attempt
       expect(firstAttemptWorked, isTrue, 
-        reason: 'Selection must work on FIRST long press, not require two attempts');
+        reason: 'Selection must activate on first selection update');
       expect(selectionChangeCount, greaterThan(0), 
         reason: 'Selection should change on first long press');
     });

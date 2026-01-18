@@ -351,6 +351,10 @@
   "deleteTranslationConfirm": "Supprimer",
   "@deleteTranslationConfirm": {
     "description": "Bouton de confirmation pour supprimer une traduction"
+  },
+  "repaginating": "Pagination...",
+  "@repaginating": {
+    "description": "Message affiché lorsque l'application recalcule la mise en page"
   }
 }
 

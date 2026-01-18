@@ -8,6 +8,7 @@ import 'services/settings_service.dart';
 import 'services/background_summary_service.dart';
 import 'services/sharing_service.dart';
 import 'utils/app_colors.dart';
+import 'utils/app_route_observer.dart';
 
 void main() {
   runApp(const MyApp());
@@ -60,6 +61,7 @@ class MyAppState extends State<MyApp> {
         useMaterial3: true,
         primaryColor: AppColors.brainPink,
       ),
+      navigatorObservers: [appRouteObserver],
       // Localization configuration
       localizationsDelegates: const [
         AppLocalizations.delegate,

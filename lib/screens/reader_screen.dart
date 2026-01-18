@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:epubx/epubx.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart' show PointerDownEvent, PointerUpEvent, PointerCancelEvent;
+import 'package:flutter/services.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -24,14 +26,17 @@ import '../services/saved_translation_database_service.dart';
 import '../models/saved_translation.dart';
 import '../utils/html_text_extractor.dart';
 import '../utils/css_resolver.dart';
+import '../utils/app_route_observer.dart';
 import 'reader/document_model.dart';
 import 'reader/line_metrics_pagination_engine.dart';
 import 'reader/page_content_view.dart';
+import 'reader/pagination_cache.dart';
 import 'reader/tap_zones.dart';
 import 'reader/reader_menu.dart';
 import 'reader/navigation_helper.dart';
 import 'reader/selection_warmup.dart';
 import 'reader/immediate_text_selection_controls.dart';
+import 'reader/webview_reader.dart';
 import 'routes.dart';
 import 'settings_screen.dart';
 import 'summary_screen.dart';
@@ -46,7 +51,8 @@ class ReaderScreen extends StatefulWidget {
   State<ReaderScreen> createState() => _ReaderScreenState();
 }
 
-class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver {
+class _ReaderScreenState extends State<ReaderScreen>
+    with WidgetsBindingObserver, RouteAware {
   static const double _defaultHorizontalPadding = 30.0; // Default horizontal padding
   static const double _defaultVerticalPadding = 50.0; // Default vertical padding
   static const double _paragraphSpacing = 18.0;
@@ -67,8 +73,19 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   EpubBook? _epubBook;
   List<DocumentBlock> _docBlocks = [];
   List<_ChapterEntry> _chapterEntries = [];
+  String? _webViewHtml;
+  String? _webViewFullText;
+  List<_ChapterOffset> _chapterCharOffsets = [];
+  final WebViewReaderController _webViewController = WebViewReaderController();
+  int? _currentChapterIndex;
+  int? _pendingWebViewCharIndex;
+  String? _lastWebViewStyleKey;
+  String? _lastWebViewLayoutKey;
+  String? _lastWebViewActionLabel;
+  bool? _lastWebViewActionEnabled;
 
   LineMetricsPaginationEngine? _engine;
+  final PaginationCacheManager _cacheManager = const PaginationCacheManager();
   final SummaryDatabaseService _summaryDatabase = SummaryDatabaseService();
   final SavedTranslationDatabaseService _translationDatabase = 
       SavedTranslationDatabaseService();
@@ -92,6 +109,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   ReadingProgress? _savedProgress;
   Timer? _progressDebounce;
+  _PageMetrics? _currentPageMetrics; // Store current layout metrics for progress saving
   // Text selection state management
   // When a selection is active, tap-up events clear the selection instead of triggering actions
   bool _hasActiveSelection = false;
@@ -102,6 +120,10 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   String? _selectionActionLabel;
   String? _selectionActionPrompt;
   Locale? _lastLocale;
+  WebViewSelection? _webViewSelection;
+  final GlobalKey _webViewKey = GlobalKey();
+  final GlobalKey _webViewOverlayKey = GlobalKey();
+  bool _routeObserverSubscribed = false;
   // Minimal pointer tracking for quick tap detection only
   int? _activePointerId;
   Offset? _activePointerDownPosition;
@@ -109,6 +131,22 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   static const Duration _quickTapThreshold = Duration(milliseconds: 300);
   // Pre-instantiated selection controls to avoid lazy loading and JIT delays
   ImmediateTextSelectionControls? _sharedSelectionControls;
+
+  bool get _useWebViewReader {
+    if (kIsWeb) {
+      return false;
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+        return true;
+      case TargetPlatform.fuchsia:
+      case TargetPlatform.linux:
+      case TargetPlatform.windows:
+        return false;
+    }
+  }
 
   @override
   void initState() {
@@ -126,6 +164,13 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (!_routeObserverSubscribed) {
+      final route = ModalRoute.of(context);
+      if (route is PageRoute<dynamic>) {
+        appRouteObserver.subscribe(this, route);
+        _routeObserverSubscribed = true;
+      }
+    }
     final locale = Localizations.localeOf(context);
     if (_lastLocale != locale) {
       _lastLocale = locale;
@@ -206,6 +251,9 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     _engine?.removeListener(_handleEngineUpdate);
     _pageController.dispose();
     _progressDebounce?.cancel();
+    if (_routeObserverSubscribed) {
+      appRouteObserver.unsubscribe(this);
+    }
     
     // Disable wake lock when leaving reader screen
     WakelockPlus.disable();
@@ -233,16 +281,15 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     
     // Navigate back - try different approaches
     if (mounted) {
-      final navigator = Navigator.of(context);
+      final navigator = Navigator.of(context, rootNavigator: true);
       debugPrint('[ReaderScreen] Navigator.canPop(): ${navigator.canPop()}');
-      
+
       if (navigator.canPop()) {
         debugPrint('[ReaderScreen] Calling Navigator.pop()');
         navigator.pop();
       } else {
-        // If we can't pop, try to go to root
-        debugPrint('[ReaderScreen] Cannot pop, trying popUntil root');
-        navigator.popUntil((route) => route.isFirst);
+        debugPrint('[ReaderScreen] Cannot pop, pushing library route');
+        navigator.pushNamedAndRemoveUntil(libraryRoute, (_) => false);
       }
     } else {
       debugPrint('[ReaderScreen] Widget is not mounted, cannot navigate');
@@ -276,11 +323,16 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     if (shouldPersistProgress) {
       // Disable wake lock when app goes to background to save battery
       WakelockPlus.disable();
-      final page = _engine?.getPage(_currentPageIndex);
-      if (page != null) {
-        unawaited(_saveProgress(page));
-        // Update reading stop when app goes to background
+      if (_useWebViewReader) {
+        unawaited(_saveWebViewProgress());
         unawaited(_updateLastReadingStopOnExit());
+      } else {
+        final page = _engine?.getPage(_currentPageIndex);
+        if (page != null) {
+          unawaited(_saveProgress(page));
+          // Update reading stop when app goes to background
+          unawaited(_updateLastReadingStopOnExit());
+        }
       }
       unawaited(_appStateService.setLastOpenedBook(widget.book.id));
       return;
@@ -293,6 +345,18 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     }
   }
 
+  @override
+  void didPopNext() {
+    super.didPopNext();
+    unawaited(_refreshReaderLayoutFromSettings());
+  }
+
+  Future<void> _refreshReaderLayoutFromSettings() async {
+    await _loadVerticalPadding();
+    if (!mounted) return;
+    _scheduleRepagination(retainCurrentPage: true);
+  }
+
   Future<void> _loadBook() async {
     setState(() {
       _isLoading = true;
@@ -303,22 +367,43 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       final epub = await _bookService.loadEpubBook(widget.book.filePath);
       final progress = await _bookService.getReadingProgress(widget.book.id);
       final extraction = await _extractDocument(epub);
+      final webViewDocument =
+          _useWebViewReader ? _buildWebViewDocument(epub) : null;
 
       setState(() {
         _epubBook = epub;
         _docBlocks = extraction.blocks;
         _chapterEntries = extraction.chapters;
-        _totalCharacterCount = extraction.totalCharacters;
+        _webViewHtml = webViewDocument?.html;
+        _webViewFullText = webViewDocument?.fullText;
+        _chapterCharOffsets = webViewDocument?.chapterCharOffsets ?? [];
+        _totalCharacterCount =
+            webViewDocument?.totalCharacters ?? extraction.totalCharacters;
+        _currentPageIndex = 0;
+        _totalPages = 0;
+        _progress = 0.0;
         _savedProgress = progress;
         _lastVisibleCharacterIndex =
             progress?.lastVisibleCharacterIndex ?? progress?.currentCharacterIndex;
+        _currentChapterIndex = null;
+        _lastWebViewStyleKey = null;
+        _lastWebViewLayoutKey = null;
+        _lastWebViewActionLabel = null;
+        _lastWebViewActionEnabled = null;
         _isLoading = false;
       });
 
       final initialCharIndex = progress?.currentCharacterIndex ?? 0;
       // When no character information is stored we simply restart from the
       // beginning, letting the first pagination pass reinitialize the data.
-      _scheduleRepagination(initialCharIndex: initialCharIndex);
+      if (_useWebViewReader) {
+        final clamped = math.max(0, initialCharIndex);
+        _currentCharacterIndex = clamped;
+        _pendingWebViewCharIndex = clamped;
+        _isNavigating = true;
+      } else {
+        _scheduleRepagination(initialCharIndex: initialCharIndex);
+      }
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -329,6 +414,16 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
 
   void _scheduleRepagination({int? initialCharIndex, bool retainCurrentPage = false, Size? actualSize}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_useWebViewReader) {
+        if (!mounted) return;
+        final targetCharIndex = initialCharIndex ?? _currentCharacterIndex;
+        _pendingWebViewCharIndex = math.max(0, targetCharIndex);
+        setState(() {
+          _isNavigating = true;
+        });
+        unawaited(_webViewController.updateLayout());
+        return;
+      }
       if (!mounted || _docBlocks.isEmpty) return;
       int? targetCharIndex;
       if (retainCurrentPage) {
@@ -346,7 +441,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     });
   }
 
-  Future<void> _rebuildPagination(int startCharIndex, {Size? actualSize}) async {
+  Future<void> _rebuildPagination(int startCharIndex, {Size? actualSize, bool fastMode = false}) async {
     if (!mounted || _docBlocks.isEmpty) return;
 
     // Navigation state should already be set when chapter was selected
@@ -371,6 +466,15 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
       sizeForMetrics ??= MediaQuery.of(context).size;
       final baseMetrics = _computePageMetrics(context, sizeForMetrics);
       final metrics = _adjustForUserPadding(baseMetrics);
+      
+      // Store current metrics for progress saving
+      _currentPageMetrics = metrics;
+      
+      // Check if layout matches saved progress (for cache reuse)
+      // If layout doesn't match, use fast mode for progressive pagination
+      if (!fastMode && _savedProgress != null) {
+        fastMode = !_layoutsMatch(_savedProgress, metrics);
+      }
 
       final previousEngine = _engine;
       previousEngine?.removeListener(_handleEngineUpdate);
@@ -387,7 +491,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         maxHeight: metrics.maxHeight,
         textHeightBehavior: metrics.textHeightBehavior,
         textScaler: metrics.textScaler,
-        cacheManager: null,
+        cacheManager: _cacheManager,
         viewportInsetBottom: metrics.viewportBottomInset,
       );
 
@@ -395,11 +499,25 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
         _clearNavigatingState();
         return;
       }
+      
+      // Use smaller window radius for fast mode to display content immediately
+      final windowRadius = fastMode ? 1 : 3;
       final targetPageIndex =
-          await engine.ensurePageForCharacter(startCharIndex, windowRadius: 1);
+          await engine.ensurePageForCharacter(startCharIndex, windowRadius: windowRadius);
       engine.addListener(_handleEngineUpdate);
-      unawaited(engine.ensureWindow(targetPageIndex, radius: 1));
-      unawaited(engine.startBackgroundPagination());
+      
+      // In fast mode, compute minimal window then continue in background
+      // In normal mode, compute larger window before continuing
+      if (fastMode) {
+        // Compute minimal window for immediate display
+        await engine.ensureWindow(targetPageIndex, radius: 1);
+        // Start background pagination immediately to continue computing pages
+        unawaited(engine.startBackgroundPagination());
+      } else {
+        // Normal mode: compute larger window, then continue
+        await engine.ensureWindow(targetPageIndex, radius: windowRadius);
+        unawaited(engine.startBackgroundPagination());
+      }
 
       if (!mounted) {
         _clearNavigatingState();
@@ -513,7 +631,7 @@ class _ReaderScreenState extends State<ReaderScreen> with WidgetsBindingObserver
     );
   }
 
-_PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
+  _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     final adjustedWidth =
         math.max(120.0, metrics.maxWidth - _horizontalPadding * 2);
     final adjustedHeight =
@@ -530,6 +648,38 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     );
   }
 
+  /// Compute layout key matching the pagination engine's layout key computation.
+  /// This is used to match saved layouts with current layout for cache reuse.
+  String _computeLayoutKey(_PageMetrics metrics) {
+    final buffer = StringBuffer()
+      ..write('v3|')
+      ..write(metrics.baseTextStyle.fontFamily ?? 'default')
+      ..write('|')
+      ..write((metrics.baseTextStyle.fontSize ?? 16.0).toStringAsFixed(2))
+      ..write('|')
+      ..write((metrics.baseTextStyle.height ?? 1.0).toStringAsFixed(2))
+      ..write('|')
+      ..write(metrics.maxWidth.toStringAsFixed(1))
+      ..write('|')
+      ..write(metrics.maxHeight.toStringAsFixed(1))
+      ..write('|')
+      ..write(metrics.textHeightBehavior.applyHeightToFirstAscent ? '1' : '0')
+      ..write(metrics.textHeightBehavior.applyHeightToLastDescent ? '1' : '0')
+      ..write('|')
+      ..write(metrics.textScaler.hashCode)
+      ..write('|')
+      ..write(metrics.viewportBottomInset.toStringAsFixed(1));
+    return base64UrlEncode(buffer.toString().codeUnits);
+  }
+
+  /// Check if current layout matches saved layout from progress.
+  /// Returns true if layouts are compatible (same layout key).
+  bool _layoutsMatch(ReadingProgress? progress, _PageMetrics currentMetrics) {
+    if (progress?.layoutKey == null) return false;
+    final currentLayoutKey = _computeLayoutKey(currentMetrics);
+    return progress!.layoutKey == currentLayoutKey;
+  }
+
   void _scheduleProgressSave() {
     _progressDebounce?.cancel();
     _progressDebounce = Timer(const Duration(milliseconds: 400), () {
@@ -537,6 +687,14 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       final page = _engine!.getPage(_currentPageIndex);
       if (page == null) return;
       _saveProgress(page);
+    });
+  }
+
+  void _scheduleWebViewProgressSave() {
+    _progressDebounce?.cancel();
+    _progressDebounce = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted) return;
+      _saveWebViewProgress();
     });
   }
 
@@ -632,7 +790,7 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
 
     switch (action) {
       case ReaderTapAction.showMenu:
-        _openReadingMenu();
+        unawaited(_openReadingMenu());
         break;
       case ReaderTapAction.showProgress:
         setState(() {
@@ -679,11 +837,37 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     }
   }
 
+  void _handleWebViewSelectionChanged(
+    WebViewSelection? selection,
+    VoidCallback clearSelection,
+  ) {
+    final trimmedText = selection?.text.trim() ?? '';
+    if (trimmedText.isEmpty) {
+      if (_webViewSelection != null) {
+        setState(() {
+          _webViewSelection = null;
+        });
+      }
+      _handleSelectionChanged(false, clearSelection);
+      return;
+    }
+
+    final normalizedSelection = WebViewSelection(
+      text: trimmedText,
+      rect: selection!.rect,
+    );
+    setState(() {
+      _webViewSelection = normalizedSelection;
+    });
+    _handleSelectionChanged(true, clearSelection);
+  }
+
   void _clearSelectionState() {
     setState(() {
       _hasActiveSelection = false;
       _lastSelectionChangeTimestamp = null;
       _selectionOwnerPointer = null;
+      _webViewSelection = null;
     });
     _clearSelectionCallback?.call();
     _clearSelectionCallback = null;
@@ -692,12 +876,37 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   Future<void> _saveProgress(PageContent page) async {
     try {
       final pageProgress = _calculateProgressForPage(page);
+      
+      // Capture current layout metrics if available
+      String? layoutKey;
+      double? maxWidth;
+      double? maxHeight;
+      double? fontSize;
+      double? horizontalPadding;
+      double? verticalPadding;
+      
+      if (_currentPageMetrics != null) {
+        final metrics = _currentPageMetrics!;
+        layoutKey = _computeLayoutKey(metrics);
+        maxWidth = metrics.maxWidth;
+        maxHeight = metrics.maxHeight;
+        fontSize = metrics.baseTextStyle.fontSize;
+        horizontalPadding = _horizontalPadding;
+        verticalPadding = _verticalPadding;
+      }
+      
       final progress = ReadingProgress(
         bookId: widget.book.id,
         currentCharacterIndex: page.startCharIndex,
         lastVisibleCharacterIndex: page.endCharIndex,
         progress: pageProgress,
         lastRead: DateTime.now(),
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+        fontSize: fontSize,
+        horizontalPadding: horizontalPadding,
+        verticalPadding: verticalPadding,
+        layoutKey: layoutKey,
       );
       await _bookService.saveReadingProgress(progress);
       _savedProgress = progress;
@@ -708,27 +917,75 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     }
   }
 
+  Future<void> _saveWebViewProgress() async {
+    try {
+      // Capture current layout metrics if available
+      String? layoutKey;
+      double? maxWidth;
+      double? maxHeight;
+      double? fontSize;
+      double? horizontalPadding;
+      double? verticalPadding;
+
+      if (_currentPageMetrics != null) {
+        final metrics = _currentPageMetrics!;
+        layoutKey = _computeLayoutKey(metrics);
+        maxWidth = metrics.maxWidth;
+        maxHeight = metrics.maxHeight;
+        fontSize = metrics.baseTextStyle.fontSize;
+        horizontalPadding = _horizontalPadding;
+        verticalPadding = _verticalPadding;
+      }
+
+      final currentChar = _currentCharacterIndex;
+      final lastVisible = _lastVisibleCharacterIndex ?? currentChar;
+      final progressValue = _totalCharacterCount > 0
+          ? (math.min(_totalCharacterCount, math.max(0, (lastVisible ?? 0) + 1)) /
+              _totalCharacterCount)
+          : 0.0;
+
+      final progress = ReadingProgress(
+        bookId: widget.book.id,
+        currentCharacterIndex: currentChar,
+        lastVisibleCharacterIndex: lastVisible,
+        progress: progressValue,
+        lastRead: DateTime.now(),
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+        fontSize: fontSize,
+        horizontalPadding: horizontalPadding,
+        verticalPadding: verticalPadding,
+        layoutKey: layoutKey,
+      );
+      await _bookService.saveReadingProgress(progress);
+      _savedProgress = progress;
+    } catch (_) {
+      // Saving progress is best-effort; ignore failures.
+    }
+  }
+
   /// Update the last reading stop position when leaving the reader
   /// This is called when the user actually stops reading (not just saving progress)
   Future<void> _updateLastReadingStopOnExit() async {
     try {
-      final page = _engine?.getPage(_currentPageIndex);
-      if (page == null) return;
-
+      final startCharIndex = _useWebViewReader
+          ? _currentCharacterIndex
+          : _engine?.getPage(_currentPageIndex)?.startCharIndex;
+      if (startCharIndex == null) return;
       final chunkIndex = _summaryService != null
-          ? _summaryService!.estimateChunkIndexForCharacter(page.startCharIndex ?? 0)
-          : EnhancedSummaryService.computeChunkIndexForCharacterStatic(page.startCharIndex ?? 0);
+          ? _summaryService!.estimateChunkIndexForCharacter(startCharIndex)
+          : EnhancedSummaryService.computeChunkIndexForCharacterStatic(startCharIndex);
       
       unawaited(_summaryDatabase.updateLastReadingStop(
         widget.book.id,
         chunkIndex: chunkIndex,
-        characterIndex: page.startCharIndex,
+        characterIndex: startCharIndex,
       ));
       if (_summaryService != null) {
         unawaited(_summaryService!.updateLastReadingStop(
           widget.book.id,
           chunkIndex: chunkIndex,
-          characterIndex: page.startCharIndex,
+          characterIndex: startCharIndex,
         ));
       }
     } catch (_) {
@@ -754,6 +1011,13 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
 
 
   Future<bool> _goToNextPage({bool resetPager = true}) async {
+    if (_useWebViewReader) {
+      if (_totalPages > 0 && _currentPageIndex >= _totalPages - 1) {
+        return false;
+      }
+      unawaited(_webViewController.goToNextPage());
+      return true;
+    }
     final engine = _engine;
     if (engine == null) {
       return false;
@@ -795,6 +1059,18 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   }
 
   bool _goToPreviousPage({bool resetPager = true}) {
+    if (_useWebViewReader) {
+      if (_currentPageIndex <= 0) {
+        if (_showProgressBar) {
+          setState(() {
+            _showProgressBar = false;
+          });
+        }
+        return false;
+      }
+      unawaited(_webViewController.goToPreviousPage());
+      return true;
+    }
     if (_currentPageIndex <= 0) {
       if (_showProgressBar) {
         setState(() {
@@ -829,6 +1105,163 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     }
 
     return true;
+  }
+
+  void _handleWebViewPageChanged(WebViewPageUpdate update) {
+    final pendingCharIndex = _pendingWebViewCharIndex;
+    if (pendingCharIndex != null) {
+      _pendingWebViewCharIndex = null;
+      if (pendingCharIndex > 0) {
+        setState(() {
+          _isNavigating = true;
+        });
+        unawaited(_webViewController.goToCharIndex(pendingCharIndex));
+        return;
+      }
+    }
+
+    final startChar = update.startCharIndex ?? 0;
+    final endChar = update.endCharIndex ?? startChar;
+    final totalChars = update.totalChars;
+    final progress = totalChars > 0
+        ? (math.min(totalChars, math.max(0, endChar + 1)) / totalChars)
+        : 0.0;
+
+    if (kDebugMode) {
+      final previousEnd = _lastVisibleCharacterIndex;
+      if (previousEnd != null) {
+        final gap = startChar - previousEnd - 1;
+        if (gap > 1) {
+          debugPrint('[WebView] Page gap detected: +$gap chars (prevEnd=$previousEnd start=$startChar page=${update.pageIndex})');
+        } else if (gap < -1) {
+          debugPrint('[WebView] Page overlap detected: ${gap.abs()} chars (prevEnd=$previousEnd start=$startChar page=${update.pageIndex})');
+        }
+      }
+    }
+
+    setState(() {
+      _currentPageIndex = update.pageIndex;
+      _totalPages = update.pageCount;
+      _totalCharacterCount = totalChars;
+      _currentCharacterIndex = startChar;
+      _lastVisibleCharacterIndex = endChar;
+      _progress = progress;
+      _currentChapterIndex = _resolveChapterIndexForChar(startChar);
+      _showProgressBar = false;
+      _isNavigating = false;
+      _navigatingToChapterIndex = null;
+    });
+
+    _scheduleWebViewProgressSave();
+    _closeChapterDialog();
+    if (kDebugMode) {
+      unawaited(_logWebViewPageText(update));
+    }
+  }
+
+  Future<void> _logWebViewPageText(WebViewPageUpdate update) async {
+    final fullText = _webViewFullText;
+    if (fullText == null || fullText.isEmpty) {
+      return;
+    }
+
+    final start = update.startCharIndex ?? 0;
+    final end = update.endCharIndex ?? start;
+    final expectedCurrent =
+        _sliceExpectedTextForLog(fullText, start, end);
+
+    WebViewPageRange? nextInfo;
+    if (_webViewController.isReady &&
+        update.pageIndex + 1 < update.pageCount) {
+      nextInfo = await _webViewController.getPageInfo(update.pageIndex + 1);
+    }
+    final expectedNext = nextInfo == null
+        ? ''
+        : _sliceExpectedTextForLog(
+            fullText,
+            nextInfo.startCharIndex,
+            nextInfo.endCharIndex,
+          );
+
+    final visibleText = _webViewController.isReady
+        ? await _webViewController.getVisibleText()
+        : null;
+
+    debugPrint(
+      '[WebViewText] page=${update.pageIndex} start=$start end=$end expectedLen=${expectedCurrent.length}',
+    );
+    debugPrint(
+      '[WebViewText] expected: "${_formatLogText(_sanitizeLogText(expectedCurrent))}"',
+    );
+    if (nextInfo != null) {
+      debugPrint(
+        '[WebViewText] next page=${nextInfo.pageIndex} start=${nextInfo.startCharIndex} end=${nextInfo.endCharIndex} expectedLen=${expectedNext.length}',
+      );
+      debugPrint(
+        '[WebViewText] expected next: "${_formatLogText(_sanitizeLogText(expectedNext))}"',
+      );
+    }
+    if (visibleText != null && visibleText.trim().isNotEmpty) {
+      debugPrint(
+        '[WebViewText] visible: "${_formatLogText(_sanitizeLogText(visibleText))}"',
+      );
+    } else {
+      debugPrint('[WebViewText] visible: <empty>');
+    }
+  }
+
+  String _sliceExpectedTextForLog(String text, int? start, int? end) {
+    if (text.isEmpty || start == null || end == null) {
+      return '';
+    }
+    final maxIndex = text.length - 1;
+    if (maxIndex < 0) {
+      return '';
+    }
+    final safeStart = start.clamp(0, text.length) as int;
+    final safeEnd = end.clamp(0, maxIndex) as int;
+    if (safeEnd < safeStart) {
+      return '';
+    }
+    return text.substring(safeStart, safeEnd + 1);
+  }
+
+  String _sanitizeLogText(String text) {
+    return text
+        .replaceAll('\uFFFC', '[img]')
+        .replaceAll('\n', '\\n');
+  }
+
+  String _formatLogText(String text) {
+    const maxLength = 240;
+    if (text.length <= maxLength) {
+      return text;
+    }
+    const headLength = 160;
+    const tailLength = 60;
+    final head = text.substring(0, headLength);
+    final tail = text.substring(text.length - tailLength);
+    return '$head ... $tail';
+  }
+
+  void _handleWebViewTapAction(String action) {
+    switch (action) {
+      case 'showMenu':
+        unawaited(_openReadingMenu());
+        break;
+      case 'showProgress':
+        setState(() {
+          _showProgressBar = !_showProgressBar;
+        });
+        break;
+      case 'dismissOverlays':
+        if (_showProgressBar) {
+          setState(() {
+            _showProgressBar = false;
+          });
+        }
+        break;
+    }
   }
 
   void _resetPagerToCurrent() {
@@ -941,6 +1374,27 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     if (!mounted) return;
     
     try {
+      if (_useWebViewReader) {
+        final totalChars = _totalCharacterCount;
+        if (totalChars <= 0) {
+          return;
+        }
+        final normalized = percentage.clamp(0.0, 100.0);
+        final target = (normalized / 100.0) * (totalChars - 1);
+        final rounded = target.round();
+        final clamped = rounded.clamp(0, totalChars - 1);
+        debugPrint('[ReaderScreen] Jumping to $normalized% -> char index $clamped');
+        setState(() {
+          _isNavigating = true;
+        });
+        if (!_webViewController.isReady) {
+          _pendingWebViewCharIndex = clamped;
+          unawaited(_webViewController.updateLayout());
+          return;
+        }
+        unawaited(_webViewController.goToCharIndex(clamped));
+        return;
+      }
       // Safety check: ensure engine and book data are loaded
       if (_engine == null || _totalCharacterCount <= 0) {
         debugPrint('[ReaderScreen] Cannot jump to percentage: engine not ready');
@@ -1066,10 +1520,15 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         _lastActualSize = actualSize;
         final baseMetrics = _computePageMetrics(context, actualSize);
         final metrics = _adjustForUserPadding(baseMetrics);
+        _currentPageMetrics = metrics;
         
         // Trigger repagination if size changed significantly
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || _docBlocks.isEmpty) return;
+          if (!mounted) return;
+          if (_useWebViewReader) {
+            return;
+          }
+          if (_docBlocks.isEmpty) return;
           // Only repaginate if size changed significantly (more than 10 pixels difference)
           final currentMetrics = metrics;
           if (_engine == null ||
@@ -1085,6 +1544,9 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
           }
         });
 
+        if (_useWebViewReader) {
+          return _buildWebViewReaderContent(context, actualSize, metrics);
+        }
         return _buildReaderContent(context, actualSize, metrics);
       },
     );
@@ -1129,6 +1591,26 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
                 onPageChanged: _handlePageChanged,
                 itemBuilder: (context, index) => pages[index],
               ),
+              // Repagination loading overlay
+              if (_isNavigating || _engine == null || currentPage == null)
+                Positioned.fill(
+                  child: Container(
+                    color: theme.scaffoldBackgroundColor.withOpacity(0.8),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(),
+                          const SizedBox(height: 16),
+                          Text(
+                            AppLocalizations.of(context)?.repaginating ?? 'Repaginating...',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               // Progress indicator overlay
               if (_showProgressBar)
                 Positioned(
@@ -1142,6 +1624,124 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
         ),
       ),
     );
+  }
+
+  Widget _buildWebViewReaderContent(
+    BuildContext context,
+    Size actualSize,
+    _PageMetrics metrics,
+  ) {
+    final theme = Theme.of(context);
+    final html = _webViewHtml;
+    if (html == null) {
+      return const SizedBox.shrink();
+    }
+
+    final l10n = AppLocalizations.of(context);
+    final defaultActionLabel = l10n?.textSelectionDefaultLabel ?? 'Translate';
+    final actionLabel = (_selectionActionLabel ?? defaultActionLabel).trim().isEmpty
+        ? defaultActionLabel
+        : _selectionActionLabel!;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _updateWebViewAppearance(metrics, theme, actionLabel);
+      final layoutKey = _computeLayoutKey(metrics);
+      if (_webViewController.isReady && _lastWebViewLayoutKey != layoutKey) {
+        _lastWebViewLayoutKey = layoutKey;
+        unawaited(_webViewController.updateLayout());
+      }
+    });
+
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      body: Stack(
+        key: _webViewOverlayKey,
+        children: [
+          Positioned.fill(
+            child: WebViewReader(
+              key: _webViewKey,
+              html: html,
+              controller: _webViewController,
+              onPageChanged: _handleWebViewPageChanged,
+              onSelectionChanged: _handleWebViewSelectionChanged,
+              onSelectionAction: _handleSelectionAction,
+              onTapAction: _handleWebViewTapAction,
+            ),
+          ),
+          if (_webViewSelection != null) _buildWebViewSelectionToolbar(),
+          if (_isNavigating || html.isEmpty)
+            Positioned.fill(
+              child: Container(
+                color: theme.scaffoldBackgroundColor.withOpacity(0.8),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text(
+                        AppLocalizations.of(context)?.repaginating ??
+                            'Repaginating...',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_showProgressBar)
+            Positioned(
+              bottom: 24,
+              left: 24,
+              right: 24,
+              child: _buildProgressIndicator(theme),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _updateWebViewAppearance(
+    _PageMetrics metrics,
+    ThemeData theme,
+    String actionLabel,
+  ) {
+    if (!_webViewController.isAttached || !_webViewController.isReady) {
+      return;
+    }
+    final fontSize = metrics.baseTextStyle.fontSize ?? _defaultReaderFontSize;
+    final lineHeight = metrics.baseTextStyle.height ?? 1.6;
+    final styleKey = [
+      fontSize.toStringAsFixed(2),
+      lineHeight.toStringAsFixed(2),
+      theme.colorScheme.onSurface.value.toRadixString(16),
+      theme.scaffoldBackgroundColor.value.toRadixString(16),
+      _horizontalPadding.toStringAsFixed(1),
+      _verticalPadding.toStringAsFixed(1),
+    ].join('|');
+    if (_lastWebViewStyleKey != styleKey) {
+      _lastWebViewStyleKey = styleKey;
+      unawaited(_webViewController.updateStyles(
+        fontSize: fontSize,
+        lineHeight: lineHeight,
+        textColor: theme.colorScheme.onSurface,
+        backgroundColor: theme.scaffoldBackgroundColor,
+        paddingX: _horizontalPadding,
+        paddingY: _verticalPadding,
+      ));
+    }
+
+    if (_lastWebViewActionLabel != actionLabel) {
+      _lastWebViewActionLabel = actionLabel;
+      unawaited(_webViewController.updateActionLabel(actionLabel));
+    }
+
+    final actionEnabled = !_isProcessingSelection;
+    if (_lastWebViewActionEnabled != actionEnabled) {
+      _lastWebViewActionEnabled = actionEnabled;
+      unawaited(_webViewController.setActionEnabled(actionEnabled));
+    }
   }
 
   Widget _buildProgressIndicator(ThemeData theme) {
@@ -1188,13 +1788,108 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     );
   }
 
+  Widget _buildWebViewSelectionToolbar() {
+    final selection = _webViewSelection;
+    if (selection == null || selection.text.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final webViewBox = _webViewKey.currentContext?.findRenderObject() as RenderBox?;
+    final overlayBox =
+        _webViewOverlayKey.currentContext?.findRenderObject() as RenderBox?;
+    if (webViewBox == null || overlayBox == null) {
+      return const SizedBox.shrink();
+    }
+
+    if (selection.rect.width <= 0 || selection.rect.height <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final globalTopLeft = webViewBox.localToGlobal(selection.rect.topLeft);
+    final localTopLeft = overlayBox.globalToLocal(globalTopLeft);
+    final localRect = Rect.fromLTWH(
+      localTopLeft.dx,
+      localTopLeft.dy,
+      selection.rect.width,
+      selection.rect.height,
+    );
+
+    final l10n = AppLocalizations.of(context);
+    final defaultActionLabel = l10n?.textSelectionDefaultLabel ?? 'Translate';
+    final actionLabel = (_selectionActionLabel ?? defaultActionLabel).trim().isEmpty
+        ? defaultActionLabel
+        : (_selectionActionLabel ?? defaultActionLabel);
+    final materialL10n = MaterialLocalizations.of(context);
+
+    final items = <ContextMenuButtonItem>[
+      ContextMenuButtonItem(
+        label: actionLabel,
+        onPressed: _isProcessingSelection
+            ? null
+            : () {
+                final text = selection.text;
+                _clearSelectionCallback?.call();
+                _clearSelectionCallback = null;
+                _handleSelectionAction(text);
+              },
+      ),
+      ContextMenuButtonItem(
+        label: materialL10n.copyButtonLabel,
+        onPressed: () {
+          Clipboard.setData(ClipboardData(text: selection.text));
+          _clearSelectionCallback?.call();
+          _clearSelectionCallback = null;
+        },
+      ),
+      ContextMenuButtonItem(
+        label: materialL10n.selectAllButtonLabel,
+        onPressed: () {
+          unawaited(_webViewController.selectAll());
+        },
+      ),
+    ];
+
+    return Positioned.fill(
+      child: AdaptiveTextSelectionToolbar.buttonItems(
+        anchors: TextSelectionToolbarAnchors(primaryAnchor: localRect.topCenter),
+        buttonItems: items,
+      ),
+    );
+  }
+
   String? get _currentChapterTitle {
+    if (_useWebViewReader) {
+      final chapterIndex = _currentChapterIndex;
+      if (chapterIndex == null) return null;
+      if (chapterIndex < 0 || chapterIndex >= _chapterEntries.length) return null;
+      return _chapterEntries[chapterIndex].title;
+    }
     if (_engine == null) return null;
     final page = _engine!.getPage(_currentPageIndex);
     final chapterIndex = page?.chapterIndex;
     if (chapterIndex == null) return null;
     if (chapterIndex < 0 || chapterIndex >= _chapterEntries.length) return null;
     return _chapterEntries[chapterIndex].title;
+  }
+
+  int? _resolveChapterIndexForChar(int charIndex) {
+    if (_chapterCharOffsets.isEmpty) {
+      return null;
+    }
+    var low = 0;
+    var high = _chapterCharOffsets.length - 1;
+    var result = _chapterCharOffsets.first.chapterIndex;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      final offset = _chapterCharOffsets[mid].startChar;
+      if (offset <= charIndex) {
+        result = _chapterCharOffsets[mid].chapterIndex;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return result;
   }
 
   Widget _buildPageContent(PageContent? page, _PageMetrics metrics) {
@@ -1234,26 +1929,48 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
     );
   }
 
-  void _openReadingMenu() {
-    // Check if there are saved words for this book
-    _translationDatabase.getTranslationsCount(widget.book.id).then((count) {
-      if (!mounted) return;
-      
-      unawaited(showReaderMenu(
-        context: context,
-        fontScale: _fontScale,
-        onFontScaleChanged: _updateFontScale,
-        hasChapters: _chapterEntries.isNotEmpty,
-        onGoToChapter: _showChapterSelector,
-        onGoToPercentage: _showGoToPercentageDialog,
-        hasSavedWords: count > 0,
-        onShowSavedWords: _showSavedWords,
-        onShowSummaryFromBeginning: () => _openSummary(SummaryType.fromBeginning),
-        onShowCharactersSummary: () => _openSummary(SummaryType.characters),
-        onDeleteSummaries: () => unawaited(_confirmAndDeleteSummaries()),
-        onReturnToLibrary: _returnToLibrary,
-      ));
-    });
+  Future<void> _openReadingMenu() async {
+    final count =
+        await _translationDatabase.getTranslationsCount(widget.book.id);
+    if (!mounted) return;
+
+    final action = await showReaderMenu(
+      context: context,
+      fontScale: _fontScale,
+      onFontScaleChanged: _updateFontScale,
+      hasChapters: _chapterEntries.isNotEmpty,
+      hasSavedWords: count > 0,
+    );
+    if (!mounted || action == null) {
+      return;
+    }
+
+    switch (action) {
+      case ReaderMenuAction.goToChapter:
+        _showChapterSelector();
+        break;
+      case ReaderMenuAction.goToPercentage:
+        _showGoToPercentageDialog();
+        break;
+      case ReaderMenuAction.showSavedWords:
+        _showSavedWords();
+        break;
+      case ReaderMenuAction.openSettings:
+        unawaited(_openSettings());
+        break;
+      case ReaderMenuAction.showSummaryFromBeginning:
+        _openSummary(SummaryType.fromBeginning);
+        break;
+      case ReaderMenuAction.showCharactersSummary:
+        _openSummary(SummaryType.characters);
+        break;
+      case ReaderMenuAction.deleteSummaries:
+        unawaited(_confirmAndDeleteSummaries());
+        break;
+      case ReaderMenuAction.returnToLibrary:
+        unawaited(_returnToLibrary());
+        break;
+    }
   }
 
   void _updateFontScale(double newScale) {
@@ -1316,8 +2033,19 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   Future<void> _returnToLibrary() {
     return returnToLibrary(
       context,
-      openLibrary: () => Navigator.of(context).pushReplacementNamed(libraryRoute),
+      openLibrary: () => Navigator.of(context, rootNavigator: true)
+          .pushNamedAndRemoveUntil(libraryRoute, (_) => false),
     );
+  }
+
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const SettingsScreen(),
+      ),
+    );
+    if (!mounted) return;
+    await _refreshReaderLayoutFromSettings();
   }
 
   void _showChapterSelector() {
@@ -1355,6 +2083,37 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   }
 
   void _goToChapter(int chapterIndex) {
+    if (_useWebViewReader) {
+      if (chapterIndex < 0) {
+        _clearNavigatingState();
+        _closeChapterDialog();
+        return;
+      }
+      _ChapterOffset? targetOffset;
+      for (final offset in _chapterCharOffsets) {
+        if (offset.chapterIndex == chapterIndex) {
+          targetOffset = offset;
+          break;
+        }
+      }
+      if (targetOffset == null) {
+        _clearNavigatingState();
+        _closeChapterDialog();
+        return;
+      }
+      final targetCharIndex = targetOffset.startChar;
+      setState(() {
+        _isNavigating = true;
+        _navigatingToChapterIndex = chapterIndex;
+      });
+      if (!_webViewController.isReady) {
+        _pendingWebViewCharIndex = targetCharIndex;
+        unawaited(_webViewController.updateLayout());
+        return;
+      }
+      unawaited(_webViewController.goToCharIndex(targetCharIndex));
+      return;
+    }
     if (_engine == null) {
       // Navigation cannot proceed, clear state and close dialog
       _clearNavigatingState();
@@ -1459,6 +2218,45 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
   }
 
   void _openSummary(SummaryType summaryType) async {
+    if (_useWebViewReader) {
+      if (_currentCharacterIndex <= 0 && _totalCharacterCount <= 0) {
+        return;
+      }
+
+      if (!await _ensureSummaryServiceReady()) {
+        return;
+      }
+
+      final visibleIndex = _lastVisibleCharacterIndex ?? _currentCharacterIndex;
+      final progress = ReadingProgress(
+        bookId: widget.book.id,
+        currentCharacterIndex: _currentCharacterIndex,
+        lastVisibleCharacterIndex: visibleIndex,
+        progress: _progress,
+        lastRead: DateTime.now(),
+      );
+
+      final engineFullText = _webViewFullText ?? '';
+      if (engineFullText.isEmpty) {
+        return;
+      }
+
+      unawaited(_updateLastReadingStopOnExit());
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SummaryScreen(
+            book: widget.book,
+            progress: progress,
+            enhancedSummaryService: _summaryService!,
+            summaryType: summaryType,
+            engineFullText: engineFullText,
+          ),
+        ),
+      );
+      return;
+    }
     if (_engine == null) return;
     final currentPage = _engine!.getPage(_currentPageIndex);
     if (currentPage == null) return;
@@ -1521,11 +2319,15 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       return;
     }
 
+    _clearSelectionCallback?.call();
+    _clearSelectionCallback = null;
+
     // Clear selection state
     setState(() {
       _isProcessingSelection = true;
       _hasActiveSelection = false;
       _lastSelectionChangeTimestamp = null;
+      _webViewSelection = null;
     });
 
     final l10n = AppLocalizations.of(context)!;
@@ -1964,6 +2766,1369 @@ _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
       totalCharacters: totalCharacters,
     );
   }
+
+  _WebViewDocument _buildWebViewDocument(EpubBook epub) {
+    final chapterOffsets = <_ChapterOffset>[];
+    var totalCharacters = 0;
+    final contentBuffer = StringBuffer();
+    final cssBuffer = StringBuffer();
+    final fullTextBuffer = StringBuffer();
+
+    final resources = _collectByteResources(epub);
+    final cssFiles = epub.Content?.Css;
+    if (cssFiles != null) {
+      for (final entry in cssFiles.entries) {
+        final cssContent = entry.value.Content;
+        if (cssContent != null && cssContent.isNotEmpty) {
+          cssBuffer.writeln(_rewriteCssUrls(cssContent.toString(), resources));
+        }
+      }
+    }
+
+    final epubChapters = epub.Chapters ?? const <EpubChapter>[];
+    for (var i = 0; i < epubChapters.length; i++) {
+      final chapter = epubChapters[i];
+      final html = chapter.HtmlContent ?? '';
+      if (html.isEmpty) {
+        continue;
+      }
+
+      final document = html_parser.parse(html);
+      final styleTags = document.querySelectorAll('style');
+      for (final styleTag in styleTags) {
+        final cssContent = styleTag.text;
+        if (cssContent.isNotEmpty) {
+          cssBuffer.writeln(_rewriteCssUrls(cssContent, resources));
+        }
+        styleTag.remove();
+      }
+      for (final link in document.querySelectorAll('link')) {
+        link.remove();
+      }
+      for (final script in document.querySelectorAll('script')) {
+        script.remove();
+      }
+
+      for (final img in document.getElementsByTagName('img')) {
+        final src = img.attributes['src'];
+        if (src == null || src.isEmpty) continue;
+        final dataUri = _resolveResourceDataUri(src, resources);
+        if (dataUri != null) {
+          img.attributes['src'] = dataUri;
+        }
+      }
+      for (final image in document.getElementsByTagName('image')) {
+        final href = image.attributes['xlink:href'] ?? image.attributes['href'];
+        if (href == null || href.isEmpty) continue;
+        final dataUri = _resolveResourceDataUri(href, resources);
+        if (dataUri != null) {
+          if (image.attributes.containsKey('xlink:href')) {
+            image.attributes['xlink:href'] = dataUri;
+          } else {
+            image.attributes['href'] = dataUri;
+          }
+        }
+      }
+
+      final body = document.body;
+      if (body == null) {
+        continue;
+      }
+
+      final normalizedText = HtmlTextExtractor.extract(html);
+      chapterOffsets.add(
+        _ChapterOffset(
+          chapterIndex: i,
+          startChar: totalCharacters,
+        ),
+      );
+      totalCharacters += normalizedText.length;
+      fullTextBuffer.write(normalizedText);
+
+      contentBuffer.writeln(
+        '<section class="chapter" data-chapter-index="$i">${body.innerHtml}</section>',
+      );
+    }
+
+    if (contentBuffer.isEmpty) {
+      contentBuffer.writeln('<p>Aucun contenu lisible dans ce livre.</p>');
+    }
+
+    final htmlBuffer = StringBuffer()
+      ..writeln('<!DOCTYPE html>')
+      ..writeln('<html>')
+      ..writeln('<head>')
+      ..writeln('<meta charset="utf-8">')
+      ..writeln(
+        '<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">',
+      )
+      ..writeln('<style>')
+      ..writeln(_webViewBaseCss)
+      ..writeln(cssBuffer.toString())
+      ..writeln('</style>')
+      ..writeln('</head>')
+      ..writeln('<body>')
+      ..writeln('<div id="reader">')
+      ..writeln(contentBuffer.toString())
+      ..writeln('</div>')
+      ..writeln(_webViewSelectionMenuHtml)
+      ..writeln('<script>')
+      ..writeln(_webViewReaderScript)
+      ..writeln('</script>')
+      ..writeln('</body>')
+      ..writeln('</html>');
+
+    return _WebViewDocument(
+      html: htmlBuffer.toString(),
+      chapterCharOffsets: chapterOffsets,
+      totalCharacters: totalCharacters,
+      fullText: fullTextBuffer.toString(),
+    );
+  }
+
+  Map<String, EpubByteContentFile> _collectByteResources(EpubBook epub) {
+    final resources = <String, EpubByteContentFile>{};
+    final images = epub.Content?.Images;
+    if (images != null) {
+      resources.addAll(images);
+    }
+    final fonts = epub.Content?.Fonts;
+    if (fonts != null) {
+      resources.addAll(fonts);
+    }
+    final allFiles = epub.Content?.AllFiles;
+    if (allFiles != null) {
+      for (final entry in allFiles.entries) {
+        final file = entry.value;
+        if (file is EpubByteContentFile) {
+          resources.putIfAbsent(entry.key, () => file);
+        }
+      }
+    }
+    return resources;
+  }
+
+  String _rewriteCssUrls(
+    String css,
+    Map<String, EpubByteContentFile> resources,
+  ) {
+    final urlPattern = RegExp(r'url\(([^)]+)\)', caseSensitive: false);
+    return css.replaceAllMapped(urlPattern, (match) {
+      var raw = (match.group(1) ?? '').trim();
+      if (raw.startsWith('"') && raw.endsWith('"') && raw.length > 1) {
+        raw = raw.substring(1, raw.length - 1);
+      } else if (raw.startsWith("'") && raw.endsWith("'") && raw.length > 1) {
+        raw = raw.substring(1, raw.length - 1);
+      }
+      if (raw.startsWith('data:') ||
+          raw.startsWith('http:') ||
+          raw.startsWith('https:') ||
+          raw.startsWith('#')) {
+        return match.group(0) ?? '';
+      }
+      final dataUri = _resolveResourceDataUri(raw, resources);
+      if (dataUri == null) {
+        return match.group(0) ?? '';
+      }
+      return "url('$dataUri')";
+    });
+  }
+
+  String? _resolveResourceDataUri(
+    String src,
+    Map<String, EpubByteContentFile> resources,
+  ) {
+    final normalized = _normalizeResourcePath(src);
+    if (normalized.isEmpty) {
+      return null;
+    }
+    final fragment = normalized.split('/').last;
+    for (final entry in resources.entries) {
+      final key = _normalizeResourcePath(entry.key);
+      if (key.endsWith(fragment) || fragment.endsWith(key)) {
+        final data = entry.value.Content;
+        if (data == null || data.isEmpty) {
+          return null;
+        }
+        final mime = entry.value.ContentMimeType ??
+            _guessMimeType(entry.key) ??
+            _guessMimeType(normalized) ??
+            'application/octet-stream';
+        final encoded = base64Encode(data);
+        return 'data:$mime;base64,$encoded';
+      }
+    }
+    return null;
+  }
+
+  String _normalizeResourcePath(String path) {
+    var normalized = path.replaceAll('\\', '/');
+    final hashIndex = normalized.indexOf('#');
+    if (hashIndex != -1) {
+      normalized = normalized.substring(0, hashIndex);
+    }
+    final queryIndex = normalized.indexOf('?');
+    if (queryIndex != -1) {
+      normalized = normalized.substring(0, queryIndex);
+    }
+    while (normalized.startsWith('../')) {
+      normalized = normalized.substring(3);
+    }
+    return normalized;
+  }
+
+  String? _guessMimeType(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    }
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.svg')) return 'image/svg+xml';
+    if (lower.endsWith('.ttf')) return 'font/ttf';
+    if (lower.endsWith('.otf')) return 'font/otf';
+    if (lower.endsWith('.woff')) return 'font/woff';
+    if (lower.endsWith('.woff2')) return 'font/woff2';
+    return null;
+  }
+
+  static const String _webViewBaseCss = '''
+:root {
+  --reader-font-size: 16px;
+  --reader-line-height: 1.6;
+  --reader-text-color: #111111;
+  --reader-bg-color: #ffffff;
+  --reader-padding-x: 30px;
+  --reader-padding-y: 50px;
+  --page-width: 100vw;
+  --page-height: 100vh;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+body {
+  font-size: var(--reader-font-size);
+  line-height: var(--reader-line-height);
+  color: var(--reader-text-color);
+  background: var(--reader-bg-color);
+  padding: var(--reader-padding-y) var(--reader-padding-x);
+  box-sizing: border-box;
+  -webkit-text-size-adjust: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+#reader {
+  width: var(--page-width);
+  height: var(--page-height);
+  column-width: var(--page-width);
+  column-gap: 0;
+  column-fill: auto;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: auto;
+}
+#reader img,
+#reader svg {
+  max-width: 100%;
+  height: auto;
+}
+#selection-menu {
+  position: fixed;
+  z-index: 9999;
+  display: none !important;
+  background: rgba(20, 20, 20, 0.9);
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3);
+  gap: 4px;
+  align-items: center;
+  white-space: nowrap;
+}
+#selection-menu button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+#selection-menu button[disabled] {
+  opacity: 0.5;
+}
+::-webkit-scrollbar {
+  display: none;
+}
+::selection {
+  background: rgba(233, 30, 99, 0.35);
+  color: inherit;
+}
+''';
+
+  static const String _webViewSelectionMenuHtml = '''
+<div id="selection-menu">
+  <button id="selection-action" type="button">Translate</button>
+  <button id="selection-copy" type="button">Copier</button>
+  <button id="selection-select-all" type="button">Tout sélectionner</button>
+</div>
+''';
+
+  static const String _webViewReaderScript = '''
+(function() {
+  const CHANNEL_NAME = 'MemoReader';
+  const reader = document.getElementById('reader');
+  const selectionMenu = document.getElementById('selection-menu');
+  const selectionButton = document.getElementById('selection-action');
+  const selectionCopy = document.getElementById('selection-copy');
+  const selectionSelectAll = document.getElementById('selection-select-all');
+  const selectionPadding = 8;
+
+  let viewportWidth = 0;
+  let viewportHeight = 0;
+  let pageWidth = 0;
+  let pageHeight = 0;
+  let contentLeft = 0;
+  let contentTop = 0;
+  let paddingX = 0;
+  let paddingY = 0;
+  let pageStride = 0;
+  let pageCount = 1;
+  let currentPage = 0;
+  let requestedPage = 0;
+  let totalChars = null;
+  let lastStartChar = 0;
+  let lastEndChar = 0;
+  let actionEnabled = true;
+  let selectionTimer = null;
+  let touchStart = null;
+  let lastTouchTime = 0;
+  let pageChangeQueue = Promise.resolve();
+  let pageChangeToken = 0;
+
+  function getScrollContainer() {
+    return reader || document.scrollingElement || document.documentElement;
+  }
+
+  function getPageStride() {
+    if (reader && window.getComputedStyle) {
+      const style = window.getComputedStyle(reader);
+      const columnWidth = parseFloat(style.columnWidth);
+      const columnGap = parseFloat(style.columnGap);
+      const width = Number.isFinite(columnWidth) ? columnWidth : pageWidth;
+      const gap = Number.isFinite(columnGap) ? columnGap : 0;
+      const stride = width + gap;
+      if (stride > 0) {
+        return stride;
+      }
+    }
+    return pageWidth;
+  }
+
+  function postMessage(payload) {
+    if (window[CHANNEL_NAME] && window[CHANNEL_NAME].postMessage) {
+      window[CHANNEL_NAME].postMessage(JSON.stringify(payload));
+    }
+  }
+
+  function normalizeWhitespace(text) {
+    let normalized = text.replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');
+    normalized = normalized.replace(/\\u00a0/g, ' ');
+    normalized = normalized.replace(/[ \\t]+/g, ' ');
+    normalized = normalized.replace(/\\n{3,}/g, '\\n\\n');
+    return normalized.trim();
+  }
+
+  function isLayoutArtifact(element) {
+    const classAttr = (element.getAttribute('class') || '').toLowerCase();
+    if (classAttr.indexOf('pagebreak') !== -1 || classAttr.indexOf('pagenum') !== -1) {
+      return true;
+    }
+
+    const style = (element.getAttribute('style') || '').toLowerCase();
+    if (style.indexOf('page-break') !== -1 ||
+        style.indexOf('break-before') !== -1 ||
+        style.indexOf('break-after') !== -1) {
+      return true;
+    }
+    if (style.indexOf('position:absolute') !== -1 || style.indexOf('position: fixed') !== -1) {
+      return true;
+    }
+    if (/(width|height)\\s*:\\s*\\d+px/.test(style)) {
+      return true;
+    }
+    if (/\\b(top|left|right|bottom)\\s*:/.test(style)) {
+      return true;
+    }
+    return false;
+  }
+
+  function updateLayoutMetrics() {
+    viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const rootStyle = window.getComputedStyle(document.documentElement);
+    paddingX = parseFloat(rootStyle.getPropertyValue('--reader-padding-x')) || 0;
+    paddingY = parseFloat(rootStyle.getPropertyValue('--reader-padding-y')) || 0;
+    contentLeft = paddingX;
+    contentTop = paddingY;
+    pageWidth = Math.max(0, viewportWidth - paddingX * 2);
+    pageHeight = Math.max(0, viewportHeight - paddingY * 2);
+    document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
+    document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
+    pageStride = getPageStride();
+    const scrollElement = getScrollContainer();
+    if (scrollElement) {
+      pageCount = Math.max(1, Math.ceil(scrollElement.scrollWidth / pageStride));
+    } else {
+      pageCount = 1;
+    }
+  }
+
+  function waitForImages() {
+    const images = Array.from(document.images || []);
+    if (images.length === 0) {
+      return Promise.resolve();
+    }
+    const promises = images.map(function(img) {
+      if (img.complete) {
+        return Promise.resolve();
+      }
+      return new Promise(function(resolve) {
+        img.addEventListener('load', resolve, { once: true });
+        img.addEventListener('error', resolve, { once: true });
+      });
+    });
+    return Promise.all(promises);
+  }
+
+  function waitForFonts() {
+    if (document.fonts && document.fonts.ready) {
+      return document.fonts.ready.catch(function() {});
+    }
+    return Promise.resolve();
+  }
+
+  function getRangeFromPoint(x, y) {
+    if (document.caretRangeFromPoint) {
+      return document.caretRangeFromPoint(x, y);
+    }
+    if (document.caretPositionFromPoint) {
+      const pos = document.caretPositionFromPoint(x, y);
+      if (!pos) {
+        return null;
+      }
+      const range = document.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.collapse(true);
+      return range;
+    }
+    return null;
+  }
+
+  function resolveRangePosition(range) {
+    if (!range) {
+      return null;
+    }
+    let node = range.startContainer;
+    let offset = range.startOffset;
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (reader && !reader.contains(node)) {
+        return null;
+      }
+      return { node: node, offset: offset };
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return null;
+    }
+    const element = node;
+    const child = element.childNodes[offset] || element.childNodes[element.childNodes.length - 1];
+    if (!child) {
+      return null;
+    }
+    const walker = document.createTreeWalker(child, NodeFilter.SHOW_TEXT, null);
+    const textNode = walker.nextNode();
+    if (!textNode) {
+      return null;
+    }
+    if (reader && !reader.contains(textNode)) {
+      return null;
+    }
+    return { node: textNode, offset: 0 };
+  }
+
+  function findTextNodeInElement(element) {
+    if (!element) {
+      return null;
+    }
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+    return walker.nextNode();
+  }
+
+  function computeCharCount(targetNode, targetOffset) {
+    let count = 0;
+    let pendingParagraphBreak = false;
+    let lastChar = '';
+    let secondLastChar = '';
+    let done = false;
+
+    function appendText(text) {
+      if (!text) {
+        return;
+      }
+      count += text.length;
+      const prevLast = lastChar;
+      if (text.length >= 2) {
+        secondLastChar = text[text.length - 2];
+        lastChar = text[text.length - 1];
+      } else {
+        secondLastChar = prevLast;
+        lastChar = text[text.length - 1];
+      }
+    }
+
+    function scheduleParagraphBreak() {
+      pendingParagraphBreak = true;
+    }
+
+    function flushPendingBreak() {
+      if (pendingParagraphBreak && count > 0) {
+        if (secondLastChar === '\\n' && lastChar === '\\n') {
+          // Paragraph break already present.
+        } else if (lastChar === '\\n') {
+          appendText('\\n');
+        } else {
+          appendText('\\n\\n');
+        }
+      }
+      pendingParagraphBreak = false;
+    }
+
+    function ensureParagraphBoundary() {
+      if (count > 0) {
+        flushPendingBreak();
+      }
+    }
+
+    function walk(node) {
+      if (done || !node) {
+        return;
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const element = node;
+        if (isLayoutArtifact(element)) {
+          return;
+        }
+        const name = (element.tagName || '').toLowerCase();
+        switch (name) {
+          case 'style':
+          case 'script':
+            return;
+          case 'br':
+            appendText('\\n');
+            return;
+          case 'img':
+            flushPendingBreak();
+            appendText('\\uFFFC');
+            scheduleParagraphBreak();
+            return;
+          case 'ul':
+          case 'ol': {
+            ensureParagraphBoundary();
+            const ordered = name === 'ol';
+            let counter = 1;
+            const items = Array.from(element.children).filter(function(child) {
+              return (child.tagName || '').toLowerCase() === 'li';
+            });
+            for (let i = 0; i < items.length; i++) {
+              const item = items[i];
+              const bullet = ordered ? (counter + '. ') : '• ';
+              if (targetNode && item.contains(targetNode)) {
+                const range = document.createRange();
+                range.setStart(item, 0);
+                range.setEnd(targetNode, targetOffset);
+                const partial = normalizeWhitespace(range.toString());
+                if (partial) {
+                  appendText(bullet + partial);
+                }
+                done = true;
+                return;
+              }
+              const text = normalizeWhitespace(item.textContent || '');
+              if (text) {
+                appendText(bullet + text);
+                appendText('\\n');
+              }
+              counter += 1;
+            }
+            scheduleParagraphBreak();
+            return;
+          }
+          case 'h1':
+          case 'h2':
+          case 'h3':
+          case 'h4':
+          case 'h5':
+          case 'h6':
+          case 'p':
+          case 'div':
+          case 'section':
+          case 'article':
+          case 'blockquote':
+          case 'pre':
+            ensureParagraphBoundary();
+            Array.from(element.childNodes).forEach(walk);
+            scheduleParagraphBreak();
+            return;
+          default:
+            Array.from(element.childNodes).forEach(walk);
+            return;
+        }
+      }
+      if (node.nodeType === Node.TEXT_NODE) {
+        const textValue = node.nodeValue || '';
+        if (targetNode && node === targetNode) {
+          const partial = normalizeWhitespace(textValue.substring(0, targetOffset));
+          appendText(partial);
+          pendingParagraphBreak = false;
+          done = true;
+          return;
+        }
+        const cleaned = normalizeWhitespace(textValue);
+        appendText(cleaned);
+        pendingParagraphBreak = false;
+        return;
+      }
+      Array.from(node.childNodes || []).forEach(walk);
+    }
+
+    if (reader) {
+      walk(reader);
+    }
+    if (!done) {
+      flushPendingBreak();
+    }
+    return count;
+  }
+
+  function computeCharCountToImage(targetImage) {
+    let count = 0;
+    let pendingParagraphBreak = false;
+    let lastChar = '';
+    let secondLastChar = '';
+    let done = false;
+
+    function appendText(text) {
+      if (!text) {
+        return;
+      }
+      count += text.length;
+      const prevLast = lastChar;
+      if (text.length >= 2) {
+        secondLastChar = text[text.length - 2];
+        lastChar = text[text.length - 1];
+      } else {
+        secondLastChar = prevLast;
+        lastChar = text[text.length - 1];
+      }
+    }
+
+    function scheduleParagraphBreak() {
+      pendingParagraphBreak = true;
+    }
+
+    function flushPendingBreak() {
+      if (pendingParagraphBreak && count > 0) {
+        if (secondLastChar === '\\n' && lastChar === '\\n') {
+          // Paragraph break already present.
+        } else if (lastChar === '\\n') {
+          appendText('\\n');
+        } else {
+          appendText('\\n\\n');
+        }
+      }
+      pendingParagraphBreak = false;
+    }
+
+    function ensureParagraphBoundary() {
+      if (count > 0) {
+        flushPendingBreak();
+      }
+    }
+
+    function walk(node) {
+      if (done || !node) {
+        return;
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const element = node;
+        if (isLayoutArtifact(element)) {
+          return;
+        }
+        const name = (element.tagName || '').toLowerCase();
+        if (element === targetImage && (name === 'img' || name === 'image')) {
+          flushPendingBreak();
+          done = true;
+          return;
+        }
+        switch (name) {
+          case 'style':
+          case 'script':
+            return;
+          case 'br':
+            appendText('\\n');
+            return;
+          case 'img':
+            flushPendingBreak();
+            appendText('\\uFFFC');
+            scheduleParagraphBreak();
+            return;
+          case 'ul':
+          case 'ol': {
+            ensureParagraphBoundary();
+            const ordered = name === 'ol';
+            let counter = 1;
+            const items = Array.from(element.children).filter(function(child) {
+              return (child.tagName || '').toLowerCase() === 'li';
+            });
+            for (let i = 0; i < items.length; i++) {
+              const item = items[i];
+              const bullet = ordered ? (counter + '. ') : '• ';
+              const text = normalizeWhitespace(item.textContent || '');
+              if (text) {
+                appendText(bullet + text);
+                appendText('\\n');
+              }
+              counter += 1;
+            }
+            scheduleParagraphBreak();
+            return;
+          }
+          case 'h1':
+          case 'h2':
+          case 'h3':
+          case 'h4':
+          case 'h5':
+          case 'h6':
+          case 'p':
+          case 'div':
+          case 'section':
+          case 'article':
+          case 'blockquote':
+          case 'pre':
+            ensureParagraphBoundary();
+            Array.from(element.childNodes).forEach(walk);
+            scheduleParagraphBreak();
+            return;
+          default:
+            Array.from(element.childNodes).forEach(walk);
+            return;
+        }
+      }
+      if (node.nodeType === Node.TEXT_NODE) {
+        const textValue = node.nodeValue || '';
+        const cleaned = normalizeWhitespace(textValue);
+        appendText(cleaned);
+        pendingParagraphBreak = false;
+        return;
+      }
+      Array.from(node.childNodes || []).forEach(walk);
+    }
+
+    if (reader) {
+      walk(reader);
+    }
+    if (!done) {
+      flushPendingBreak();
+    }
+    return count;
+  }
+
+  function charIndexAtPoint(x, y) {
+    const range = getRangeFromPoint(x, y);
+    const resolved = resolveRangePosition(range);
+    if (resolved) {
+      return computeCharCount(resolved.node, resolved.offset);
+    }
+    const element = document.elementFromPoint(x, y);
+    if (!element) {
+      return null;
+    }
+    if (reader && !reader.contains(element)) {
+      return null;
+    }
+    if (element === reader) {
+      return null;
+    }
+    const imageElement = element.closest ? element.closest('img, image') : null;
+    if (imageElement && (!reader || reader.contains(imageElement))) {
+      return computeCharCountToImage(imageElement);
+    }
+    const textNode = findTextNodeInElement(element);
+    if (textNode) {
+      return computeCharCount(textNode, 0);
+    }
+    return null;
+  }
+
+  function findCharIndexInColumn(xCandidates, yStart, yEnd, step) {
+    const direction = yEnd >= yStart ? 1 : -1;
+    const stepSize = Math.max(8, Math.round(step));
+    for (
+      let y = yStart;
+      direction > 0 ? y <= yEnd : y >= yEnd;
+      y += stepSize * direction
+    ) {
+      for (let i = 0; i < xCandidates.length; i++) {
+        const index = charIndexAtPoint(xCandidates[i], y);
+        if (index !== null) {
+          return index;
+        }
+      }
+    }
+    return null;
+  }
+
+  function getStartCharIndex() {
+    const step = Math.max(10, Math.round(pageHeight / 20));
+    const left = contentLeft + 2;
+    const right = contentLeft + pageWidth - 2;
+    const middle = contentLeft + pageWidth * 0.5;
+    const top = contentTop + 2;
+    const bottom = contentTop + pageHeight - 2;
+    const candidates = [left, middle, right];
+    const found = findCharIndexInColumn(candidates, top, bottom, step);
+    if (found !== null) {
+      return found;
+    }
+    return charIndexAtPoint(middle, contentTop + pageHeight * 0.5);
+  }
+
+  function getEndCharIndex() {
+    const step = Math.max(10, Math.round(pageHeight / 20));
+    const left = contentLeft + 2;
+    const right = contentLeft + pageWidth - 2;
+    const middle = contentLeft + pageWidth * 0.5;
+    const top = contentTop + 2;
+    const bottom = contentTop + pageHeight - 2;
+    const candidates = [right, middle, left];
+    const found = findCharIndexInColumn(candidates, bottom, top, step);
+    if (found !== null) {
+      return found;
+    }
+    return charIndexAtPoint(middle, contentTop + pageHeight * 0.5);
+  }
+
+  function getVisibleText() {
+    updateLayoutMetrics();
+    const startRange = getRangeFromPoint(contentLeft + 2, contentTop + 2);
+    const endRange = getRangeFromPoint(
+      contentLeft + pageWidth - 2,
+      contentTop + pageHeight - 2
+    );
+    const startPos = resolveRangePosition(startRange);
+    const endPos = resolveRangePosition(endRange);
+    if (!startPos || !endPos) {
+      return null;
+    }
+    if (reader && (!reader.contains(startPos.node) || !reader.contains(endPos.node))) {
+      return null;
+    }
+    const range = document.createRange();
+    if (startPos.node === endPos.node) {
+      const startOffset = Math.min(startPos.offset, endPos.offset);
+      const endOffset = Math.max(startPos.offset, endPos.offset);
+      range.setStart(startPos.node, startOffset);
+      range.setEnd(endPos.node, endOffset);
+    } else {
+      const position = startPos.node.compareDocumentPosition(endPos.node);
+      const startBeforeEnd = (position & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      const endBeforeStart = (position & Node.DOCUMENT_POSITION_PRECEDING) !== 0;
+      if (startBeforeEnd || !endBeforeStart) {
+        range.setStart(startPos.node, startPos.offset);
+        range.setEnd(endPos.node, endPos.offset);
+      } else {
+        range.setStart(endPos.node, endPos.offset);
+        range.setEnd(startPos.node, startPos.offset);
+      }
+    }
+    const text = normalizeWhitespace(range.toString());
+    return text;
+  }
+
+  function getPageInfo(pageIndex) {
+    updateLayoutMetrics();
+    const scrollElement = getScrollContainer();
+    const previousScroll = scrollElement ? scrollElement.scrollLeft : 0;
+    const previousPage = currentPage;
+    const previousStart = lastStartChar;
+    const previousEnd = lastEndChar;
+    const clamped = Math.min(Math.max(pageIndex, 0), pageCount - 1);
+    if (scrollElement) {
+      scrollElement.scrollLeft = Math.round(clamped * pageStride);
+    }
+    const startChar = getStartCharIndex();
+    const endChar = getEndCharIndex();
+    if (scrollElement) {
+      scrollElement.scrollLeft = previousScroll;
+    }
+    currentPage = previousPage;
+    lastStartChar = previousStart;
+    lastEndChar = previousEnd;
+    return JSON.stringify({
+      pageIndex: clamped,
+      startChar: startChar,
+      endChar: endChar
+    });
+  }
+
+  function setPage(pageIndex, notify) {
+    updateLayoutMetrics();
+    clearSelection();
+    const clamped = Math.min(Math.max(pageIndex, 0), pageCount - 1);
+    const scrollElement = getScrollContainer();
+    currentPage = clamped;
+    if (scrollElement) {
+      scrollElement.scrollLeft = Math.round(clamped * pageStride);
+    }
+    const startCharValue = getStartCharIndex();
+    const endCharValue = getEndCharIndex();
+    const startChar = startCharValue === null ? lastStartChar : startCharValue;
+    const endChar = endCharValue === null ? Math.max(startChar, lastEndChar) : endCharValue;
+    if (startCharValue !== null) {
+      lastStartChar = startCharValue;
+    }
+    if (endCharValue !== null) {
+      lastEndChar = endCharValue;
+    }
+    if (notify) {
+      postMessage({
+        type: 'pageChanged',
+        pageIndex: currentPage,
+        pageCount: pageCount,
+        totalChars: totalChars || 0,
+        startChar: startChar,
+        endChar: endChar
+      });
+    }
+    return { startChar: startChar, endChar: endChar };
+  }
+
+  function getCharIndexForPage(pageIndex) {
+    updateLayoutMetrics();
+    const clamped = Math.min(Math.max(pageIndex, 0), pageCount - 1);
+    const scrollElement = getScrollContainer();
+    if (scrollElement) {
+      scrollElement.scrollLeft = Math.round(clamped * pageStride);
+    }
+    return getStartCharIndex();
+  }
+
+  function findPageForChar(targetChar) {
+    updateLayoutMetrics();
+    let low = 0;
+    let high = pageCount - 1;
+    let best = 0;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const startChar = getCharIndexForPage(mid);
+      if (startChar === null) {
+        best = mid;
+        break;
+      }
+      if (startChar <= targetChar) {
+        best = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return best;
+  }
+
+  function goToCharIndex(targetChar) {
+    const page = findPageForChar(targetChar);
+    setPage(page, true);
+    return page;
+  }
+
+  function updateStyles(styles) {
+    if (styles && typeof styles === 'object') {
+      if (styles.fontSize) {
+        document.documentElement.style.setProperty('--reader-font-size', styles.fontSize + 'px');
+      }
+      if (styles.lineHeight) {
+        document.documentElement.style.setProperty('--reader-line-height', styles.lineHeight);
+      }
+      if (styles.textColor) {
+        document.documentElement.style.setProperty('--reader-text-color', styles.textColor);
+      }
+      if (styles.backgroundColor) {
+        document.documentElement.style.setProperty('--reader-bg-color', styles.backgroundColor);
+      }
+      if (typeof styles.paddingX === 'number') {
+        document.documentElement.style.setProperty('--reader-padding-x', styles.paddingX + 'px');
+      }
+      if (typeof styles.paddingY === 'number') {
+        document.documentElement.style.setProperty('--reader-padding-y', styles.paddingY + 'px');
+      }
+    }
+    updateLayout();
+  }
+
+  function updateLayout() {
+    updateLayoutMetrics();
+    if (totalChars === null) {
+      totalChars = computeCharCount(null, 0);
+    }
+    const startCharValue = getStartCharIndex();
+    const targetChar = startCharValue === null ? 0 : startCharValue;
+    const page = findPageForChar(targetChar);
+    setPage(page, true);
+  }
+
+  function setActionLabel(label) {
+    selectionButton.textContent = label || 'Translate';
+  }
+
+  function setActionEnabled(enabled) {
+    actionEnabled = !!enabled;
+    selectionButton.disabled = !actionEnabled;
+  }
+
+  function hideSelectionMenu() {
+    selectionMenu.style.display = 'none';
+  }
+
+  function showSelectionMenu() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      hideSelectionMenu();
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) {
+      hideSelectionMenu();
+      return;
+    }
+    selectionMenu.style.display = 'flex';
+    const menuWidth = selectionMenu.offsetWidth;
+    const menuHeight = selectionMenu.offsetHeight;
+    const left = Math.min(
+      Math.max(rect.left, selectionPadding),
+      window.innerWidth - menuWidth - selectionPadding
+    );
+    const top = Math.max(rect.top - menuHeight - selectionPadding, selectionPadding);
+    selectionMenu.style.transform = 'translate(' + left + 'px, ' + top + 'px)';
+  }
+
+  function getSelectionInfo() {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return null;
+    }
+    const text = selection.toString().trim();
+    if (!text) {
+      return null;
+    }
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    if (!rect) {
+      return { text: text, rect: null };
+    }
+    return {
+      text: text,
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height
+      }
+    };
+  }
+
+  function clearSelection() {
+    const selection = window.getSelection();
+    if (selection) {
+      selection.removeAllRanges();
+    }
+    hideSelectionMenu();
+    postMessage({ type: 'selectionChanged', hasSelection: false, text: '', rect: null });
+  }
+
+  function selectAll() {
+    if (!reader) {
+      return;
+    }
+    const selection = window.getSelection();
+    if (!selection) {
+      return;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(reader);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    handleSelectionChange();
+  }
+
+  function handleSelectionChange() {
+    if (selectionTimer) {
+      clearTimeout(selectionTimer);
+    }
+    selectionTimer = setTimeout(function() {
+      const info = getSelectionInfo();
+      if (!info) {
+        hideSelectionMenu();
+        postMessage({ type: 'selectionChanged', hasSelection: false, text: '', rect: null });
+        return;
+      }
+      hideSelectionMenu();
+      postMessage({
+        type: 'selectionChanged',
+        hasSelection: true,
+        text: info.text,
+        rect: info.rect
+      });
+    }, 80);
+  }
+
+  function determineTapAction(x, y) {
+    const topThreshold = viewportHeight * 0.2;
+    const bottomThreshold = viewportHeight * 0.8;
+    const leftThreshold = viewportWidth * 0.33;
+    const rightThreshold = viewportWidth * 0.67;
+
+    if (y <= topThreshold) {
+      return 'showMenu';
+    }
+    if (y >= bottomThreshold) {
+      return 'showProgress';
+    }
+    if (x >= rightThreshold) {
+      return 'nextPage';
+    }
+    if (x <= leftThreshold) {
+      return 'previousPage';
+    }
+    return 'dismissOverlays';
+  }
+
+  function handleTap(x, y) {
+    updateLayoutMetrics();
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+      clearSelection();
+      return;
+    }
+    const action = determineTapAction(x, y);
+    if (action === 'nextPage') {
+      setPage(currentPage + 1, true);
+      return;
+    }
+    if (action === 'previousPage') {
+      setPage(currentPage - 1, true);
+      return;
+    }
+    postMessage({ type: 'tap', action: action });
+  }
+
+  function handleTouchStart(event) {
+    if (event.target && event.target.closest) {
+      if (event.target.closest('#selection-menu')) {
+        return;
+      }
+    }
+    if (!event.touches || event.touches.length === 0) {
+      return;
+    }
+    const touch = event.touches[0];
+    touchStart = {
+      x: touch.clientX,
+      y: touch.clientY,
+      time: Date.now()
+    };
+  }
+
+  function handleTouchEnd(event) {
+    if (event.target && event.target.closest) {
+      if (event.target.closest('#selection-menu')) {
+        return;
+      }
+    }
+    if (!touchStart) {
+      return;
+    }
+    const touch = event.changedTouches && event.changedTouches.length > 0
+      ? event.changedTouches[0]
+      : null;
+    if (!touch) {
+      touchStart = null;
+      return;
+    }
+    const dx = touch.clientX - touchStart.x;
+    const dy = touch.clientY - touchStart.y;
+    const dt = Date.now() - touchStart.time;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
+    touchStart = null;
+
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+      if (absDx < 10 && absDy < 10 && dt < 300) {
+        clearSelection();
+      } else {
+        handleSelectionChange();
+      }
+      return;
+    }
+
+    if (absDx > 50 && absDx > absDy && dt < 500) {
+      if (dx < 0) {
+        setPage(currentPage + 1, true);
+      } else {
+        setPage(currentPage - 1, true);
+      }
+      return;
+    }
+    if (absDx < 10 && absDy < 10 && dt < 300) {
+      handleTap(touch.clientX, touch.clientY);
+    }
+    lastTouchTime = Date.now();
+  }
+
+  function handleTouchCancel() {
+    touchStart = null;
+  }
+
+  function handleClick(event) {
+    if (!event || !event.clientX || !event.clientY) {
+      return;
+    }
+    if (Date.now() - lastTouchTime < 500) {
+      return;
+    }
+    if (event.target && event.target.closest) {
+      if (event.target.closest('#selection-menu')) {
+        return;
+      }
+      const link = event.target.closest('a');
+      if (link) {
+        event.preventDefault();
+      }
+    }
+    handleTap(event.clientX, event.clientY);
+  }
+
+  selectionButton.addEventListener('click', function(event) {
+    event.preventDefault();
+    const selection = window.getSelection();
+    const text = selection ? selection.toString().trim() : '';
+    if (!text || !actionEnabled) {
+      return;
+    }
+    postMessage({ type: 'selectionAction', text: text });
+    clearSelection();
+  });
+
+  if (selectionCopy) {
+    selectionCopy.addEventListener('click', function(event) {
+      event.preventDefault();
+      const selection = window.getSelection();
+      const text = selection ? selection.toString() : '';
+      if (!text) {
+        return;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).catch(function() {});
+      } else {
+        try {
+          document.execCommand('copy');
+        } catch (error) {}
+      }
+      clearSelection();
+    });
+  }
+
+  if (selectionSelectAll) {
+    selectionSelectAll.addEventListener('click', function(event) {
+      event.preventDefault();
+      selectAll();
+    });
+  }
+
+  document.addEventListener('selectionchange', handleSelectionChange);
+  const tapTarget = reader || document;
+  tapTarget.addEventListener('touchstart', handleTouchStart, { passive: true });
+  tapTarget.addEventListener('touchend', handleTouchEnd, { passive: true });
+  tapTarget.addEventListener('touchcancel', handleTouchCancel, { passive: true });
+  tapTarget.addEventListener('click', handleClick);
+  window.addEventListener('resize', updateLayout);
+  document.addEventListener('contextmenu', function(event) {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+      event.preventDefault();
+    }
+  });
+
+  window.MemoReaderApi = {
+    updateStyles: updateStyles,
+    updateLayout: updateLayout,
+    setPage: function(pageIndex, notify) {
+      return setPage(pageIndex, notify !== false);
+    },
+    nextPage: function() {
+      return setPage(currentPage + 1, true);
+    },
+    previousPage: function() {
+      return setPage(currentPage - 1, true);
+    },
+    findPageForChar: findPageForChar,
+    goToCharIndex: goToCharIndex,
+    getPageCount: function() { return pageCount; },
+    getCurrentPage: function() { return currentPage; },
+    getVisibleText: getVisibleText,
+    getPageInfo: getPageInfo,
+    setActionLabel: setActionLabel,
+    setActionEnabled: setActionEnabled,
+    clearSelection: clearSelection,
+    selectAll: selectAll
+  };
+
+  function init() {
+    Promise.all([waitForFonts(), waitForImages()]).then(function() {
+      updateLayoutMetrics();
+      if (totalChars === null) {
+        totalChars = computeCharCount(null, 0);
+      }
+      const info = setPage(currentPage, false);
+      postMessage({
+        type: 'ready',
+        pageIndex: currentPage,
+        pageCount: pageCount,
+        totalChars: totalChars,
+        startChar: info.startChar,
+        endChar: info.endChar
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+''';
 
   int _countTotalCharacters(List<DocumentBlock> blocks) {
     var total = 0;
@@ -2523,6 +4688,30 @@ class _DocumentExtractionResult {
   final List<DocumentBlock> blocks;
   final List<_ChapterEntry> chapters;
   final int totalCharacters;
+}
+
+class _WebViewDocument {
+  const _WebViewDocument({
+    required this.html,
+    required this.chapterCharOffsets,
+    required this.totalCharacters,
+    required this.fullText,
+  });
+
+  final String html;
+  final List<_ChapterOffset> chapterCharOffsets;
+  final int totalCharacters;
+  final String fullText;
+}
+
+class _ChapterOffset {
+  const _ChapterOffset({
+    required this.chapterIndex,
+    required this.startChar,
+  });
+
+  final int chapterIndex;
+  final int startChar;
 }
 
 class _ChapterEntry {

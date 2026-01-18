@@ -51,8 +51,8 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
 
   static const double _minBreakPointMargin = 20.0;
   static const double _maxBreakPointMargin = 80.0;
-  static const double _minPageBottomMargin = 24.0;
-  static const double _maxBottomMarginFraction = 0.18;
+  static const double _minPageBottomMargin = 20.0;
+  static const double _maxBottomMarginFraction = 0.12;
   static const double _heightTolerance = 0.5;
   static const bool _defaultTracingFlag =
       bool.fromEnvironment('ENABLE_READER_PAGINATION_TRACE', defaultValue: false);
@@ -570,7 +570,8 @@ class LineMetricsPaginationEngine extends ChangeNotifier {
 
   double _computePageBottomMargin(double lineHeight, double spacingAfter) {
     final insetInfluence = _viewportInsetBottom * 0.6;
-    final dynamicMargin = lineHeight * 0.5 + spacingAfter * 0.5 + insetInfluence;
+    // Reduced multipliers for more conservative margins to allow better page filling
+    final dynamicMargin = lineHeight * 0.3 + spacingAfter * 0.3 + insetInfluence;
     final minMargin = math.max(_minPageBottomMargin, _viewportInsetBottom * 0.5);
     final upperBound = (_originalMaxHeight + _viewportInsetBottom) *
         _maxBottomMarginFraction;
@@ -687,7 +688,9 @@ class _TextBlockState {
       textPainter.preferredLineHeight,
       block.spacingAfter,
     );
-    effectiveMaxHeight = math.max(0.0, _maxHeight - pageBottomMargin);
+    // Use _maxHeight directly to match rendering constraint in PageContentView
+    // pageBottomMargin is a visual margin, not a constraint reduction
+    effectiveMaxHeight = _maxHeight;
 
     if (_tracingEnabled) {
       _trace(
@@ -749,291 +752,462 @@ class _TextBlockState {
       return null;
     }
 
-    // Don't apply spacingBefore - it causes unwanted page breaks
-    // Text should flow continuously without forced spacing
+    // No forced spacing - text should flow continuously
     final spacingBefore = 0.0;
+    final pageStartOffset = currentTextOffset;
+    final pageStartTokenIndex = currentTokenPointer;
+    int currentTokenIndex = pageStartTokenIndex;
 
-    double currentPageHeight = spacingBefore;
-    int pageStartTextIndex = currentTextOffset;
-    int pageStartTokenIndex = currentTokenPointer;
-
-    for (int lineIndex = currentLineIndex;
-        lineIndex < lines.length;
-        lineIndex++) {
-      final line = lines[lineIndex];
-      final lineHeight = line.height;
-      final lineStartOffset = lineStartOffsets[lineIndex];
-      final breakPointMargin = _computeBreakPointMargin(lineHeight);
-      final left = line.left;
-      final top = line.baseline - line.ascent;
-
-      final isLastLine = lineIndex == lines.length - 1;
-      final effectiveSpacingAfter = isLastLine ? block.spacingAfter : 0.0;
-      final totalHeightWithLine =
-          currentPageHeight + lineHeight + effectiveSpacingAfter;
-
-      if (totalHeightWithLine > effectiveMaxHeight &&
-          pageStartTextIndex < lineStartOffset) {
-        if (_tracingEnabled) {
-          _trace(
-            'overflow line=$lineIndex currentHeight=${currentPageHeight.toStringAsFixed(2)} '
-            'lineHeight=${lineHeight.toStringAsFixed(2)} '
-            'limit=${effectiveMaxHeight.toStringAsFixed(2)} '
-            'breakMargin=${breakPointMargin.toStringAsFixed(2)}',
-          );
-        }
-        final breakPointTop = (top - breakPointMargin).clamp(0.0, double.infinity);
-        final breakPointOffset = textPainter
-            .getPositionForOffset(Offset(left, breakPointTop))
-            .offset;
-
-        final targetBreakOffset = breakPointOffset > pageStartTextIndex
-            ? breakPointOffset
-            : lineStartOffset;
-
-        int pageEndTokenPointerExclusive =
-            _findTokenIndexAfterOffset(targetBreakOffset, pageStartTokenIndex);
-        int safeBreakOffset = _safeBreakOffsetForTokenPointer(
-          pageEndTokenPointerExclusive,
-          pageStartTextIndex,
-        );
-
-        if (safeBreakOffset <= pageStartTextIndex &&
-            lineStartOffset > pageStartTextIndex) {
-          pageEndTokenPointerExclusive = _findTokenIndexAfterOffset(
-            lineStartOffset,
-            pageStartTokenIndex,
-          );
-          safeBreakOffset = _safeBreakOffsetForTokenPointer(
-            pageEndTokenPointerExclusive,
-            pageStartTextIndex,
-          );
-        }
-
-        if (safeBreakOffset <= pageStartTextIndex) {
-          final expandedPointer = math.min(
-            pageEndTokenPointerExclusive + 1,
-            tokenSpans.length,
-          );
-          final expandedOffset = _safeBreakOffsetForTokenPointer(
-            expandedPointer,
-            pageStartTextIndex,
-          );
-
-          if (expandedOffset > safeBreakOffset) {
-            pageEndTokenPointerExclusive = expandedPointer;
-            safeBreakOffset = expandedOffset;
-          }
-        }
-
-        if (safeBreakOffset <= pageStartTextIndex &&
-            pageStartTokenIndex < tokenSpans.length) {
-          final forcedPointer = pageStartTokenIndex + 1;
-          pageEndTokenPointerExclusive = forcedPointer < tokenSpans.length
-              ? forcedPointer
-              : tokenSpans.length;
-          if (pageEndTokenPointerExclusive > 0) {
-            safeBreakOffset =
-                tokenSpans[pageEndTokenPointerExclusive - 1].end;
-          } else {
-            safeBreakOffset = block.text.length;
-          }
-        }
-
-        if (safeBreakOffset > pageStartTextIndex) {
-          final fitResult = _shrinkToFit(
-            startOffset: pageStartTextIndex,
-            endOffset: safeBreakOffset,
-            startTokenPointer: pageStartTokenIndex,
-            endTokenPointerExclusive: pageEndTokenPointerExclusive,
-            spacingBefore: spacingBefore,
-            spacingAfter: 0.0,
-          );
-
-          if (fitResult != null && fitResult.text.isNotEmpty) {
-            final tokensInPage =
-                fitResult.endTokenPointerExclusive - pageStartTokenIndex;
-            final startWordPointer = globalWordIndex;
-            final endWordPointer = tokensInPage > 0
-                ? startWordPointer + tokensInPage - 1
-                : startWordPointer - 1;
-
-            final nextOffset = fitResult.endOffset;
-            final fragments = block.sliceFragments(
-              pageStartTextIndex,
-              nextOffset,
-              baseStyle: _baseStyle,
-            );
-
-            final page = PageContent(
-              blocks: [
-                TextPageBlock(
-                  text: fitResult.text,
-                  fragments: fragments,
-                  textAlign: block.textAlign,
-                  baseStyle: _baseStyle,
-                  spacingBefore: spacingBefore,
-                  spacingAfter: 0.0,
-                  lineHeight: block.lineHeight,
-                ),
-              ],
-              chapterIndex: block.chapterIndex,
-              startWordIndex: startWordPointer,
-              endWordIndex: endWordPointer,
-              startCharIndex: globalCharIndex,
-              endCharIndex: globalCharIndex + fitResult.text.length - 1,
-            );
-
-            final nextTokenPointer = fitResult.endTokenPointerExclusive;
-            final pageHeight = _measureHeight(
-              pageText: fitResult.text,
-              spacingBefore: spacingBefore,
-              spacingAfter: 0.0,
-            );
-            if (_tracingEnabled) {
-              _trace(
-                'page built (partial block) height=${pageHeight.toStringAsFixed(2)} '
-                'tokens=$tokensInPage chars=${fitResult.text.length} '
-                'breakOffset=$nextOffset',
-              );
-            }
-            final nextLineIndex = _findLineIndexForOffset(nextOffset);
-
-            currentLineIndex = nextLineIndex;
-            currentTextOffset = nextOffset;
-            currentTokenPointer = nextTokenPointer;
-
-            final blockCompleted = nextOffset >= block.text.length;
-            if (blockCompleted) {
-              markComplete();
-            }
-
-            final nextCursor = blockCompleted
-                ? null
-                : TextCursorSnapshot(
-                    lineIndex: currentLineIndex,
-                    textOffset: currentTextOffset,
-                    tokenPointer: currentTokenPointer,
-                  );
-
-            return _TextPageResult(
-              page: page,
-              charactersInPage: fitResult.text.length,
-              tokensInPage: tokensInPage,
-              blockCompleted: blockCompleted,
-              nextCursor: nextCursor,
-            );
-          }
-        }
-      }
-
-      currentPageHeight += lineHeight;
-
-      if (isLastLine) {
-        final fitResult = _shrinkToFit(
-          startOffset: pageStartTextIndex,
-          endOffset: block.text.length,
-          startTokenPointer: pageStartTokenIndex,
-          endTokenPointerExclusive: tokenSpans.length,
-          spacingBefore: spacingBefore,
-          spacingAfter: block.spacingAfter,
-        );
-
-        if (fitResult != null && fitResult.text.isNotEmpty) {
-          final tokensInPage =
-              fitResult.endTokenPointerExclusive - pageStartTokenIndex;
-          final startWordPointer = globalWordIndex;
-          final endWordPointer = tokensInPage > 0
-              ? startWordPointer + tokensInPage - 1
-              : startWordPointer - 1;
-
-          final fragments = block.sliceFragments(
-            pageStartTextIndex,
-            block.text.length,
+    // Build page by adding words one by one until overflow
+    // Use word packing to optimize line filling
+    while (currentTokenIndex < tokenSpans.length) {
+      // Include tokens from pageStartTokenIndex to currentTokenIndex (inclusive)
+      final nextEndOffset = tokenSpans[currentTokenIndex].end;
+      
+      final candidateText = block.text.substring(pageStartOffset, nextEndOffset);
+      final isLastToken = currentTokenIndex == tokenSpans.length - 1;
+      final spacingAfter = isLastToken ? block.spacingAfter : 0.0;
+      
+      // Get fragments to account for inline images
+      final candidateFragments = block.sliceFragments(
+        pageStartOffset,
+        nextEndOffset,
+        baseStyle: _baseStyle,
+      );
+      
+      // Measure height with current candidate
+      final currentHeight = _measureHeight(
+        pageText: candidateText,
+        fragments: candidateFragments,
+        spacingBefore: spacingBefore,
+        spacingAfter: spacingAfter,
+      );
+      
+      // Check if it fits
+      final safetyMargin = 2.0;
+      if (currentHeight > effectiveMaxHeight - safetyMargin) {
+        // Doesn't fit, but check if we can pack more words on existing lines
+        // Try adding one more word to see if height increases
+        if (currentTokenIndex + 1 < tokenSpans.length) {
+          final nextTokenEnd = tokenSpans[currentTokenIndex + 1].end;
+          final extendedText = block.text.substring(pageStartOffset, nextTokenEnd);
+          final isExtendedLastToken = currentTokenIndex + 1 == tokenSpans.length - 1;
+          final extendedSpacingAfter = isExtendedLastToken ? block.spacingAfter : 0.0;
+          final extendedFragments = block.sliceFragments(
+            pageStartOffset,
+            nextTokenEnd,
             baseStyle: _baseStyle,
           );
-
-          final page = PageContent(
-            blocks: [
-              TextPageBlock(
-                text: fitResult.text,
-                fragments: fragments,
-                textAlign: block.textAlign,
-                baseStyle: _baseStyle,
-                spacingBefore: spacingBefore,
-                spacingAfter: block.spacingAfter,
-                lineHeight: block.lineHeight,
-              ),
-            ],
-            chapterIndex: block.chapterIndex,
-            startWordIndex: startWordPointer,
-            endWordIndex: endWordPointer,
-            startCharIndex: globalCharIndex,
-            endCharIndex: globalCharIndex + fitResult.text.length - 1,
+          final extendedHeight = _measureHeight(
+            pageText: extendedText,
+            fragments: extendedFragments,
+            spacingBefore: spacingBefore,
+            spacingAfter: extendedSpacingAfter,
           );
-
-          markComplete();
-
-          if (_tracingEnabled) {
-            final pageHeight = _measureHeight(
-              pageText: fitResult.text,
-              spacingBefore: spacingBefore,
-              spacingAfter: block.spacingAfter,
-            );
-            _trace(
-              'page built (block end) height=${pageHeight.toStringAsFixed(2)} '
-              'tokens=$tokensInPage chars=${fitResult.text.length}',
-            );
+          
+          // If height didn't increase (within tolerance), word fits on existing line
+          if ((extendedHeight - currentHeight).abs() < 0.5) {
+            // Height stayed same - word fits on existing line, keep it
+            currentTokenIndex++;
+            continue;
           }
-
-          return _TextPageResult(
-            page: page,
-            charactersInPage: fitResult.text.length,
-            tokensInPage: tokensInPage,
-            blockCompleted: true,
-            nextCursor: null,
-          );
+          
+          // Height increased - check if it still fits
+          if (extendedHeight <= effectiveMaxHeight - safetyMargin) {
+            // New line created but still fits
+            currentTokenIndex++;
+            continue;
+          }
         }
+        // Can't fit more, stop
+        break;
       }
+      
+      // It fits, move to next token
+      currentTokenIndex++;
+    }
+
+    // Build page with the words that fit
+    if (currentTokenIndex > pageStartTokenIndex) {
+      // After loop, currentTokenIndex points to first token that doesn't fit
+      // So we include tokens from pageStartTokenIndex to currentTokenIndex - 1
+      final pageEndOffset = currentTokenIndex > 0 && currentTokenIndex <= tokenSpans.length
+          ? tokenSpans[currentTokenIndex - 1].end
+          : block.text.length;
+
+      final pageText = block.text.substring(pageStartOffset, pageEndOffset);
+      final tokensInPage = currentTokenIndex - pageStartTokenIndex;
+      final isLastToken = currentTokenIndex >= tokenSpans.length;
+      final spacingAfter = isLastToken ? block.spacingAfter : 0.0;
+
+      final fragments = block.sliceFragments(
+        pageStartOffset,
+        pageEndOffset,
+        baseStyle: _baseStyle,
+      );
+
+      final startWordPointer = globalWordIndex;
+      final endWordPointer = tokensInPage > 0
+          ? startWordPointer + tokensInPage - 1
+          : startWordPointer - 1;
+
+      final page = PageContent(
+        blocks: [
+          TextPageBlock(
+            text: pageText,
+            fragments: fragments,
+            textAlign: block.textAlign,
+            baseStyle: _baseStyle,
+            spacingBefore: spacingBefore,
+            spacingAfter: spacingAfter,
+            lineHeight: block.lineHeight,
+          ),
+        ],
+        chapterIndex: block.chapterIndex,
+        startWordIndex: startWordPointer,
+        endWordIndex: endWordPointer,
+        startCharIndex: globalCharIndex,
+        endCharIndex: globalCharIndex + pageText.length - 1,
+      );
+
+      // Update state
+      final nextTokenPointer = currentTokenIndex;
+      final nextOffset = pageEndOffset;
+      final nextLineIndex = _findLineIndexForOffset(nextOffset);
+
+      currentLineIndex = nextLineIndex;
+      currentTextOffset = nextOffset;
+      currentTokenPointer = nextTokenPointer;
+
+      final blockCompleted = nextOffset >= block.text.length;
+      if (blockCompleted) {
+        markComplete();
+      }
+
+      if (_tracingEnabled) {
+        final pageHeight = _measureHeight(
+          pageText: pageText,
+          fragments: fragments,
+          spacingBefore: spacingBefore,
+          spacingAfter: spacingAfter,
+        );
+        _trace(
+          'page built height=${pageHeight.toStringAsFixed(2)} '
+          'tokens=$tokensInPage chars=${pageText.length} '
+          'breakOffset=$nextOffset',
+        );
+      }
+
+      final nextCursor = blockCompleted
+          ? null
+          : TextCursorSnapshot(
+              lineIndex: currentLineIndex,
+              textOffset: currentTextOffset,
+              tokenPointer: currentTokenPointer,
+            );
+
+      return _TextPageResult(
+        page: page,
+        charactersInPage: pageText.length,
+        tokensInPage: tokensInPage,
+        blockCompleted: blockCompleted,
+        nextCursor: nextCursor,
+      );
+    }
+
+    // Edge case: no words fit (shouldn't happen, but handle it)
+    // If even one word doesn't fit, we still need to place it
+    if (pageStartTokenIndex < tokenSpans.length) {
+      final singleToken = tokenSpans[pageStartTokenIndex];
+      final pageText = block.text.substring(pageStartOffset, singleToken.end);
+      final isLastToken = pageStartTokenIndex == tokenSpans.length - 1;
+      final spacingAfter = isLastToken ? block.spacingAfter : 0.0;
+
+      final fragments = block.sliceFragments(
+        pageStartOffset,
+        singleToken.end,
+        baseStyle: _baseStyle,
+      );
+
+      final page = PageContent(
+        blocks: [
+          TextPageBlock(
+            text: pageText,
+            fragments: fragments,
+            textAlign: block.textAlign,
+            baseStyle: _baseStyle,
+            spacingBefore: spacingBefore,
+            spacingAfter: spacingAfter,
+            lineHeight: block.lineHeight,
+          ),
+        ],
+        chapterIndex: block.chapterIndex,
+        startWordIndex: globalWordIndex,
+        endWordIndex: globalWordIndex,
+        startCharIndex: globalCharIndex,
+        endCharIndex: globalCharIndex + pageText.length - 1,
+      );
+
+      final nextTokenPointer = pageStartTokenIndex + 1;
+      final nextOffset = singleToken.end;
+      final nextLineIndex = _findLineIndexForOffset(nextOffset);
+
+      currentLineIndex = nextLineIndex;
+      currentTextOffset = nextOffset;
+      currentTokenPointer = nextTokenPointer;
+
+      final blockCompleted = nextOffset >= block.text.length;
+      if (blockCompleted) {
+        markComplete();
+      }
+
+      final nextCursor = blockCompleted
+          ? null
+          : TextCursorSnapshot(
+              lineIndex: currentLineIndex,
+              textOffset: currentTextOffset,
+              tokenPointer: currentTokenPointer,
+            );
+
+      return _TextPageResult(
+        page: page,
+        charactersInPage: pageText.length,
+        tokensInPage: 1,
+        blockCompleted: blockCompleted,
+        nextCursor: nextCursor,
+      );
     }
 
     markComplete();
     return null;
   }
 
-  _FitResult? _shrinkToFit({
-    required int startOffset,
-    required int endOffset,
-    required int startTokenPointer,
-    required int endTokenPointerExclusive,
-    required double spacingBefore,
-    required double spacingAfter,
+  _TextPageResult? buildPreviousPage({
+    required int globalCharIndex,
+    required int globalWordIndex,
+    required bool isLastBlock,
   }) {
-    int currentEndOffset = endOffset;
-    int currentEndTokenPointerExclusive = endTokenPointerExclusive;
+    if (block.text.isEmpty || currentTokenPointer <= 0) {
+      return null;
+    }
 
-    while (currentEndOffset > startOffset) {
-      final pageText = block.text.substring(startOffset, currentEndOffset);
-      if (_fitsWithinHeight(
-        pageText: pageText,
+    // No forced spacing - text should flow continuously
+    final spacingBefore = 0.0;
+    final pageEndOffset = currentTextOffset;
+    final pageEndTokenIndex = currentTokenPointer;
+    int currentTokenIndex = pageEndTokenIndex - 1;
+
+    // Build page by adding words backward one by one until overflow
+    // Use word packing to optimize line filling
+    while (currentTokenIndex >= 0) {
+      final prevTokenIndex = currentTokenIndex - 1;
+      final prevStartOffset = prevTokenIndex >= 0
+          ? tokenSpans[prevTokenIndex].start
+          : 0;
+
+      final candidateText = block.text.substring(prevStartOffset, pageEndOffset);
+      final isFirstToken = prevTokenIndex < 0;
+      final spacingAfter = isFirstToken ? block.spacingAfter : 0.0;
+      
+      // Get fragments to account for inline images
+      final candidateFragments = block.sliceFragments(
+        prevStartOffset,
+        pageEndOffset,
+        baseStyle: _baseStyle,
+      );
+
+      // Measure height with current candidate
+      final currentHeight = _measureHeight(
+        pageText: candidateText,
+        fragments: candidateFragments,
         spacingBefore: spacingBefore,
         spacingAfter: spacingAfter,
-      )) {
-        return _FitResult(
-          text: pageText,
-          endOffset: currentEndOffset,
-          endTokenPointerExclusive: currentEndTokenPointerExclusive,
-        );
-      }
-
-      if (currentEndTokenPointerExclusive <= startTokenPointer) {
+      );
+      
+      // Check if it fits
+      final safetyMargin = 2.0;
+      if (currentHeight > effectiveMaxHeight - safetyMargin) {
+        // Doesn't fit, but check if we can pack more words on existing lines
+        // Try adding one more word (going further back) to see if height increases
+        if (prevTokenIndex >= 0) {
+          final furtherPrevTokenIndex = prevTokenIndex - 1;
+          final furtherPrevStartOffset = furtherPrevTokenIndex >= 0
+              ? tokenSpans[furtherPrevTokenIndex].start
+              : 0;
+          final extendedText = block.text.substring(furtherPrevStartOffset, pageEndOffset);
+          final isExtendedFirstToken = furtherPrevTokenIndex < 0;
+          final extendedSpacingAfter = isExtendedFirstToken ? block.spacingAfter : 0.0;
+          final extendedFragments = block.sliceFragments(
+            furtherPrevStartOffset,
+            pageEndOffset,
+            baseStyle: _baseStyle,
+          );
+          final extendedHeight = _measureHeight(
+            pageText: extendedText,
+            fragments: extendedFragments,
+            spacingBefore: spacingBefore,
+            spacingAfter: extendedSpacingAfter,
+          );
+          
+          // If height didn't increase (within tolerance), word fits on existing line
+          if ((extendedHeight - currentHeight).abs() < 0.5) {
+            // Height stayed same - word fits on existing line, keep it
+            currentTokenIndex = prevTokenIndex;
+            continue;
+          }
+          
+          // Height increased - check if it still fits
+          if (extendedHeight <= effectiveMaxHeight - safetyMargin) {
+            // New line created but still fits
+            currentTokenIndex = prevTokenIndex;
+            continue;
+          }
+        }
+        // Can't fit more, stop
         break;
       }
 
-      currentEndTokenPointerExclusive -= 1;
-      currentEndOffset = currentEndTokenPointerExclusive > startTokenPointer
-          ? tokenSpans[currentEndTokenPointerExclusive - 1].end
-          : startOffset;
+      // It fits, continue to previous word
+      currentTokenIndex = prevTokenIndex;
+    }
+
+    // Build page with the words that fit
+    if (currentTokenIndex < pageEndTokenIndex - 1) {
+      final pageStartOffset = currentTokenIndex >= 0
+          ? tokenSpans[currentTokenIndex].start
+          : 0;
+
+      final pageText = block.text.substring(pageStartOffset, pageEndOffset);
+      final tokensInPage = pageEndTokenIndex - currentTokenIndex - 1;
+      final isFirstToken = currentTokenIndex < 0;
+      final spacingAfter = isFirstToken ? block.spacingAfter : 0.0;
+
+      final fragments = block.sliceFragments(
+        pageStartOffset,
+        pageEndOffset,
+        baseStyle: _baseStyle,
+      );
+
+      final endWordPointer = globalWordIndex;
+      final startWordPointer = tokensInPage > 0
+          ? endWordPointer - tokensInPage + 1
+          : endWordPointer;
+
+      final page = PageContent(
+        blocks: [
+          TextPageBlock(
+            text: pageText,
+            fragments: fragments,
+            textAlign: block.textAlign,
+            baseStyle: _baseStyle,
+            spacingBefore: spacingBefore,
+            spacingAfter: spacingAfter,
+            lineHeight: block.lineHeight,
+          ),
+        ],
+        chapterIndex: block.chapterIndex,
+        startWordIndex: startWordPointer,
+        endWordIndex: endWordPointer,
+        startCharIndex: globalCharIndex - pageText.length + 1,
+        endCharIndex: globalCharIndex,
+      );
+
+      // Update state
+      final nextTokenPointer = currentTokenIndex + 1;
+      final nextOffset = pageStartOffset;
+      final nextLineIndex = _findLineIndexForOffset(nextOffset);
+
+      currentLineIndex = nextLineIndex;
+      currentTextOffset = nextOffset;
+      currentTokenPointer = nextTokenPointer;
+
+      if (_tracingEnabled) {
+        final pageHeight = _measureHeight(
+          pageText: pageText,
+          fragments: fragments,
+          spacingBefore: spacingBefore,
+          spacingAfter: spacingAfter,
+        );
+        _trace(
+          'previous page built height=${pageHeight.toStringAsFixed(2)} '
+          'tokens=$tokensInPage chars=${pageText.length} '
+          'startOffset=$nextOffset',
+        );
+      }
+
+      final nextCursor = nextTokenPointer <= 0
+          ? null
+          : TextCursorSnapshot(
+              lineIndex: currentLineIndex,
+              textOffset: currentTextOffset,
+              tokenPointer: currentTokenPointer,
+            );
+
+      return _TextPageResult(
+        page: page,
+        charactersInPage: pageText.length,
+        tokensInPage: tokensInPage,
+        blockCompleted: nextTokenPointer <= 0,
+        nextCursor: nextCursor,
+      );
+    }
+
+    // Edge case: no words fit backward (shouldn't happen, but handle it)
+    // If even one word doesn't fit, we still need to place it
+    if (pageEndTokenIndex > 0) {
+      final singleToken = tokenSpans[pageEndTokenIndex - 1];
+      final pageText = block.text.substring(singleToken.start, pageEndOffset);
+      final isFirstToken = pageEndTokenIndex == 1;
+      final spacingAfter = isFirstToken ? block.spacingAfter : 0.0;
+
+      final fragments = block.sliceFragments(
+        singleToken.start,
+        pageEndOffset,
+        baseStyle: _baseStyle,
+      );
+
+      final page = PageContent(
+        blocks: [
+          TextPageBlock(
+            text: pageText,
+            fragments: fragments,
+            textAlign: block.textAlign,
+            baseStyle: _baseStyle,
+            spacingBefore: spacingBefore,
+            spacingAfter: spacingAfter,
+            lineHeight: block.lineHeight,
+          ),
+        ],
+        chapterIndex: block.chapterIndex,
+        startWordIndex: globalWordIndex,
+        endWordIndex: globalWordIndex,
+        startCharIndex: globalCharIndex - pageText.length + 1,
+        endCharIndex: globalCharIndex,
+      );
+
+      final nextTokenPointer = pageEndTokenIndex - 1;
+      final nextOffset = singleToken.start;
+      final nextLineIndex = _findLineIndexForOffset(nextOffset);
+
+      currentLineIndex = nextLineIndex;
+      currentTextOffset = nextOffset;
+      currentTokenPointer = nextTokenPointer;
+
+      final nextCursor = nextTokenPointer <= 0
+          ? null
+          : TextCursorSnapshot(
+              lineIndex: currentLineIndex,
+              textOffset: currentTextOffset,
+              tokenPointer: currentTokenPointer,
+            );
+
+      return _TextPageResult(
+        page: page,
+        charactersInPage: pageText.length,
+        tokensInPage: 1,
+        blockCompleted: nextTokenPointer <= 0,
+        nextCursor: nextCursor,
+      );
     }
 
     return null;
@@ -1041,53 +1215,89 @@ class _TextBlockState {
 
   double _measureHeight({
     required String pageText,
+    List<InlineSpanFragment>? fragments,
     required double spacingBefore,
     required double spacingAfter,
   }) {
-    if (pageText.isEmpty) {
+    if (pageText.isEmpty && (fragments == null || fragments.isEmpty)) {
       return spacingBefore + spacingAfter;
     }
 
+    // Build span with fragments if provided (to account for inline images)
+    final InlineSpan span;
+    final List<PlaceholderDimensions> placeholderDimensions = [];
+    
+    if (fragments != null && fragments.isNotEmpty) {
+      final children = <InlineSpan>[];
+      for (final fragment in fragments) {
+        if (fragment.type == InlineFragmentType.text) {
+          children.add(TextSpan(text: fragment.text, style: fragment.style));
+        } else if (fragment.type == InlineFragmentType.image && fragment.image != null) {
+          final image = fragment.image!;
+          final size = _resolvePlaceholderSize(image);
+          placeholderDimensions.add(
+            PlaceholderDimensions(
+              size: size,
+              alignment: image.alignment,
+              baseline: image.baseline,
+              baselineOffset: image.baseline == TextBaseline.alphabetic ? size.height : null,
+            ),
+          );
+          children.add(
+            WidgetSpan(
+              alignment: image.alignment,
+              baseline: image.baseline,
+              child: SizedBox(width: size.width, height: size.height),
+            ),
+          );
+        }
+      }
+      span = TextSpan(style: _baseStyle, children: children);
+    } else {
+      span = TextSpan(text: pageText, style: _baseStyle);
+    }
+
     final painter = TextPainter(
-      text: TextSpan(text: pageText, style: _baseStyle),
+      text: span,
       textAlign: block.textAlign,
       textDirection: TextDirection.ltr,
       textHeightBehavior: _textHeightBehavior,
       textScaler: _textScaler,
     );
+    
+    if (placeholderDimensions.isNotEmpty) {
+      painter.setPlaceholderDimensions(placeholderDimensions);
+    }
+    
     painter.layout(maxWidth: _maxWidth);
-
-    final metrics = painter.computeLineMetrics();
-    if (metrics.isEmpty) {
-      return spacingBefore + spacingAfter;
-    }
-
-    double totalHeight = spacingBefore;
-    for (final line in metrics) {
-      totalHeight += line.height;
-    }
-    totalHeight += spacingAfter;
-    return totalHeight;
+    final textHeight = painter.height;
+    
+    return spacingBefore + textHeight + spacingAfter;
   }
 
   bool _fitsWithinHeight({
     required String pageText,
+    List<InlineSpanFragment>? fragments,
     required double spacingBefore,
     required double spacingAfter,
   }) {
     final totalHeight = _measureHeight(
       pageText: pageText,
+      fragments: fragments,
       spacingBefore: spacingBefore,
       spacingAfter: spacingAfter,
     );
 
-    final fits =
-        totalHeight <= effectiveMaxHeight + LineMetricsPaginationEngine._heightTolerance;
+    // Safety margin for rounding errors and measurement accuracy
+    // painter.height already accounts for descenders
+    final safetyMargin = 2.0;
+    final fits = totalHeight <= effectiveMaxHeight - safetyMargin;
+    
     if (_tracingEnabled) {
       _trace(
         'fit height=${totalHeight.toStringAsFixed(2)} '
         'limit=${effectiveMaxHeight.toStringAsFixed(2)} '
-        'tolerance=${LineMetricsPaginationEngine._heightTolerance.toStringAsFixed(2)} '
+        'safetyMargin=${safetyMargin.toStringAsFixed(2)} '
         'textLength=${pageText.length}',
       );
     }
@@ -1216,14 +1426,3 @@ class _TextPageResult {
   final TextCursorSnapshot? nextCursor;
 }
 
-class _FitResult {
-  const _FitResult({
-    required this.text,
-    required this.endOffset,
-    required this.endTokenPointerExclusive,
-  });
-
-  final String text;
-  final int endOffset;
-  final int endTokenPointerExclusive;
-}

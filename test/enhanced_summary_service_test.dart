@@ -23,7 +23,7 @@ class _RecordingSummaryService implements SummaryService {
     VoidCallback? onCacheHit,
   }) async {
     prompts.add(prompt);
-    return 'summary-${prompts.length}';
+    return 'Summary content for testing that is long enough (${prompts.length}).';
   }
 
   @override
@@ -73,11 +73,11 @@ void main() {
     );
 
     final chunkPrompt = recordingService.prompts.lastWhere(
-      (prompt) => prompt.contains('Text to summarize:'),
+      (prompt) => prompt.contains('Text:'),
     );
-    final promptSegments = chunkPrompt.split('Text to summarize:');
+    final promptSegments = chunkPrompt.split('Text:');
     expect(promptSegments.length > 1, true);
-    final textSection = promptSegments[1].split('Detailed summary:').first.trim();
+    final textSection = promptSegments[1].split('Summary:').first.trim();
 
     expect(textSection.endsWith('finale'), isTrue);
   });

@@ -14,5 +14,8 @@
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:colorAccent">@color/brain_pink</item>
+        <item name="android:colorControlActivated">@color/brain_pink</item>
+        <item name="android:textColorHighlight">@color/brain_pink_light</item>
     </style>
 </resources>

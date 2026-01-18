@@ -979,6 +979,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Delete'**
   String get deleteTranslationConfirm;
+
+  /// Message shown when the app is recalculating page layout
+  ///
+  /// In en, this message translates to:
+  /// **'Repaginating...'**
+  String get repaginating;
 }
 
 class _AppLocalizationsDelegate
