@@ -7,6 +7,7 @@ class ReadingProgress {
   final double? progress;
   final int? currentCharacterIndex; // Exact character position for pagination engine
   final int? lastVisibleCharacterIndex; // Last character that was visible on screen
+  final int? currentPageIndex; // Current page index (for WebView reader - more reliable than calculating from percentage)
   // Layout parameters for fast startup and foldable phone support
   final double? maxWidth;
   final double? maxHeight;
@@ -23,6 +24,7 @@ class ReadingProgress {
     this.progress,
     this.currentCharacterIndex,
     this.lastVisibleCharacterIndex,
+    this.currentPageIndex,
     this.maxWidth,
     this.maxHeight,
     this.fontSize,
@@ -40,6 +42,7 @@ class ReadingProgress {
       'progress': progress,
       'currentCharacterIndex': currentCharacterIndex,
       'lastVisibleCharacterIndex': lastVisibleCharacterIndex,
+      'currentPageIndex': currentPageIndex,
       'maxWidth': maxWidth,
       'maxHeight': maxHeight,
       'fontSize': fontSize,
@@ -58,6 +61,7 @@ class ReadingProgress {
       progress: (json['progress'] as num?)?.toDouble(),
       currentCharacterIndex: json['currentCharacterIndex'] as int?,
       lastVisibleCharacterIndex: json['lastVisibleCharacterIndex'] as int?,
+      currentPageIndex: json['currentPageIndex'] as int?,
       maxWidth: (json['maxWidth'] as num?)?.toDouble(),
       maxHeight: (json['maxHeight'] as num?)?.toDouble(),
       fontSize: (json['fontSize'] as num?)?.toDouble(),
@@ -75,6 +79,7 @@ class ReadingProgress {
     double? progress,
     int? currentCharacterIndex,
     int? lastVisibleCharacterIndex,
+    int? currentPageIndex,
     double? maxWidth,
     double? maxHeight,
     double? fontSize,
@@ -91,6 +96,7 @@ class ReadingProgress {
       currentCharacterIndex: currentCharacterIndex ?? this.currentCharacterIndex,
       lastVisibleCharacterIndex:
           lastVisibleCharacterIndex ?? this.lastVisibleCharacterIndex,
+      currentPageIndex: currentPageIndex ?? this.currentPageIndex,
       maxWidth: maxWidth ?? this.maxWidth,
       maxHeight: maxHeight ?? this.maxHeight,
       fontSize: fontSize ?? this.fontSize,
