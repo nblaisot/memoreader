@@ -614,20 +614,34 @@ class _ReaderScreenState extends State<ReaderScreen>
             // Close chapter dialog after navigation completes
             
             // Restore saved page index or percentage
+            // CRITICAL: Check if layout matches (screen size, font, etc.) before using page index
             final savedPageIndex = _savedProgress?.currentPageIndex;
             final pendingRestore = _pendingRestorePercentage;
             
-            if (savedPageIndex != null && savedPageIndex >= 0 && savedPageIndex < engine.estimatedTotalPages) {
-              // BEST: Use saved page index directly
+            // Check if layout matches - if screen size changed, page index won't be accurate
+            bool layoutMatches = false;
+            if (_savedProgress != null && metrics != null) {
+              layoutMatches = _layoutsMatch(_savedProgress, metrics);
+            }
+            
+            if (savedPageIndex != null && savedPageIndex >= 0 && savedPageIndex < engine.estimatedTotalPages && layoutMatches) {
+              // BEST: Use saved page index directly - layout matches, so page index is accurate!
               _pendingRestorePercentage = null;
               final targetPage = engine.getPage(savedPageIndex);
               if (targetPage != null && targetPage.startCharIndex != initialPage?.startCharIndex) {
-                debugPrint('[ReaderScreen] Restoring to saved page index: $savedPageIndex (current: ${initialPage != null ? targetPageIndex : "none"})');
+                debugPrint('[ReaderScreen] Layout matches - restoring to saved page index: $savedPageIndex');
                 _scheduleRepagination(initialCharIndex: targetPage.startCharIndex);
               } else {
                 debugPrint('[ReaderScreen] Already at correct page index: $savedPageIndex');
               }
             } else if (pendingRestore != null && updatedTotalChars > 0) {
+              // FALLBACK: Use percentage if layout changed or page index not available
+              // Percentage works across different screen sizes (foldable phone support)
+              _pendingRestorePercentage = null;
+              
+              if (savedPageIndex != null && !layoutMatches) {
+                debugPrint('[ReaderScreen] Layout changed (screen size/font different) - using percentage instead of page index');
+              }
               // FALLBACK: Use percentage if page index not available
               _pendingRestorePercentage = null;
               final savedPercentage = pendingRestore * 100.0; // Convert to 0-100 range
@@ -1229,7 +1243,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     setState(() {
       _currentPageIndex = update.pageIndex;
       _totalPages = update.pageCount;
-      _totalCharacterCount = totalChars;
+      _totalCharacterCount = totalChars; // CRITICAL: Set this FIRST
       _currentCharacterIndex = startChar;
       _lastVisibleCharacterIndex = endChar;
       _progress = progress;
@@ -1261,45 +1275,26 @@ class _ReaderScreenState extends State<ReaderScreen>
       }
     }
 
-
-    if (kDebugMode) {
-      final previousEnd = _lastVisibleCharacterIndex;
-      if (previousEnd != null) {
-        final gap = startChar - previousEnd - 1;
-        if (gap > 1) {
-          debugPrint('[WebView] Page gap detected: +$gap chars (prevEnd=$previousEnd start=$startChar page=${update.pageIndex})');
-        } else if (gap < -1) {
-          debugPrint('[WebView] Page overlap detected: ${gap.abs()} chars (prevEnd=$previousEnd start=$startChar page=${update.pageIndex})');
-        }
-      }
-    }
-
-    setState(() {
-      _currentPageIndex = update.pageIndex;
-      _totalPages = update.pageCount;
-      _totalCharacterCount = totalChars; // CRITICAL: Set this FIRST
-      _currentCharacterIndex = startChar;
-      _lastVisibleCharacterIndex = endChar;
-      _progress = progress;
-      _currentChapterIndex = _resolveChapterIndexForChar(startChar);
-      _showProgressBar = false;
-      _isNavigating = false;
-      _navigatingToChapterIndex = null;
-    });
-
     // Restore from saved page index - MOST RELIABLE method!
-    // Use saved page index if available (direct navigation), otherwise fall back to percentage
+    // CRITICAL: Check if layout matches (screen size, font, etc.) before using page index
+    // If layout changed (e.g., foldable phone opened/closed), use percentage instead
     if (!_hasRestoredProgress && _webViewController.isReady && update.pageCount > 0) {
       final savedPageIndex = _savedProgress?.currentPageIndex;
       final savedProgress = _pendingWebViewProgress;
       
-      if (savedPageIndex != null && savedPageIndex >= 0 && savedPageIndex < update.pageCount) {
-        // BEST: Use saved page index directly - no calculation needed!
+      // Check if layout matches - if screen size changed, page index won't be accurate
+      bool layoutMatches = false;
+      if (_savedProgress != null && _currentPageMetrics != null) {
+        layoutMatches = _layoutsMatch(_savedProgress, _currentPageMetrics!);
+      }
+      
+      if (savedPageIndex != null && savedPageIndex >= 0 && savedPageIndex < update.pageCount && layoutMatches) {
+        // BEST: Use saved page index directly - layout matches, so page index is accurate!
         _pendingWebViewProgress = null;
         _hasRestoredProgress = true;
         
         debugPrint('[WebView] ===== RESTORATION START (PAGE INDEX) =====');
-        debugPrint('[WebView] Restoring to saved page index: $savedPageIndex (current: ${update.pageIndex}, total: ${update.pageCount})');
+        debugPrint('[WebView] Layout matches - using page index: $savedPageIndex (current: ${update.pageIndex}, total: ${update.pageCount})');
         
         if (savedPageIndex != update.pageIndex) {
           setState(() {
@@ -1311,14 +1306,20 @@ class _ReaderScreenState extends State<ReaderScreen>
           debugPrint('[WebView] Already at correct page, no navigation needed');
         }
       } else if (savedProgress != null && _totalCharacterCount > 0 && update.pageCount > 1) {
-        // FALLBACK: Use percentage if page index not available
+        // FALLBACK: Use percentage if layout changed or page index not available
+        // Percentage works across different screen sizes (foldable phone support)
         _pendingWebViewProgress = null;
         _hasRestoredProgress = true;
         
         final savedPercentage = savedProgress.clamp(0.0, 1.0) * 100.0;
         
-        debugPrint('[WebView] ===== RESTORATION START (PERCENTAGE FALLBACK) =====');
-        debugPrint('[WebView] No saved page index, using percentage: ${savedPercentage.toStringAsFixed(1)}%');
+        if (savedPageIndex != null && !layoutMatches) {
+          debugPrint('[WebView] ===== RESTORATION START (PERCENTAGE - LAYOUT CHANGED) =====');
+          debugPrint('[WebView] Layout changed (screen size/font different) - using percentage instead of page index');
+        } else {
+          debugPrint('[WebView] ===== RESTORATION START (PERCENTAGE FALLBACK) =====');
+          debugPrint('[WebView] No saved page index, using percentage: ${savedPercentage.toStringAsFixed(1)}%');
+        }
         
         _jumpToPercentage(savedPercentage);
         debugPrint('[WebView] ===== RESTORATION COMPLETE (PERCENTAGE) =====');
