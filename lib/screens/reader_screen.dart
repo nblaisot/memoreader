@@ -25,8 +25,8 @@ import '../services/prompt_config_service.dart';
 import '../services/saved_translation_database_service.dart';
 import '../services/rag_query_service.dart';
 import '../services/rag_indexing_service.dart';
+import '../services/latest_events_service.dart';
 import '../models/rag_index_progress.dart';
-import '../services/enhanced_summary_service.dart';
 import '../models/saved_translation.dart';
 import '../utils/html_text_extractor.dart';
 import '../utils/css_resolver.dart';
@@ -142,6 +142,8 @@ class _ReaderScreenState extends State<ReaderScreen>
   static const Duration _quickTapThreshold = Duration(milliseconds: 300);
   // Pre-instantiated selection controls to avoid lazy loading and JIT delays
   ImmediateTextSelectionControls? _sharedSelectionControls;
+  // Track if auto-show latest events has been triggered for this book session
+  bool _hasTriggeredAutoShowLatestEvents = false;
 
   bool get _useWebViewReader {
     if (kIsWeb) {
@@ -423,6 +425,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         _lastWebViewActionLabel = null;
         _lastWebViewActionEnabled = null;
         _isLoading = false;
+        _hasTriggeredAutoShowLatestEvents = false; // Reset for new book load
       });
 
       // Use the saved progress percentage for restoration (what user sees at bottom)
@@ -1330,6 +1333,18 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     _scheduleWebViewProgressSave();
     _closeChapterDialog();
+    
+    // Trigger auto-show latest events after first page load
+    if (!_hasTriggeredAutoShowLatestEvents && mounted) {
+      _hasTriggeredAutoShowLatestEvents = true;
+      // Use a small delay to ensure UI is fully rendered
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _checkAutoShowLatestEvents();
+        }
+      });
+    }
+    
     if (kDebugMode) {
       unawaited(_logWebViewPageText(update));
     }
@@ -2201,6 +2216,9 @@ class _ReaderScreenState extends State<ReaderScreen>
       case ReaderMenuAction.askQuestion:
         _showRagQuestionDialog();
         break;
+      case ReaderMenuAction.showLatestEvents:
+        _showLatestEventsDialog();
+        break;
       case ReaderMenuAction.returnToLibrary:
         unawaited(_returnToLibrary());
         break;
@@ -2248,6 +2266,64 @@ class _ReaderScreenState extends State<ReaderScreen>
         l10n: l10n,
       ),
     );
+  }
+
+  Future<void> _showLatestEventsDialog() async {
+    if (!mounted) return;
+
+    // Check if book is indexed
+    final isIndexed = await _ragQueryService.isBookIndexed(widget.book.id);
+    if (!isIndexed) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.ragNotIndexed),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // Show latest events dialog
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _LatestEventsDialog(
+        bookId: widget.book.id,
+        currentCharPosition: _currentCharacterIndex,
+        summaryService: _summaryService,
+        l10n: l10n,
+      ),
+    );
+  }
+
+  /// Check if we should auto-show the latest events dialog
+  Future<void> _checkAutoShowLatestEvents() async {
+    if (!mounted) return;
+
+    // Check if auto-show is enabled for this book
+    final shouldShow = await _settingsService.getAutoShowLatestEvents(widget.book.id);
+    if (!shouldShow) return;
+
+    // Check if book is indexed
+    final isIndexed = await _ragQueryService.isBookIndexed(widget.book.id);
+    if (!isIndexed) return;
+
+    // Check if there are enough chunks to show
+    final latestEventsService = LatestEventsService();
+    final hasEnough = await latestEventsService.hasEnoughChunks(
+      bookId: widget.book.id,
+      currentCharPosition: _currentCharacterIndex,
+      minChunks: 1,
+    );
+    
+    if (!hasEnough) return;
+
+    // Show the dialog automatically
+    if (!mounted) return;
+    await _showLatestEventsDialog();
   }
 
   Future<void> _confirmAndDeleteSummaries() async {
@@ -5408,3 +5484,196 @@ class _RagQuestionDialogState extends State<_RagQuestionDialog> {
     );
   }
 }
+
+/// Dialog for showing the latest events summary
+class _LatestEventsDialog extends StatefulWidget {
+  const _LatestEventsDialog({
+    required this.bookId,
+    required this.currentCharPosition,
+    required this.summaryService,
+    required this.l10n,
+  });
+
+  final String bookId;
+  final int currentCharPosition;
+  final EnhancedSummaryService? summaryService;
+  final AppLocalizations l10n;
+
+  @override
+  State<_LatestEventsDialog> createState() => _LatestEventsDialogState();
+}
+
+class _LatestEventsDialogState extends State<_LatestEventsDialog> {
+  bool _autoShow = false;
+  bool _isLoading = true;
+  String? _summary;
+  String? _error;
+
+  final LatestEventsService _latestEventsService = LatestEventsService();
+  final SettingsService _settingsService = SettingsService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreference();
+    _generateSummary();
+  }
+
+  Future<void> _loadPreference() async {
+    final autoShow = await _settingsService.getAutoShowLatestEvents(widget.bookId);
+    if (mounted) {
+      setState(() {
+        _autoShow = autoShow;
+      });
+    }
+  }
+
+  Future<void> _generateSummary() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      _summary = null;
+    });
+
+    try {
+      final summaryService = widget.summaryService;
+      if (summaryService == null) {
+        throw Exception('Summary service not available');
+      }
+
+      // EnhancedSummaryService wraps a SummaryService, get the underlying service
+      final baseService = summaryService.baseService;
+
+      final summary = await _latestEventsService.generateLatestEventsSummary(
+        bookId: widget.bookId,
+        currentCharPosition: widget.currentCharPosition,
+        summaryService: baseService,
+        numChunks: 10,
+      );
+
+      if (mounted) {
+        setState(() {
+          _summary = summary;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[LatestEvents] Error generating summary: $e');
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _toggleAutoShow(bool value) async {
+    setState(() {
+      _autoShow = value;
+    });
+    await _settingsService.setAutoShowLatestEvents(widget.bookId, value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = widget.l10n;
+
+    return AlertDialog(
+      title: Text(l10n.ragLatestEventsTitle),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Auto-show toggle at the top
+              SwitchListTile(
+                title: Text(l10n.ragAutoShowLatestEvents),
+                subtitle: Text(
+                  l10n.ragAutoShowDescription,
+                  style: theme.textTheme.bodySmall,
+                ),
+                value: _autoShow,
+                onChanged: _toggleAutoShow,
+                contentPadding: EdgeInsets.zero,
+              ),
+              const Divider(),
+              const SizedBox(height: 16),
+              
+              // Loading state
+              if (_isLoading) ...[
+                const Center(child: CircularProgressIndicator()),
+                const SizedBox(height: 16),
+                Center(
+                  child: Text(
+                    l10n.ragLatestEventsGenerating,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              ],
+              
+              // Error state
+              if (_error != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: theme.colorScheme.onErrorContainer),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              
+              // Summary display
+              if (_summary != null) ...[
+                Text(
+                  l10n.ragLatestEventsPrompt,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SelectableText(
+                    _summary!,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+          child: Text(l10n.ok),
+        ),
+      ],
+    );
+  }
+}
+

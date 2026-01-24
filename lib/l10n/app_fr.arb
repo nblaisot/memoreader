@@ -194,8 +194,8 @@
   "summaryProvider": "Fournisseur de résumés",
   "summaryProviderDescription": "Choisissez comment les résumés sont générés",
   "summaryProviderMissing": "Configurez un fournisseur de résumés dans les paramètres pour générer des résumés.",
-  "promptSettings": "Paramètres des prompts",
-  "promptSettingsDescription": "Personnalisez les prompts utilisés pour la génération de résumés. Vous pouvez utiliser des placeholders dans vos prompts : text (pour le texte à résumer), bookTitle (pour le titre du livre), et chapterTitle (pour le titre du chapitre). Écrivez-les avec des accolades dans vos prompts.",
+  "promptSettings": "Paramètres des instructions",
+  "promptSettingsDescription": "Personnalisez les instructions utilisées pour la génération de résumés. Vous pouvez utiliser des variables dans vos instructions : text (pour le texte à résumer), bookTitle (pour le titre du livre), et chapterTitle (pour le titre du chapitre). Écrivez-les avec des accolades dans vos instructions.",
   "textSelectionActionSettings": "Action de sélection de texte",
   "textSelectionActionDescription": "Personnalisez l'action affichée lors de la sélection de texte. Vous pouvez utiliser {text} pour le texte sélectionné et {language} pour la langue de l'application.",
   "textSelectionActionLabelFr": "Libellé de l'action (français)",
@@ -210,27 +210,27 @@
   "summaryConfigurationRequiredTitle": "Configuration requise",
   "summaryConfigurationRequiredBody": "Pour utiliser cette fonctionnalité, vous devez configurer un fournisseur d'IA dans les paramètres. Voulez-vous ouvrir les paramètres maintenant ?",
   "appLanguageName": "Français",
-  "chunkSummaryPrompt": "Prompt de résumé de chunk",
-  "chunkSummaryPromptFr": "Prompt de résumé de chunk (Français)",
-  "chunkSummaryPromptEn": "Prompt de résumé de chunk (Anglais)",
-  "characterExtractionPrompt": "Prompt d'extraction de personnages",
-  "characterExtractionPromptFr": "Prompt d'extraction de personnages (Français)",
-  "characterExtractionPromptEn": "Prompt d'extraction de personnages (Anglais)",
-  "batchSummaryPrompt": "Prompt de résumé par batch",
-  "batchSummaryPromptFr": "Prompt de résumé par batch (Français)",
-  "batchSummaryPromptEn": "Prompt de résumé par batch (Anglais)",
-  "narrativeSynthesisPrompt": "Prompt de synthèse narrative",
-  "narrativeSynthesisPromptFr": "Prompt de synthèse narrative (Français)",
-  "narrativeSynthesisPromptEn": "Prompt de synthèse narrative (Anglais)",
-  "fallbackSummaryPrompt": "Prompt de résumé de fallback",
-  "fallbackSummaryPromptFr": "Prompt de résumé de fallback (Français)",
-  "fallbackSummaryPromptEn": "Prompt de résumé de fallback (Anglais)",
-  "conciseSummaryPrompt": "Prompt de résumé concis",
-  "conciseSummaryPromptFr": "Prompt de résumé concis (Français)",
-  "conciseSummaryPromptEn": "Prompt de résumé concis (Anglais)",
+  "chunkSummaryPrompt": "Instruction de résumé de fragment",
+  "chunkSummaryPromptFr": "Instruction de résumé de fragment (Français)",
+  "chunkSummaryPromptEn": "Instruction de résumé de fragment (Anglais)",
+  "characterExtractionPrompt": "Instruction d'extraction de personnages",
+  "characterExtractionPromptFr": "Instruction d'extraction de personnages (Français)",
+  "characterExtractionPromptEn": "Instruction d'extraction de personnages (Anglais)",
+  "batchSummaryPrompt": "Instruction de résumé par lot",
+  "batchSummaryPromptFr": "Instruction de résumé par lot (Français)",
+  "batchSummaryPromptEn": "Instruction de résumé par lot (Anglais)",
+  "narrativeSynthesisPrompt": "Instruction de synthèse narrative",
+  "narrativeSynthesisPromptFr": "Instruction de synthèse narrative (Français)",
+  "narrativeSynthesisPromptEn": "Instruction de synthèse narrative (Anglais)",
+  "fallbackSummaryPrompt": "Instruction de résumé de secours",
+  "fallbackSummaryPromptFr": "Instruction de résumé de secours (Français)",
+  "fallbackSummaryPromptEn": "Instruction de résumé de secours (Anglais)",
+  "conciseSummaryPrompt": "Instruction de résumé concis",
+  "conciseSummaryPromptFr": "Instruction de résumé concis (Français)",
+  "conciseSummaryPromptEn": "Instruction de résumé concis (Anglais)",
   "resetPrompts": "Réinitialiser aux valeurs par défaut",
-  "promptsReset": "Prompts réinitialisés aux valeurs par défaut",
-  "promptSaved": "Prompt enregistré",
+  "promptsReset": "Instructions réinitialisées aux valeurs par défaut",
+  "promptSaved": "Instruction enregistrée",
   "openAIModel": "OpenAI (GPT)",
   "openAIModelConfigured": "Configuré - Nécessite Internet",
   "openAIModelNotConfigured": "Non configuré - Clé API requise",
@@ -243,7 +243,7 @@
   "settingsSaved": "Paramètres enregistrés",
   "errorSavingSettings": "Erreur lors de l'enregistrement des paramètres",
   "information": "Information",
-  "summarySettingsInfo": "OpenAI et Mistral AI fournissent des résumés rapides et précis mais nécessitent une connexion Internet et une clé API. Configurez votre fournisseur préféré et personnalisez les prompts utilisés pour la génération de résumés.",
+  "summarySettingsInfo": "OpenAI et Mistral AI fournissent des résumés rapides et précis mais nécessitent une connexion Internet et une clé API. Configurez votre fournisseur préféré et personnalisez les instructions utilisées pour la génération de résumés.",
   "generatingSummary": "Génération du résumé...",
   "summaryReset": "Réinitialiser ce résumé",
   "summaryStatusPreparing": "Préparation...",
@@ -306,8 +306,8 @@
   "summaryFromBeginning": "Depuis le début",
   "summarySinceLastTime": "Depuis la dernière fois",
   "summaryCharacters": "Personnages",
-  "horizontalPaddingSaved": "Padding horizontal enregistré. Les modifications s'appliqueront lors de la réouverture d'un livre.",
-  "verticalPaddingSaved": "Padding vertical enregistré. Les modifications s'appliqueront lors de la réouverture d'un livre.",
+  "horizontalPaddingSaved": "Marge horizontale enregistrée. Les modifications s'appliqueront lors de la réouverture d'un livre.",
+  "verticalPaddingSaved": "Marge verticale enregistrée. Les modifications s'appliqueront lors de la réouverture d'un livre.",
   "pronunciation": "Prononciation",
   "@pronunciation": {
     "description": "Libellé pour la section prononciation/romanisation dans le dialogue de traduction"
@@ -360,6 +360,30 @@
   "@ragAskQuestion": {
     "description": "Label de l'option de menu pour la fonctionnalité RAG"
   },
+  "ragLatestEvents": "Quels sont les derniers événements?",
+  "@ragLatestEvents": {
+    "description": "Label de l'option de menu pour afficher les derniers événements"
+  },
+  "ragLatestEventsTitle": "Derniers événements depuis cette position",
+  "@ragLatestEventsTitle": {
+    "description": "Titre de la modal des derniers événements"
+  },
+  "ragLatestEventsPrompt": "Résumé des événements récents",
+  "@ragLatestEventsPrompt": {
+    "description": "Prompt pour le résumé des derniers événements"
+  },
+  "ragAutoShowLatestEvents": "Afficher automatiquement à la réouverture",
+  "@ragAutoShowLatestEvents": {
+    "description": "Label pour le toggle d'affichage automatique"
+  },
+  "ragAutoShowDescription": "Ce résumé s'affichera automatiquement lors de la réouverture du livre ou de l'application",
+  "@ragAutoShowDescription": {
+    "description": "Description du comportement de l'affichage automatique"
+  },
+  "ragLatestEventsGenerating": "Génération du résumé des derniers événements...",
+  "@ragLatestEventsGenerating": {
+    "description": "Message lors de la génération du résumé"
+  },
   "ragIndexingProgress": "Indexation en cours ({percentage}%)",
   "@ragIndexingProgress": {
     "description": "Message de progression de l'indexation RAG",
@@ -409,16 +433,93 @@
   "@ragClearDatabase": {
     "description": "Action des paramètres pour effacer la base de données RAG"
   },
-  "ragClearDatabaseConfirm": "Cela supprimera tous les chunks indexés et les embeddings. Les livres seront ré-indexés automatiquement.",
+  "ragClearDatabaseConfirm": "Cela supprimera tous les fragments indexés et les embeddings. Les livres seront ré-indexés automatiquement.",
   "@ragClearDatabaseConfirm": {
     "description": "Message de confirmation pour effacer la base de données RAG"
   },
-  "ragTopKLabel": "Chunks de contexte RAG",
+  "ragTopKLabel": "Fragments de contexte RAG",
   "@ragTopKLabel": {
-    "description": "Label du réglage pour le nombre de chunks RAG"
+    "description": "Label du réglage pour le nombre de fragments RAG"
   },
-  "ragTopKDescription": "Nombre de chunks pertinents attachés à chaque question.",
+  "ragTopKDescription": "Nombre de fragments pertinents attachés à chaque question.",
   "@ragTopKDescription": {
-    "description": "Description du réglage pour le nombre de chunks RAG"
+    "description": "Description du réglage pour le nombre de fragments RAG"
+  },
+  "ragIndexingCompleted": "Indexation terminée : {chunks} fragments indexés, {apiCalls} appels API",
+  "@ragIndexingCompleted": {
+    "description": "Message affiché lorsque l'indexation RAG est terminée",
+    "placeholders": {
+      "chunks": {
+        "type": "int"
+      },
+      "apiCalls": {
+        "type": "int"
+      }
+    }
+  },
+  "readerMenuTitle": "Options de lecture",
+  "@readerMenuTitle": {
+    "description": "Titre du menu lecteur"
+  },
+  "questionsSectionTitle": "Questions",
+  "@questionsSectionTitle": {
+    "description": "Titre de section pour les actions liées aux questions"
+  },
+  "goToChapter": "Aller au chapitre",
+  "@goToChapter": {
+    "description": "Élément de menu pour naviguer vers un chapitre"
+  },
+  "readerDisplaySettings": "Paramètres d'affichage du lecteur",
+  "@readerDisplaySettings": {
+    "description": "Titre de la section des paramètres d'affichage du lecteur"
+  },
+  "readerDisplaySettingsDescription": "Ajustez les marges de l'écran de lecture. La marge horizontale affecte les bords gauche et droit, la marge verticale affecte les bords haut et bas.",
+  "@readerDisplaySettingsDescription": {
+    "description": "Description des paramètres d'affichage du lecteur"
+  },
+  "horizontalPaddingLabel": "Marge horizontale (gauche/droite) : {value} px",
+  "@horizontalPaddingLabel": {
+    "description": "Label pour le curseur de marge horizontale",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "verticalPaddingLabel": "Marge verticale (haut/bas) : {value} px",
+  "@verticalPaddingLabel": {
+    "description": "Label pour le curseur de marge verticale",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "paddingRangeInfo": "Par défaut : {defaultValue} px. Plage : {min} - {max} px",
+  "@paddingRangeInfo": {
+    "description": "Information sur la valeur par défaut et la plage des marges",
+    "placeholders": {
+      "defaultValue": {
+        "type": "String"
+      },
+      "min": {
+        "type": "String"
+      },
+      "max": {
+        "type": "String"
+      }
+    }
+  },
+  "ragDatabaseTitle": "Base de données RAG",
+  "@ragDatabaseTitle": {
+    "description": "Titre de la section base de données RAG"
+  },
+  "ragDatabaseDescription": "Gérez la base de données RAG (Génération Augmentée par Récupération). Effacer la base de données supprimera tous les fragments indexés et les embeddings. Les livres seront ré-indexés automatiquement.",
+  "@ragDatabaseDescription": {
+    "description": "Description de la section base de données RAG"
+  },
+  "debugRagChunks": "Déboguer les fragments RAG",
+  "@debugRagChunks": {
+    "description": "Bouton pour ouvrir l'écran de débogage RAG"
   }
 }

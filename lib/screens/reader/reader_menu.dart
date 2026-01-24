@@ -1,7 +1,6 @@
 // ignore_for_file: unused_element
 
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
 import '../../services/rag_database_service.dart';
@@ -16,6 +15,7 @@ enum ReaderMenuAction {
   showCharactersSummary,
   deleteSummaries,
   askQuestion, // RAG feature
+  showLatestEvents, // RAG latest events feature
   openSettings,
   returnToLibrary,
 }
@@ -148,9 +148,10 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
     _toastShownForCompletion = true;
     final chunks = progress.indexedChunks;
     final apiCalls = progress.apiCalls ?? 0;
+    final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Indexation terminée: $chunks chunks indexés, $apiCalls appels API'),
+        content: Text(l10n?.ragIndexingCompleted(chunks, apiCalls) ?? 'Indexation terminée: $chunks chunks indexés, $apiCalls appels API'),
         duration: const Duration(seconds: 3),
       ),
     );
@@ -211,7 +212,7 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
                       children: [
                         Expanded(
                           child: Text(
-                            'Options de lecture',
+                            l10n?.readerMenuTitle ?? 'Options de lecture',
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
@@ -229,7 +230,7 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    Text('Taille du texte'),
+                    Text(l10n?.textSize ?? 'Taille du texte'),
                     const SizedBox(height: 8),
                     _FontScaleSelector(
                       fontScale: _currentFontScale,
@@ -241,13 +242,13 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
                     if (widget.hasChapters)
                       ListTile(
                         leading: const Icon(Icons.list),
-                        title: const Text('Aller au chapitre'),
+                        title: Text(l10n?.goToChapter ?? 'Aller au chapitre'),
                         onTap: () => _selectAction(ReaderMenuAction.goToChapter),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ListTile(
                       leading: const Icon(Icons.percent),
-                      title: const Text('Aller à un pourcentage'),
+                      title: Text(l10n?.goToPercentage ?? 'Aller à un pourcentage'),
                       onTap: () => _selectAction(ReaderMenuAction.goToPercentage),
                       contentPadding: EdgeInsets.zero,
                     ),
@@ -289,15 +290,16 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Questions',
+                      l10n?.questionsSectionTitle ?? 'Questions',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     _buildRagQuestionMenuItem(theme),
+                    _buildLatestEventsMenuItem(theme, _ragIndexProgress?.isComplete ?? false),
                     ListTile(
                       leading: const Icon(Icons.arrow_back),
-                      title: const Text('Retour à la librairie'),
+                      title: Text(l10n?.backToLibrary ?? 'Retour à la librairie'),
                       onTap: () => _selectAction(ReaderMenuAction.returnToLibrary),
                       contentPadding: EdgeInsets.zero,
                     ),
@@ -439,8 +441,20 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
 
     return ListTile(
       leading: const Icon(Icons.help_outline),
-      title: const Text('Posez une question'),
+      title: Text(l10n?.ragAskQuestion ?? 'Poser une question'),
       onTap: () => _selectAction(ReaderMenuAction.askQuestion),
+      contentPadding: EdgeInsets.zero,
+    );
+  }
+
+  Widget _buildLatestEventsMenuItem(ThemeData theme, bool isComplete) {
+    final l10n = AppLocalizations.of(context);
+    
+    return ListTile(
+      leading: const Icon(Icons.history),
+      title: Text(l10n?.ragLatestEvents ?? 'Quels sont les derniers événements?'),
+      onTap: isComplete ? () => _selectAction(ReaderMenuAction.showLatestEvents) : null,
+      enabled: isComplete,
       contentPadding: EdgeInsets.zero,
     );
   }

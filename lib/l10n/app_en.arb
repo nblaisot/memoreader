@@ -747,5 +747,106 @@
   "ragTopKDescription": "Number of relevant chunks attached to each question.",
   "@ragTopKDescription": {
     "description": "Description for RAG top-K chunks setting"
+  },
+  "ragLatestEvents": "What are the latest events?",
+  "@ragLatestEvents": {
+    "description": "Menu item label for showing latest events"
+  },
+  "ragLatestEventsTitle": "Latest events from this position",
+  "@ragLatestEventsTitle": {
+    "description": "Title for the latest events modal"
+  },
+  "ragLatestEventsPrompt": "Recent events summary",
+  "@ragLatestEventsPrompt": {
+    "description": "Prompt for the latest events summary"
+  },
+  "ragAutoShowLatestEvents": "Show automatically when reopening",
+  "@ragAutoShowLatestEvents": {
+    "description": "Label for the auto-show toggle"
+  },
+  "ragAutoShowDescription": "This summary will be shown automatically when reopening the book or the app",
+  "@ragAutoShowDescription": {
+    "description": "Description of the auto-show behavior"
+  },
+  "ragLatestEventsGenerating": "Generating latest events summary...",
+  "@ragLatestEventsGenerating": {
+    "description": "Message shown while generating the summary"
+  },
+  "ragIndexingCompleted": "Indexing completed: {chunks} chunks indexed, {apiCalls} API calls",
+  "@ragIndexingCompleted": {
+    "description": "Message shown when RAG indexing completes",
+    "placeholders": {
+      "chunks": {
+        "type": "int"
+      },
+      "apiCalls": {
+        "type": "int"
+      }
+    }
+  },
+  "readerMenuTitle": "Reading Options",
+  "@readerMenuTitle": {
+    "description": "Title for the reader menu"
+  },
+  "questionsSectionTitle": "Questions",
+  "@questionsSectionTitle": {
+    "description": "Section header for question-related actions"
+  },
+  "goToChapter": "Go to Chapter",
+  "@goToChapter": {
+    "description": "Menu item to navigate to a chapter"
+  },
+  "readerDisplaySettings": "Reader Display Settings",
+  "@readerDisplaySettings": {
+    "description": "Title for reader display settings section"
+  },
+  "readerDisplaySettingsDescription": "Adjust the padding of the reader screen. Horizontal padding affects left and right margins, vertical padding affects top and bottom margins.",
+  "@readerDisplaySettingsDescription": {
+    "description": "Description for reader display settings"
+  },
+  "horizontalPaddingLabel": "Horizontal Padding (Left/Right): {value} px",
+  "@horizontalPaddingLabel": {
+    "description": "Label for horizontal padding slider",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "verticalPaddingLabel": "Vertical Padding (Top/Bottom): {value} px",
+  "@verticalPaddingLabel": {
+    "description": "Label for vertical padding slider",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "paddingRangeInfo": "Default: {defaultValue} px. Range: {min} - {max} px",
+  "@paddingRangeInfo": {
+    "description": "Information about padding default and range",
+    "placeholders": {
+      "defaultValue": {
+        "type": "String"
+      },
+      "min": {
+        "type": "String"
+      },
+      "max": {
+        "type": "String"
+      }
+    }
+  },
+  "ragDatabaseTitle": "RAG Database",
+  "@ragDatabaseTitle": {
+    "description": "Title for RAG database section"
+  },
+  "ragDatabaseDescription": "Manage the RAG (Retrieval-Augmented Generation) database. Clearing the database will delete all indexed chunks and embeddings. Books will be re-indexed automatically.",
+  "@ragDatabaseDescription": {
+    "description": "Description for RAG database section"
+  },
+  "debugRagChunks": "Debug RAG Chunks",
+  "@debugRagChunks": {
+    "description": "Button to open RAG debug screen"
   }
 }

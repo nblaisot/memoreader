@@ -682,12 +682,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           
           // Reader Display Settings Section
           Text(
-            'Reader Display Settings',
+            l10n?.readerDisplaySettings ?? 'Reader Display Settings',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 8),
           Text(
-            'Adjust the padding of the reader screen. Horizontal padding affects left and right margins, vertical padding affects top and bottom margins.',
+            l10n?.readerDisplaySettingsDescription ?? 'Adjust the padding of the reader screen. Horizontal padding affects left and right margins, vertical padding affects top and bottom margins.',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Colors.grey[600],
             ),
@@ -702,7 +702,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Horizontal Padding (Left/Right): ${_horizontalPadding.toStringAsFixed(0)} px',
+                      l10n?.horizontalPaddingLabel(_horizontalPadding.toStringAsFixed(0)) ?? 'Horizontal Padding (Left/Right): ${_horizontalPadding.toStringAsFixed(0)} px',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     Slider(
@@ -727,8 +727,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Default: ${_settingsService.defaultHorizontalPadding.toStringAsFixed(0)} px. '
-            'Range: ${_settingsService.minPadding.toStringAsFixed(0)} - ${_settingsService.maxPadding.toStringAsFixed(0)} px',
+            l10n?.paddingRangeInfo(
+              _settingsService.defaultHorizontalPadding.toStringAsFixed(0),
+              _settingsService.minPadding.toStringAsFixed(0),
+              _settingsService.maxPadding.toStringAsFixed(0),
+            ) ?? 'Default: ${_settingsService.defaultHorizontalPadding.toStringAsFixed(0)} px. Range: ${_settingsService.minPadding.toStringAsFixed(0)} - ${_settingsService.maxPadding.toStringAsFixed(0)} px',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Colors.grey[600],
             ),
@@ -743,7 +746,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Vertical Padding (Top/Bottom): ${_verticalPadding.toStringAsFixed(0)} px',
+                      l10n?.verticalPaddingLabel(_verticalPadding.toStringAsFixed(0)) ?? 'Vertical Padding (Top/Bottom): ${_verticalPadding.toStringAsFixed(0)} px',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     Slider(
@@ -768,8 +771,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Default: ${_settingsService.defaultVerticalPadding.toStringAsFixed(0)} px. '
-            'Range: ${_settingsService.minPadding.toStringAsFixed(0)} - ${_settingsService.maxPadding.toStringAsFixed(0)} px',
+            l10n?.paddingRangeInfo(
+              _settingsService.defaultVerticalPadding.toStringAsFixed(0),
+              _settingsService.minPadding.toStringAsFixed(0),
+              _settingsService.maxPadding.toStringAsFixed(0),
+            ) ?? 'Default: ${_settingsService.defaultVerticalPadding.toStringAsFixed(0)} px. Range: ${_settingsService.minPadding.toStringAsFixed(0)} - ${_settingsService.maxPadding.toStringAsFixed(0)} px',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Colors.grey[600],
             ),
@@ -979,12 +985,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       children: [
         const Divider(height: 32),
         Text(
-          'RAG Database',
+          l10n?.ragDatabaseTitle ?? 'RAG Database',
           style: theme.textTheme.titleLarge,
         ),
         const SizedBox(height: 8),
         Text(
-          'Manage the RAG (Retrieval-Augmented Generation) database. Clearing the database will delete all indexed chunks and embeddings. Books will be re-indexed automatically.',
+          l10n?.ragDatabaseDescription ?? 'Manage the RAG (Retrieval-Augmented Generation) database. Clearing the database will delete all indexed chunks and embeddings. Books will be re-indexed automatically.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: Colors.grey[600],
           ),
@@ -1046,7 +1052,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             );
           },
           icon: const Icon(Icons.bug_report),
-          label: const Text('Debug RAG Chunks'),
+          label: Text(l10n?.debugRagChunks ?? 'Debug RAG Chunks'),
           style: ElevatedButton.styleFrom(
             backgroundColor: theme.colorScheme.primaryContainer,
             foregroundColor: theme.colorScheme.onPrimaryContainer,

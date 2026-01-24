@@ -27,9 +27,9 @@ class SettingsService {
   
   // RAG query configuration
   static const String _ragTopKKey = 'rag_top_k';
-  static const int _defaultRagTopK = 10;
+  static const int _defaultRagTopK = 30;
   static const int _minRagTopK = 1;
-  static const int _maxRagTopK = 20;
+  static const int _maxRagTopK = 30;
 
   /// Get the saved language preference
   Future<Locale?> getSavedLanguage() async {
@@ -288,5 +288,19 @@ class SettingsService {
   Future<void> saveRagProgressUpdateFrequency(int value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('rag_progress_update_frequency', value.clamp(1, 100));
+  }
+
+  // Latest Events auto-show configuration
+
+  /// Get auto-show latest events preference for a specific book (default: false)
+  Future<bool> getAutoShowLatestEvents(String bookId) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('latest_events_auto_show_$bookId') ?? false;
+  }
+
+  /// Save auto-show latest events preference for a specific book
+  Future<void> setAutoShowLatestEvents(String bookId, bool autoShow) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('latest_events_auto_show_$bookId', autoShow);
   }
 }

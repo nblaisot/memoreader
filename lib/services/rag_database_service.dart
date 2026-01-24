@@ -162,6 +162,29 @@ class RagDatabaseService {
     }).toList();
   }
 
+  /// Get the last N chunks up to a given position
+  /// Returns chunks in chronological order (oldest to newest)
+  Future<List<RagChunk>> getLastNChunksUpToPosition(
+    String bookId,
+    int maxCharEnd,
+    int limit,
+  ) async {
+    final db = await database;
+    final results = await db.query(
+      'rag_chunks',
+      where: 'bookId = ? AND charEnd <= ?',
+      whereArgs: [bookId, maxCharEnd],
+      orderBy: 'charEnd DESC',
+      limit: limit,
+    );
+
+    // Reverse to get chronological order (oldest to newest)
+    return results.reversed.map((row) {
+      final embeddingBlob = row['embedding'] as Uint8List;
+      return RagChunk.fromJson(row, embeddingBlob);
+    }).toList();
+  }
+
   /// Check if a chunk already exists (for idempotent indexing)
   Future<bool> chunkExists(String bookId, int charStart, int charEnd) async {
     final db = await database;
