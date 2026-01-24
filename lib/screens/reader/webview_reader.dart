@@ -6,6 +6,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+/// True when running on macOS. Used to skip APIs not implemented on macOS
+/// (e.g. WebView setBackgroundColor/opaque) without affecting iOS/Android.
+bool get _isMacOS => defaultTargetPlatform == TargetPlatform.macOS;
+
 class WebViewPageUpdate {
   const WebViewPageUpdate({
     required this.pageIndex,
@@ -264,8 +268,13 @@ class _WebViewReaderState extends State<WebViewReader> {
   void initState() {
     super.initState();
     _webViewController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.transparent)
+      ..setJavaScriptMode(JavaScriptMode.unrestricted);
+    // setBackgroundColor triggers setOpaque() internally; not implemented on macOS.
+    // Skip on macOS to avoid UnimplementedError. iOS/Android keep transparent background.
+    if (!_isMacOS) {
+      _webViewController.setBackgroundColor(Colors.transparent);
+    }
+    _webViewController
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (_) {

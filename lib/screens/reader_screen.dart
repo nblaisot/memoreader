@@ -133,8 +133,9 @@ class _ReaderScreenState extends State<ReaderScreen>
   String? _selectionActionPrompt;
   Locale? _lastLocale;
   WebViewSelection? _webViewSelection;
+  /// Single GlobalKey on the Positioned.fill that wraps WebViewReader.
+  /// Used for selection toolbar coordinate conversion (WebView and overlay share same bounds).
   final GlobalKey _webViewKey = GlobalKey();
-  final GlobalKey _webViewOverlayKey = GlobalKey();
   bool _routeObserverSubscribed = false;
   // Minimal pointer tracking for quick tap detection only
   int? _activePointerId;
@@ -1951,11 +1952,10 @@ class _ReaderScreenState extends State<ReaderScreen>
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: Stack(
-        key: _webViewOverlayKey,
         children: [
           Positioned.fill(
+            key: _webViewKey,
             child: WebViewReader(
-              key: _webViewKey,
               html: html,
               controller: _webViewController,
               onPageChanged: _handleWebViewPageChanged,
@@ -2091,9 +2091,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
 
     final webViewBox = _webViewKey.currentContext?.findRenderObject() as RenderBox?;
-    final overlayBox =
-        _webViewOverlayKey.currentContext?.findRenderObject() as RenderBox?;
-    if (webViewBox == null || overlayBox == null) {
+    if (webViewBox == null) {
       return const SizedBox.shrink();
     }
 
@@ -2101,8 +2099,9 @@ class _ReaderScreenState extends State<ReaderScreen>
       return const SizedBox.shrink();
     }
 
+    // WebView and overlay share same coordinate space (Positioned.fill wraps WebView)
     final globalTopLeft = webViewBox.localToGlobal(selection.rect.topLeft);
-    final localTopLeft = overlayBox.globalToLocal(globalTopLeft);
+    final localTopLeft = webViewBox.globalToLocal(globalTopLeft);
     final localRect = Rect.fromLTWH(
       localTopLeft.dx,
       localTopLeft.dy,

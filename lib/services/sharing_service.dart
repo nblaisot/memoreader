@@ -34,7 +34,7 @@ class SharingService {
     _bookImportedController.onListen = () {
       debugPrint('SharingService: onBookImported stream listener subscribed');
       _hasListeners = true;
-      // Process pending initial media if any
+      // Process pending initial media if any (iOS/Android only)
       if (_pendingInitialMedia != null && _pendingInitialMedia!.isNotEmpty) {
         debugPrint('Processing ${_pendingInitialMedia!.length} pending initial media file(s)');
         _handleSharedFiles(_pendingInitialMedia!);
@@ -42,51 +42,53 @@ class SharingService {
       }
     };
 
-    // For sharing or opening file coming from outside the app while the app is in the memory
-    debugPrint('SharingService: Setting up getMediaStream listener');
-    _intentDataStreamSubscription = ReceiveSharingIntent.instance
-        .getMediaStream()
-        .listen((List<SharedMediaFile> value) {
-      debugPrint('SharingService: getMediaStream received ${value.length} file(s)');
-      if (value.isNotEmpty) {
-        for (var file in value) {
-          debugPrint('SharingService: Media file path: ${file.path}');
-        }
-        _handleSharedFiles(value);
-      }
-    }, onError: (err) {
-      debugPrint("SharingService: getMediaStream error: $err");
-    });
-
-    // For sharing or opening file coming from outside the app while the app is closed
-    debugPrint('SharingService: Calling getInitialMedia()');
-    ReceiveSharingIntent.instance
-        .getInitialMedia()
-        .then((List<SharedMediaFile> value) {
-      debugPrint('SharingService: getInitialMedia() returned ${value?.length ?? 0} file(s)');
-      if (value != null && value.isNotEmpty) {
-        for (var file in value) {
-          debugPrint('SharingService: Initial media file path: ${file.path}');
-        }
-        debugPrint('SharingService: Received ${value.length} initial media file(s)');
-        if (_hasListeners) {
-          // Process immediately if listener is ready
+    // receive_sharing_intent is iOS/Android only; not implemented on macOS.
+    // On macOS we rely on open_file_handler for "Open with" below.
+    if (Platform.isIOS || Platform.isAndroid) {
+      debugPrint('SharingService: Setting up getMediaStream listener');
+      _intentDataStreamSubscription = ReceiveSharingIntent.instance
+          .getMediaStream()
+          .listen((List<SharedMediaFile> value) {
+        debugPrint('SharingService: getMediaStream received ${value.length} file(s)');
+        if (value.isNotEmpty) {
+          for (var file in value) {
+            debugPrint('SharingService: Media file path: ${file.path}');
+          }
           _handleSharedFiles(value);
-        } else {
-          // Store for processing when listener subscribes
-          _pendingInitialMedia = value;
-          debugPrint('SharingService: Storing ${value.length} initial media file(s) for processing when listener subscribes');
         }
-        ReceiveSharingIntent.instance.reset();
-      } else {
-        debugPrint('SharingService: getInitialMedia() returned empty or null');
-        ReceiveSharingIntent.instance.reset();
-      }
-    }).catchError((err) {
-      debugPrint("SharingService: getInitialMedia error: $err");
-      ReceiveSharingIntent.instance.reset();
-    });
-    
+      }, onError: (err) {
+        debugPrint("SharingService: getMediaStream error: $err");
+      });
+
+      debugPrint('SharingService: Calling getInitialMedia()');
+      ReceiveSharingIntent.instance
+          .getInitialMedia()
+          .then((List<SharedMediaFile> value) {
+        debugPrint('SharingService: getInitialMedia() returned ${value?.length ?? 0} file(s)');
+        if (value != null && value.isNotEmpty) {
+          for (var file in value) {
+            debugPrint('SharingService: Initial media file path: ${file.path}');
+          }
+          debugPrint('SharingService: Received ${value.length} initial media file(s)');
+          if (_hasListeners) {
+            _handleSharedFiles(value);
+          } else {
+            _pendingInitialMedia = value;
+            debugPrint('SharingService: Storing ${value.length} initial media file(s) for processing when listener subscribes');
+          }
+          ReceiveSharingIntent.instance.reset();
+        } else {
+          debugPrint('SharingService: getInitialMedia() returned empty or null');
+          ReceiveSharingIntent.instance.reset();
+        }
+      }).catchError((err) {
+        debugPrint("SharingService: getInitialMedia error: $err");
+        try {
+          ReceiveSharingIntent.instance.reset();
+        } catch (_) {}
+      });
+    }
+
     // Setup open_file_handler for "Open with" functionality (iOS/macOS)
     if (Platform.isIOS || Platform.isMacOS) {
       debugPrint('SharingService: Setting up open_file_handler listener');
