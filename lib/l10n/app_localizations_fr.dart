@@ -222,11 +222,11 @@ class AppLocalizationsFr extends AppLocalizations {
       'Configurez un fournisseur de résumés dans les paramètres pour générer des résumés.';
 
   @override
-  String get promptSettings => 'Paramètres des prompts';
+  String get promptSettings => 'Paramètres des instructions';
 
   @override
   String get promptSettingsDescription =>
-      'Personnalisez les prompts utilisés pour la génération de résumés. Vous pouvez utiliser des placeholders dans vos prompts : text (pour le texte à résumer), bookTitle (pour le titre du livre), et chapterTitle (pour le titre du chapitre). Écrivez-les avec des accolades dans vos prompts.';
+      'Personnalisez les instructions utilisées pour la génération de résumés. Vous pouvez utiliser des variables dans vos instructions : text (pour le texte à résumer), bookTitle (pour le titre du livre), et chapterTitle (pour le titre du chapitre). Écrivez-les avec des accolades dans vos instructions.';
 
   @override
   String get textSelectionActionSettings => 'Action de sélection de texte';
@@ -275,73 +275,78 @@ class AppLocalizationsFr extends AppLocalizations {
   String get appLanguageName => 'Français';
 
   @override
-  String get chunkSummaryPrompt => 'Prompt de résumé de chunk';
+  String get chunkSummaryPrompt => 'Instruction de résumé de fragment';
 
   @override
-  String get chunkSummaryPromptFr => 'Prompt de résumé de chunk (Français)';
+  String get chunkSummaryPromptFr =>
+      'Instruction de résumé de fragment (Français)';
 
   @override
-  String get chunkSummaryPromptEn => 'Prompt de résumé de chunk (Anglais)';
+  String get chunkSummaryPromptEn =>
+      'Instruction de résumé de fragment (Anglais)';
 
   @override
-  String get characterExtractionPrompt => 'Prompt d\'extraction de personnages';
+  String get characterExtractionPrompt =>
+      'Instruction d\'extraction de personnages';
 
   @override
   String get characterExtractionPromptFr =>
-      'Prompt d\'extraction de personnages (Français)';
+      'Instruction d\'extraction de personnages (Français)';
 
   @override
   String get characterExtractionPromptEn =>
-      'Prompt d\'extraction de personnages (Anglais)';
+      'Instruction d\'extraction de personnages (Anglais)';
 
   @override
-  String get batchSummaryPrompt => 'Prompt de résumé par batch';
+  String get batchSummaryPrompt => 'Instruction de résumé par lot';
 
   @override
-  String get batchSummaryPromptFr => 'Prompt de résumé par batch (Français)';
+  String get batchSummaryPromptFr => 'Instruction de résumé par lot (Français)';
 
   @override
-  String get batchSummaryPromptEn => 'Prompt de résumé par batch (Anglais)';
+  String get batchSummaryPromptEn => 'Instruction de résumé par lot (Anglais)';
 
   @override
-  String get narrativeSynthesisPrompt => 'Prompt de synthèse narrative';
+  String get narrativeSynthesisPrompt => 'Instruction de synthèse narrative';
 
   @override
   String get narrativeSynthesisPromptFr =>
-      'Prompt de synthèse narrative (Français)';
+      'Instruction de synthèse narrative (Français)';
 
   @override
   String get narrativeSynthesisPromptEn =>
-      'Prompt de synthèse narrative (Anglais)';
+      'Instruction de synthèse narrative (Anglais)';
 
   @override
-  String get fallbackSummaryPrompt => 'Prompt de résumé de fallback';
+  String get fallbackSummaryPrompt => 'Instruction de résumé de secours';
 
   @override
   String get fallbackSummaryPromptFr =>
-      'Prompt de résumé de fallback (Français)';
+      'Instruction de résumé de secours (Français)';
 
   @override
   String get fallbackSummaryPromptEn =>
-      'Prompt de résumé de fallback (Anglais)';
+      'Instruction de résumé de secours (Anglais)';
 
   @override
-  String get conciseSummaryPrompt => 'Prompt de résumé concis';
+  String get conciseSummaryPrompt => 'Instruction de résumé concis';
 
   @override
-  String get conciseSummaryPromptFr => 'Prompt de résumé concis (Français)';
+  String get conciseSummaryPromptFr =>
+      'Instruction de résumé concis (Français)';
 
   @override
-  String get conciseSummaryPromptEn => 'Prompt de résumé concis (Anglais)';
+  String get conciseSummaryPromptEn => 'Instruction de résumé concis (Anglais)';
 
   @override
   String get resetPrompts => 'Réinitialiser aux valeurs par défaut';
 
   @override
-  String get promptsReset => 'Prompts réinitialisés aux valeurs par défaut';
+  String get promptsReset =>
+      'Instructions réinitialisées aux valeurs par défaut';
 
   @override
-  String get promptSaved => 'Prompt enregistré';
+  String get promptSaved => 'Instruction enregistrée';
 
   @override
   String get openAIModel => 'OpenAI (GPT)';
@@ -383,7 +388,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get summarySettingsInfo =>
-      'OpenAI et Mistral AI fournissent des résumés rapides et précis mais nécessitent une connexion Internet et une clé API. Configurez votre fournisseur préféré et personnalisez les prompts utilisés pour la génération de résumés.';
+      'OpenAI et Mistral AI fournissent des résumés rapides et précis mais nécessitent une connexion Internet et une clé API. Configurez votre fournisseur préféré et personnalisez les instructions utilisées pour la génération de résumés.';
 
   @override
   String get generatingSummary => 'Génération du résumé...';
@@ -470,11 +475,11 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get horizontalPaddingSaved =>
-      'Padding horizontal enregistré. Les modifications s\'appliqueront lors de la réouverture d\'un livre.';
+      'Marge horizontale enregistrée. Les modifications s\'appliqueront lors de la réouverture d\'un livre.';
 
   @override
   String get verticalPaddingSaved =>
-      'Padding vertical enregistré. Les modifications s\'appliqueront lors de la réouverture d\'un livre.';
+      'Marge verticale enregistrée. Les modifications s\'appliqueront lors de la réouverture d\'un livre.';
 
   @override
   String get summaryCharacters => 'Personnages';
@@ -514,4 +519,123 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get repaginating => 'Pagination...';
+
+  @override
+  String get ragAskQuestion => 'Poser une question';
+
+  @override
+  String ragIndexingProgress(int percentage) {
+    return 'Indexation en cours ($percentage%)';
+  }
+
+  @override
+  String get ragIndexingInitializing => 'Indexation en cours (...)';
+
+  @override
+  String get ragQuestionField => 'Entrez votre question';
+
+  @override
+  String get ragAskReadSoFar => 'Demander sur ce que j\'ai lu jusqu\'à présent';
+
+  @override
+  String get ragAskWholeBook => 'Demander sur tout le livre';
+
+  @override
+  String get ragSubmitQuestion => 'Envoyer';
+
+  @override
+  String get ragAnswerLabel => 'Réponse';
+
+  @override
+  String get ragSourcesLabel => 'Sources';
+
+  @override
+  String get ragErrorGeneric =>
+      'Une erreur s\'est produite lors du traitement de votre question';
+
+  @override
+  String get ragNotIndexed =>
+      'Le livre n\'est pas encore indexé. Veuillez attendre que l\'indexation soit terminée.';
+
+  @override
+  String get ragClearDatabase => 'Effacer la base de données RAG';
+
+  @override
+  String get ragClearDatabaseConfirm =>
+      'Cela supprimera tous les fragments indexés et les embeddings. Les livres seront ré-indexés automatiquement.';
+
+  @override
+  String get ragTopKLabel => 'Fragments de contexte RAG';
+
+  @override
+  String get ragTopKDescription =>
+      'Nombre de fragments pertinents attachés à chaque question.';
+
+  @override
+  String get ragLatestEvents => 'Quels sont les derniers événements?';
+
+  @override
+  String get ragLatestEventsTitle =>
+      'Derniers événements depuis cette position';
+
+  @override
+  String get ragLatestEventsPrompt => 'Résumé des événements récents';
+
+  @override
+  String get ragAutoShowLatestEvents =>
+      'Afficher automatiquement à la réouverture';
+
+  @override
+  String get ragAutoShowDescription =>
+      'Ce résumé s\'affichera automatiquement lors de la réouverture du livre ou de l\'application';
+
+  @override
+  String get ragLatestEventsGenerating =>
+      'Génération du résumé des derniers événements...';
+
+  @override
+  String ragIndexingCompleted(int chunks, int apiCalls) {
+    return 'Indexation terminée : $chunks fragments indexés, $apiCalls appels API';
+  }
+
+  @override
+  String get readerMenuTitle => 'Options de lecture';
+
+  @override
+  String get questionsSectionTitle => 'Questions';
+
+  @override
+  String get goToChapter => 'Aller au chapitre';
+
+  @override
+  String get readerDisplaySettings => 'Paramètres d\'affichage du lecteur';
+
+  @override
+  String get readerDisplaySettingsDescription =>
+      'Ajustez les marges de l\'écran de lecture. La marge horizontale affecte les bords gauche et droit, la marge verticale affecte les bords haut et bas.';
+
+  @override
+  String horizontalPaddingLabel(String value) {
+    return 'Marge horizontale (gauche/droite) : $value px';
+  }
+
+  @override
+  String verticalPaddingLabel(String value) {
+    return 'Marge verticale (haut/bas) : $value px';
+  }
+
+  @override
+  String paddingRangeInfo(String defaultValue, String min, String max) {
+    return 'Par défaut : $defaultValue px. Plage : $min - $max px';
+  }
+
+  @override
+  String get ragDatabaseTitle => 'Base de données RAG';
+
+  @override
+  String get ragDatabaseDescription =>
+      'Gérez la base de données RAG (Génération Augmentée par Récupération). Effacer la base de données supprimera tous les fragments indexés et les embeddings. Les livres seront ré-indexés automatiquement.';
+
+  @override
+  String get debugRagChunks => 'Déboguer les fragments RAG';
 }

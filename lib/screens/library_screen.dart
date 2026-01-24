@@ -8,6 +8,8 @@ import '../models/reading_progress.dart';
 import '../services/book_service.dart';
 import '../services/app_state_service.dart';
 import '../services/sharing_service.dart';
+import '../services/rag_indexing_service.dart';
+import '../services/rag_database_service.dart';
 import 'reader_screen.dart';
 import 'settings_screen.dart';
 
@@ -104,6 +106,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
         _isLoading = false;
       });
       
+      // Trigger RAG indexing for unindexed books (in background)
+      _triggerRagIndexingForUnindexedBooks(validatedBooks).catchError((e) {
+        debugPrint('Failed to trigger RAG indexing: $e');
+      });
+      
       // Don't generate summaries on library load - only when user leaves a book or app goes to background
     } catch (e) {
       setState(() {
@@ -120,6 +127,45 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         );
       }
+    }
+  }
+
+  /// Trigger RAG indexing for books that need indexing
+  Future<void> _triggerRagIndexingForUnindexedBooks(List<Book> books) async {
+    try {
+      final ragDbService = RagDatabaseService();
+      final ragIndexingService = RagIndexingService();
+
+      for (final book in books) {
+        final status = await ragDbService.getIndexStatus(book.id);
+        
+        // Skip if already completed
+        if (status != null && status.isComplete) {
+          continue;
+        }
+
+        // Check if indexing is actually running (not just marked as indexing in DB)
+        // If status says indexing but no isolate is running, restart indexing
+        final isActuallyIndexing = ragIndexingService.isIndexing(book.id);
+        
+        if (status != null && status.isIndexing && isActuallyIndexing) {
+          // Already indexing with active isolate, skip
+          continue;
+        }
+
+        // Start indexing (non-blocking) - will resume from where it left off if interrupted
+        ragIndexingService.startIndexing(book.id).listen(
+          (progress) {
+            debugPrint('[RAG] Indexing progress for ${book.id}: ${progress.indexedChunks}/${progress.totalChunks}');
+          },
+          onError: (error) {
+            debugPrint('[RAG] Indexing error for ${book.id}: $error');
+          },
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to trigger RAG indexing: $e');
+      // Don't throw - indexing is non-critical
     }
   }
 

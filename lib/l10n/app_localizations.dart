@@ -985,6 +985,204 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Repaginating...'**
   String get repaginating;
+
+  /// RAG feature menu item label
+  ///
+  /// In en, this message translates to:
+  /// **'Ask a question'**
+  String get ragAskQuestion;
+
+  /// RAG indexing progress message
+  ///
+  /// In en, this message translates to:
+  /// **'Indexing in progress ({percentage}%)'**
+  String ragIndexingProgress(int percentage);
+
+  /// RAG indexing message shown before progress is known
+  ///
+  /// In en, this message translates to:
+  /// **'Indexing in progress (...)'**
+  String get ragIndexingInitializing;
+
+  /// RAG question input field label
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your question'**
+  String get ragQuestionField;
+
+  /// RAG toggle option for read-so-far mode
+  ///
+  /// In en, this message translates to:
+  /// **'Ask about what I\'ve read so far'**
+  String get ragAskReadSoFar;
+
+  /// RAG toggle option for whole book mode
+  ///
+  /// In en, this message translates to:
+  /// **'Ask about the whole book'**
+  String get ragAskWholeBook;
+
+  /// RAG question submit button label
+  ///
+  /// In en, this message translates to:
+  /// **'Submit'**
+  String get ragSubmitQuestion;
+
+  /// RAG answer section label
+  ///
+  /// In en, this message translates to:
+  /// **'Answer'**
+  String get ragAnswerLabel;
+
+  /// RAG sources section label
+  ///
+  /// In en, this message translates to:
+  /// **'Sources'**
+  String get ragSourcesLabel;
+
+  /// Generic RAG error message
+  ///
+  /// In en, this message translates to:
+  /// **'An error occurred while processing your question'**
+  String get ragErrorGeneric;
+
+  /// Message when book is not indexed for RAG
+  ///
+  /// In en, this message translates to:
+  /// **'Book is not indexed yet. Please wait for indexing to complete.'**
+  String get ragNotIndexed;
+
+  /// Settings action to clear RAG database
+  ///
+  /// In en, this message translates to:
+  /// **'Clear RAG database'**
+  String get ragClearDatabase;
+
+  /// Confirmation message for clearing RAG database
+  ///
+  /// In en, this message translates to:
+  /// **'This will delete all indexed chunks and embeddings. Books will be re-indexed automatically.'**
+  String get ragClearDatabaseConfirm;
+
+  /// Label for RAG top-K chunks setting
+  ///
+  /// In en, this message translates to:
+  /// **'RAG context chunks'**
+  String get ragTopKLabel;
+
+  /// Description for RAG top-K chunks setting
+  ///
+  /// In en, this message translates to:
+  /// **'Number of relevant chunks attached to each question.'**
+  String get ragTopKDescription;
+
+  /// Menu item label for showing latest events
+  ///
+  /// In en, this message translates to:
+  /// **'What are the latest events?'**
+  String get ragLatestEvents;
+
+  /// Title for the latest events modal
+  ///
+  /// In en, this message translates to:
+  /// **'Latest events from this position'**
+  String get ragLatestEventsTitle;
+
+  /// Prompt for the latest events summary
+  ///
+  /// In en, this message translates to:
+  /// **'Recent events summary'**
+  String get ragLatestEventsPrompt;
+
+  /// Label for the auto-show toggle
+  ///
+  /// In en, this message translates to:
+  /// **'Show automatically when reopening'**
+  String get ragAutoShowLatestEvents;
+
+  /// Description of the auto-show behavior
+  ///
+  /// In en, this message translates to:
+  /// **'This summary will be shown automatically when reopening the book or the app'**
+  String get ragAutoShowDescription;
+
+  /// Message shown while generating the summary
+  ///
+  /// In en, this message translates to:
+  /// **'Generating latest events summary...'**
+  String get ragLatestEventsGenerating;
+
+  /// Message shown when RAG indexing completes
+  ///
+  /// In en, this message translates to:
+  /// **'Indexing completed: {chunks} chunks indexed, {apiCalls} API calls'**
+  String ragIndexingCompleted(int chunks, int apiCalls);
+
+  /// Title for the reader menu
+  ///
+  /// In en, this message translates to:
+  /// **'Reading Options'**
+  String get readerMenuTitle;
+
+  /// Section header for question-related actions
+  ///
+  /// In en, this message translates to:
+  /// **'Questions'**
+  String get questionsSectionTitle;
+
+  /// Menu item to navigate to a chapter
+  ///
+  /// In en, this message translates to:
+  /// **'Go to Chapter'**
+  String get goToChapter;
+
+  /// Title for reader display settings section
+  ///
+  /// In en, this message translates to:
+  /// **'Reader Display Settings'**
+  String get readerDisplaySettings;
+
+  /// Description for reader display settings
+  ///
+  /// In en, this message translates to:
+  /// **'Adjust the padding of the reader screen. Horizontal padding affects left and right margins, vertical padding affects top and bottom margins.'**
+  String get readerDisplaySettingsDescription;
+
+  /// Label for horizontal padding slider
+  ///
+  /// In en, this message translates to:
+  /// **'Horizontal Padding (Left/Right): {value} px'**
+  String horizontalPaddingLabel(String value);
+
+  /// Label for vertical padding slider
+  ///
+  /// In en, this message translates to:
+  /// **'Vertical Padding (Top/Bottom): {value} px'**
+  String verticalPaddingLabel(String value);
+
+  /// Information about padding default and range
+  ///
+  /// In en, this message translates to:
+  /// **'Default: {defaultValue} px. Range: {min} - {max} px'**
+  String paddingRangeInfo(String defaultValue, String min, String max);
+
+  /// Title for RAG database section
+  ///
+  /// In en, this message translates to:
+  /// **'RAG Database'**
+  String get ragDatabaseTitle;
+
+  /// Description for RAG database section
+  ///
+  /// In en, this message translates to:
+  /// **'Manage the RAG (Retrieval-Augmented Generation) database. Clearing the database will delete all indexed chunks and embeddings. Books will be re-indexed automatically.'**
+  String get ragDatabaseDescription;
+
+  /// Button to open RAG debug screen
+  ///
+  /// In en, this message translates to:
+  /// **'Debug RAG Chunks'**
+  String get debugRagChunks;
 }
 
 class _AppLocalizationsDelegate

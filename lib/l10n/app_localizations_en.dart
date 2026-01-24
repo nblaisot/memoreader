@@ -508,4 +508,120 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get repaginating => 'Repaginating...';
+
+  @override
+  String get ragAskQuestion => 'Ask a question';
+
+  @override
+  String ragIndexingProgress(int percentage) {
+    return 'Indexing in progress ($percentage%)';
+  }
+
+  @override
+  String get ragIndexingInitializing => 'Indexing in progress (...)';
+
+  @override
+  String get ragQuestionField => 'Enter your question';
+
+  @override
+  String get ragAskReadSoFar => 'Ask about what I\'ve read so far';
+
+  @override
+  String get ragAskWholeBook => 'Ask about the whole book';
+
+  @override
+  String get ragSubmitQuestion => 'Submit';
+
+  @override
+  String get ragAnswerLabel => 'Answer';
+
+  @override
+  String get ragSourcesLabel => 'Sources';
+
+  @override
+  String get ragErrorGeneric =>
+      'An error occurred while processing your question';
+
+  @override
+  String get ragNotIndexed =>
+      'Book is not indexed yet. Please wait for indexing to complete.';
+
+  @override
+  String get ragClearDatabase => 'Clear RAG database';
+
+  @override
+  String get ragClearDatabaseConfirm =>
+      'This will delete all indexed chunks and embeddings. Books will be re-indexed automatically.';
+
+  @override
+  String get ragTopKLabel => 'RAG context chunks';
+
+  @override
+  String get ragTopKDescription =>
+      'Number of relevant chunks attached to each question.';
+
+  @override
+  String get ragLatestEvents => 'What are the latest events?';
+
+  @override
+  String get ragLatestEventsTitle => 'Latest events from this position';
+
+  @override
+  String get ragLatestEventsPrompt => 'Recent events summary';
+
+  @override
+  String get ragAutoShowLatestEvents => 'Show automatically when reopening';
+
+  @override
+  String get ragAutoShowDescription =>
+      'This summary will be shown automatically when reopening the book or the app';
+
+  @override
+  String get ragLatestEventsGenerating => 'Generating latest events summary...';
+
+  @override
+  String ragIndexingCompleted(int chunks, int apiCalls) {
+    return 'Indexing completed: $chunks chunks indexed, $apiCalls API calls';
+  }
+
+  @override
+  String get readerMenuTitle => 'Reading Options';
+
+  @override
+  String get questionsSectionTitle => 'Questions';
+
+  @override
+  String get goToChapter => 'Go to Chapter';
+
+  @override
+  String get readerDisplaySettings => 'Reader Display Settings';
+
+  @override
+  String get readerDisplaySettingsDescription =>
+      'Adjust the padding of the reader screen. Horizontal padding affects left and right margins, vertical padding affects top and bottom margins.';
+
+  @override
+  String horizontalPaddingLabel(String value) {
+    return 'Horizontal Padding (Left/Right): $value px';
+  }
+
+  @override
+  String verticalPaddingLabel(String value) {
+    return 'Vertical Padding (Top/Bottom): $value px';
+  }
+
+  @override
+  String paddingRangeInfo(String defaultValue, String min, String max) {
+    return 'Default: $defaultValue px. Range: $min - $max px';
+  }
+
+  @override
+  String get ragDatabaseTitle => 'RAG Database';
+
+  @override
+  String get ragDatabaseDescription =>
+      'Manage the RAG (Retrieval-Augmented Generation) database. Clearing the database will delete all indexed chunks and embeddings. Books will be re-indexed automatically.';
+
+  @override
+  String get debugRagChunks => 'Debug RAG Chunks';
 }

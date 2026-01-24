@@ -23,6 +23,10 @@ import '../services/summary_database_service.dart';
 import '../services/app_state_service.dart';
 import '../services/prompt_config_service.dart';
 import '../services/saved_translation_database_service.dart';
+import '../services/rag_query_service.dart';
+import '../services/rag_indexing_service.dart';
+import '../services/latest_events_service.dart';
+import '../models/rag_index_progress.dart';
 import '../models/saved_translation.dart';
 import '../utils/html_text_extractor.dart';
 import '../utils/css_resolver.dart';
@@ -79,6 +83,9 @@ class _ReaderScreenState extends State<ReaderScreen>
   final WebViewReaderController _webViewController = WebViewReaderController();
   int? _currentChapterIndex;
   int? _pendingWebViewCharIndex;
+  double? _pendingWebViewProgress;
+  double? _pendingRestorePercentage; // For non-WebView readers
+  bool _hasRestoredProgress = false; // Track if we've already restored progress
   String? _lastWebViewStyleKey;
   String? _lastWebViewLayoutKey;
   String? _lastWebViewActionLabel;
@@ -89,6 +96,10 @@ class _ReaderScreenState extends State<ReaderScreen>
   final SummaryDatabaseService _summaryDatabase = SummaryDatabaseService();
   final SavedTranslationDatabaseService _translationDatabase = 
       SavedTranslationDatabaseService();
+  final RagQueryService _ragQueryService = RagQueryService();
+  final RagIndexingService _ragIndexingService = RagIndexingService();
+  StreamSubscription<RagIndexProgress>? _ragIndexingSubscription;
+  RagIndexProgress? _ragIndexProgress;
 
   int _currentPageIndex = 0;
   int _totalPages = 0;
@@ -131,6 +142,8 @@ class _ReaderScreenState extends State<ReaderScreen>
   static const Duration _quickTapThreshold = Duration(milliseconds: 300);
   // Pre-instantiated selection controls to avoid lazy loading and JIT delays
   ImmediateTextSelectionControls? _sharedSelectionControls;
+  // Track if auto-show latest events has been triggered for this book session
+  bool _hasTriggeredAutoShowLatestEvents = false;
 
   bool get _useWebViewReader {
     if (kIsWeb) {
@@ -158,7 +171,27 @@ class _ReaderScreenState extends State<ReaderScreen>
     _loadVerticalPadding();
     _loadFontScale();
     _loadBook();
+    _startListeningToRagIndexing();
     unawaited(_appStateService.setLastOpenedBook(widget.book.id));
+  }
+
+  void _startListeningToRagIndexing() {
+    // Listen to RAG indexing progress
+    _ragIndexingSubscription = _ragIndexingService.startIndexing(widget.book.id).listen(
+      (progress) {
+        if (mounted) {
+          setState(() {
+            _ragIndexProgress = progress;
+          });
+        }
+      },
+      onError: (error) {
+        debugPrint('[RAG] Error listening to indexing progress: $error');
+      },
+      onDone: () {
+        debugPrint('[RAG] Indexing progress stream completed');
+      },
+    );
   }
 
   @override
@@ -247,6 +280,7 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   @override
   void dispose() {
+    _ragIndexingSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _engine?.removeListener(_handleEngineUpdate);
     _pageController.dispose();
@@ -391,18 +425,38 @@ class _ReaderScreenState extends State<ReaderScreen>
         _lastWebViewActionLabel = null;
         _lastWebViewActionEnabled = null;
         _isLoading = false;
+        _hasTriggeredAutoShowLatestEvents = false; // Reset for new book load
       });
 
-      final initialCharIndex = progress?.currentCharacterIndex ?? 0;
-      // When no character information is stored we simply restart from the
-      // beginning, letting the first pagination pass reinitialize the data.
-      if (_useWebViewReader) {
-        final clamped = math.max(0, initialCharIndex);
-        _currentCharacterIndex = clamped;
-        _pendingWebViewCharIndex = clamped;
-        _isNavigating = true;
+      // Use the saved progress percentage for restoration (what user sees at bottom)
+      // This is more reliable than character indices which can differ between save/restore
+      final savedProgressPercentage = progress?.progress;
+      
+      if (kDebugMode) {
+        debugPrint('[ReaderScreen] Restoring progress: savedPercentage=${savedProgressPercentage != null ? (savedProgressPercentage * 100).toStringAsFixed(1) + "%" : "null"}');
+      }
+      
+      // Store the saved progress to restore after book is loaded
+      // We'll restore it once the book is ready (after first page update)
+      if (savedProgressPercentage != null && savedProgressPercentage > 0) {
+        _pendingWebViewProgress = savedProgressPercentage;
+        _hasRestoredProgress = false; // Reset flag for new book load
+        if (kDebugMode) {
+          debugPrint('[ReaderScreen] SET PENDING: Will restore to ${(savedProgressPercentage * 100).toStringAsFixed(1)}% after book loads');
+        }
       } else {
-        _scheduleRepagination(initialCharIndex: initialCharIndex);
+        _pendingWebViewProgress = null;
+        _hasRestoredProgress = false;
+        if (kDebugMode) {
+          debugPrint('[ReaderScreen] No progress to restore, starting from beginning');
+        }
+      }
+      
+      // Don't set _isNavigating here - wait for first page update, then restore
+      if (!_useWebViewReader) {
+        // For non-WebView, we need to wait for pagination to complete
+        // Store the percentage to restore after pagination
+        _pendingRestorePercentage = savedProgressPercentage;
       }
     } catch (e) {
       setState(() {
@@ -428,13 +482,19 @@ class _ReaderScreenState extends State<ReaderScreen>
       int? targetCharIndex;
       if (retainCurrentPage) {
         final currentPage = _engine?.getPage(_currentPageIndex);
+        // Prioritize lastVisibleCharacterIndex (where user was reading) over currentCharacterIndex
         targetCharIndex =
-            currentPage?.startCharIndex ?? _savedProgress?.currentCharacterIndex;
+            currentPage?.startCharIndex ?? 
+            _savedProgress?.lastVisibleCharacterIndex ?? 
+            _savedProgress?.currentCharacterIndex;
       } else if (initialCharIndex != null) {
         targetCharIndex = initialCharIndex;
       }
 
-      targetCharIndex ??= _savedProgress?.currentCharacterIndex ?? 0;
+      // Prioritize lastVisibleCharacterIndex (where user was reading) over currentCharacterIndex
+      targetCharIndex ??= _savedProgress?.lastVisibleCharacterIndex ?? 
+                          _savedProgress?.currentCharacterIndex ?? 
+                          0;
       targetCharIndex = math.max(0, targetCharIndex);
 
       unawaited(_rebuildPagination(targetCharIndex, actualSize: actualSize));
@@ -555,6 +615,53 @@ class _ReaderScreenState extends State<ReaderScreen>
             _resetPagerToCurrent();
             _scheduleProgressSave();
             // Close chapter dialog after navigation completes
+            
+            // Restore saved page index or percentage
+            // CRITICAL: Check if layout matches (screen size, font, etc.) before using page index
+            final savedPageIndex = _savedProgress?.currentPageIndex;
+            final pendingRestore = _pendingRestorePercentage;
+            
+            // Check if layout matches - if screen size changed, page index won't be accurate
+            bool layoutMatches = false;
+            if (_savedProgress != null && metrics != null) {
+              layoutMatches = _layoutsMatch(_savedProgress, metrics);
+            }
+            
+            if (savedPageIndex != null && savedPageIndex >= 0 && savedPageIndex < engine.estimatedTotalPages && layoutMatches) {
+              // BEST: Use saved page index directly - layout matches, so page index is accurate!
+              _pendingRestorePercentage = null;
+              final targetPage = engine.getPage(savedPageIndex);
+              if (targetPage != null && targetPage.startCharIndex != initialPage?.startCharIndex) {
+                debugPrint('[ReaderScreen] Layout matches - restoring to saved page index: $savedPageIndex');
+                _scheduleRepagination(initialCharIndex: targetPage.startCharIndex);
+              } else {
+                debugPrint('[ReaderScreen] Already at correct page index: $savedPageIndex');
+              }
+            } else if (pendingRestore != null && updatedTotalChars > 0) {
+              // FALLBACK: Use percentage if layout changed or page index not available
+              // Percentage works across different screen sizes (foldable phone support)
+              _pendingRestorePercentage = null;
+              
+              if (savedPageIndex != null && !layoutMatches) {
+                debugPrint('[ReaderScreen] Layout changed (screen size/font different) - using percentage instead of page index');
+              }
+              // FALLBACK: Use percentage if page index not available
+              _pendingRestorePercentage = null;
+              final savedPercentage = pendingRestore * 100.0; // Convert to 0-100 range
+              final currentPercentage = initialPage != null
+                  ? _calculateProgressForPage(initialPage, totalChars: updatedTotalChars) * 100.0
+                  : 0.0;
+              
+              // Only navigate if we're significantly off (more than 0.5%)
+              if ((savedPercentage - currentPercentage).abs() > 0.5) {
+                debugPrint('[ReaderScreen] Restoring to saved progress: ${savedPercentage.toStringAsFixed(1)}% (current: ${currentPercentage.toStringAsFixed(1)}%)');
+                // Use the same jumpToPercentage method that the menu uses
+                _jumpToPercentage(savedPercentage);
+              } else {
+                debugPrint('[ReaderScreen] Already at correct position: ${currentPercentage.toStringAsFixed(1)}%');
+              }
+            }
+            
             _closeChapterDialog();
           }
         });
@@ -875,7 +982,9 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   Future<void> _saveProgress(PageContent page) async {
     try {
-      final pageProgress = _calculateProgressForPage(page);
+      // Save the displayed progress percentage (what user sees at bottom)
+      // This is more reliable than character indices
+      final progressPercentage = _progress;
       
       // Capture current layout metrics if available
       String? layoutKey;
@@ -899,7 +1008,8 @@ class _ReaderScreenState extends State<ReaderScreen>
         bookId: widget.book.id,
         currentCharacterIndex: page.startCharIndex,
         lastVisibleCharacterIndex: page.endCharIndex,
-        progress: pageProgress,
+        currentPageIndex: _currentPageIndex, // Save the actual page index
+        progress: progressPercentage, // Save the displayed progress percentage
         lastRead: DateTime.now(),
         maxWidth: maxWidth,
         maxHeight: maxHeight,
@@ -910,8 +1020,10 @@ class _ReaderScreenState extends State<ReaderScreen>
       );
       await _bookService.saveReadingProgress(progress);
       _savedProgress = progress;
-      // Note: updateLastReadingStop is NOT called here anymore
-      // It's only called when actually leaving the reader screen
+      
+      if (kDebugMode) {
+        debugPrint('[ReaderScreen] Saved progress: ${(progressPercentage * 100).toStringAsFixed(1)}%');
+      }
     } catch (_) {
       // Saving progress is best-effort; ignore failures.
     }
@@ -919,6 +1031,10 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   Future<void> _saveWebViewProgress() async {
     try {
+      // Save the displayed progress percentage (what user sees at bottom)
+      // This is more reliable than character indices
+      final progressPercentage = _progress;
+      
       // Capture current layout metrics if available
       String? layoutKey;
       double? maxWidth;
@@ -937,18 +1053,16 @@ class _ReaderScreenState extends State<ReaderScreen>
         verticalPadding = _verticalPadding;
       }
 
-      final currentChar = _currentCharacterIndex;
-      final lastVisible = _lastVisibleCharacterIndex ?? currentChar;
-      final progressValue = _totalCharacterCount > 0
-          ? (math.min(_totalCharacterCount, math.max(0, (lastVisible ?? 0) + 1)) /
-              _totalCharacterCount)
-          : 0.0;
+      if (kDebugMode) {
+        debugPrint('[ReaderScreen] Saved WebView progress: ${(progressPercentage * 100).toStringAsFixed(1)}% (exact: ${progressPercentage})');
+      }
 
       final progress = ReadingProgress(
         bookId: widget.book.id,
-        currentCharacterIndex: currentChar,
-        lastVisibleCharacterIndex: lastVisible,
-        progress: progressValue,
+        currentCharacterIndex: _currentCharacterIndex,
+        lastVisibleCharacterIndex: _lastVisibleCharacterIndex,
+        currentPageIndex: _currentPageIndex, // Save the actual page index - most reliable!
+        progress: progressPercentage, // Save the displayed progress percentage
         lastRead: DateTime.now(),
         maxWidth: maxWidth,
         maxHeight: maxHeight,
@@ -959,7 +1073,8 @@ class _ReaderScreenState extends State<ReaderScreen>
       );
       await _bookService.saveReadingProgress(progress);
       _savedProgress = progress;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[ReaderScreen] Failed to save WebView progress: $e');
       // Saving progress is best-effort; ignore failures.
     }
   }
@@ -1108,18 +1223,6 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   void _handleWebViewPageChanged(WebViewPageUpdate update) {
-    final pendingCharIndex = _pendingWebViewCharIndex;
-    if (pendingCharIndex != null) {
-      _pendingWebViewCharIndex = null;
-      if (pendingCharIndex > 0) {
-        setState(() {
-          _isNavigating = true;
-        });
-        unawaited(_webViewController.goToCharIndex(pendingCharIndex));
-        return;
-      }
-    }
-
     final startChar = update.startCharIndex ?? 0;
     final endChar = update.endCharIndex ?? startChar;
     final totalChars = update.totalChars;
@@ -1127,6 +1230,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         ? (math.min(totalChars, math.max(0, endChar + 1)) / totalChars)
         : 0.0;
 
+    // Update state first so _totalCharacterCount is available
     if (kDebugMode) {
       final previousEnd = _lastVisibleCharacterIndex;
       if (previousEnd != null) {
@@ -1142,7 +1246,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     setState(() {
       _currentPageIndex = update.pageIndex;
       _totalPages = update.pageCount;
-      _totalCharacterCount = totalChars;
+      _totalCharacterCount = totalChars; // CRITICAL: Set this FIRST
       _currentCharacterIndex = startChar;
       _lastVisibleCharacterIndex = endChar;
       _progress = progress;
@@ -1152,8 +1256,95 @@ class _ReaderScreenState extends State<ReaderScreen>
       _navigatingToChapterIndex = null;
     });
 
+    // Handle pending character index navigation (for chapter navigation, or from restoration when WebView wasn't ready)
+    final pendingCharIndex = _pendingWebViewCharIndex;
+    if (pendingCharIndex != null && totalChars > 0 && _webViewController.isReady) {
+      _pendingWebViewCharIndex = null;
+      if (pendingCharIndex > 0) {
+        // Clamp to valid range based on WebView's reported total
+        final clamped = pendingCharIndex.clamp(0, totalChars - 1);
+        final currentStartChar = startChar;
+        // Only navigate if we're significantly off from current position
+        if ((clamped - currentStartChar).abs() > 1) {
+          debugPrint('[WebView] Navigating to char index: $clamped (current: $currentStartChar, total: $totalChars)');
+          setState(() {
+            _isNavigating = true;
+          });
+          unawaited(_webViewController.goToCharIndex(clamped));
+          _scheduleWebViewProgressSave();
+          _closeChapterDialog();
+          return;
+        }
+      }
+    }
+
+    // Restore from saved page index - MOST RELIABLE method!
+    // CRITICAL: Check if layout matches (screen size, font, etc.) before using page index
+    // If layout changed (e.g., foldable phone opened/closed), use percentage instead
+    if (!_hasRestoredProgress && _webViewController.isReady && update.pageCount > 0) {
+      final savedPageIndex = _savedProgress?.currentPageIndex;
+      final savedProgress = _pendingWebViewProgress;
+      
+      // Check if layout matches - if screen size changed, page index won't be accurate
+      bool layoutMatches = false;
+      if (_savedProgress != null && _currentPageMetrics != null) {
+        layoutMatches = _layoutsMatch(_savedProgress, _currentPageMetrics!);
+      }
+      
+      if (savedPageIndex != null && savedPageIndex >= 0 && savedPageIndex < update.pageCount && layoutMatches) {
+        // BEST: Use saved page index directly - layout matches, so page index is accurate!
+        _pendingWebViewProgress = null;
+        _hasRestoredProgress = true;
+        
+        debugPrint('[WebView] ===== RESTORATION START (PAGE INDEX) =====');
+        debugPrint('[WebView] Layout matches - using page index: $savedPageIndex (current: ${update.pageIndex}, total: ${update.pageCount})');
+        
+        if (savedPageIndex != update.pageIndex) {
+          setState(() {
+            _isNavigating = true;
+          });
+          unawaited(_webViewController.goToPage(savedPageIndex, notify: true));
+          debugPrint('[WebView] ===== RESTORATION COMPLETE (PAGE INDEX) =====');
+        } else {
+          debugPrint('[WebView] Already at correct page, no navigation needed');
+        }
+      } else if (savedProgress != null && _totalCharacterCount > 0 && update.pageCount > 1) {
+        // FALLBACK: Use percentage if layout changed or page index not available
+        // Percentage works across different screen sizes (foldable phone support)
+        _pendingWebViewProgress = null;
+        _hasRestoredProgress = true;
+        
+        final savedPercentage = savedProgress.clamp(0.0, 1.0) * 100.0;
+        
+        if (savedPageIndex != null && !layoutMatches) {
+          debugPrint('[WebView] ===== RESTORATION START (PERCENTAGE - LAYOUT CHANGED) =====');
+          debugPrint('[WebView] Layout changed (screen size/font different) - using percentage instead of page index');
+        } else {
+          debugPrint('[WebView] ===== RESTORATION START (PERCENTAGE FALLBACK) =====');
+          debugPrint('[WebView] No saved page index, using percentage: ${savedPercentage.toStringAsFixed(1)}%');
+        }
+        
+        _jumpToPercentage(savedPercentage);
+        debugPrint('[WebView] ===== RESTORATION COMPLETE (PERCENTAGE) =====');
+      } else if (savedProgress != null) {
+        debugPrint('[WebView] RESTORATION: Waiting - totalChars=$_totalCharacterCount, pageCount=${update.pageCount}, ready=${_webViewController.isReady}');
+      }
+    }
+
     _scheduleWebViewProgressSave();
     _closeChapterDialog();
+    
+    // Trigger auto-show latest events after first page load
+    if (!_hasTriggeredAutoShowLatestEvents && mounted) {
+      _hasTriggeredAutoShowLatestEvents = true;
+      // Use a small delay to ensure UI is fully rendered
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _checkAutoShowLatestEvents();
+        }
+      });
+    }
+    
     if (kDebugMode) {
       unawaited(_logWebViewPageText(update));
     }
@@ -1552,6 +1743,53 @@ class _ReaderScreenState extends State<ReaderScreen>
     );
   }
 
+  Widget _buildRagIndexingBanner(BuildContext context) {
+    if (_ragIndexProgress == null || _ragIndexProgress!.isComplete) {
+      return const SizedBox.shrink();
+    }
+
+    final isIndexing = _ragIndexProgress!.isIndexing;
+    if (!isIndexing) {
+      return const SizedBox.shrink();
+    }
+
+    final l10n = AppLocalizations.of(context);
+    final progress = _ragIndexProgress!.progressPercentage;
+    final totalChunks = _ragIndexProgress!.totalChunks;
+    final theme = Theme.of(context);
+    final progressLabel = totalChunks == 0
+        ? (l10n?.ragIndexingInitializing ?? 'Indexing in progress (...)')
+        : (l10n?.ragIndexingProgress(progress.toInt()) ??
+            'Indexing in progress (${progress.toInt()}%)');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: theme.colorScheme.primaryContainer,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.onPrimaryContainer),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              progressLabel,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildReaderContent(BuildContext context, Size actualSize, _PageMetrics metrics) {
     final theme = Theme.of(context);
 
@@ -1573,54 +1811,61 @@ class _ReaderScreenState extends State<ReaderScreen>
     return SelectionWarmup(
       child: Scaffold(
         resizeToAvoidBottomInset: false, // Prevent repagination when keyboard opens (e.g. for dialogs)
-        body: Listener(
-          // Listener doesn't participate in gesture arena - it only observes pointer events
-          // This allows SelectableText to handle long presses without interference
-          // - Long press: handled by SelectableText for text selection (no interference)
-          // - Quick tap: detected here for navigation (menu, progress bar, page navigation)
-          // - Horizontal swipe: handled by PageView for page navigation
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: _handlePointerDown,
-          onPointerUp: _handlePointerUp,
-          onPointerCancel: _handlePointerCancel,
-          child: Stack(
-            children: [
-              PageView.builder(
-                controller: _pageController,
-                itemCount: pages.length,
-                onPageChanged: _handlePageChanged,
-                itemBuilder: (context, index) => pages[index],
-              ),
-              // Repagination loading overlay
-              if (_isNavigating || _engine == null || currentPage == null)
-                Positioned.fill(
-                  child: Container(
-                    color: theme.scaffoldBackgroundColor.withOpacity(0.8),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const CircularProgressIndicator(),
-                          const SizedBox(height: 16),
-                          Text(
-                            AppLocalizations.of(context)?.repaginating ?? 'Repaginating...',
-                            style: theme.textTheme.bodyMedium,
-                          ),
-                        ],
-                      ),
+        body: Column(
+          children: [
+            _buildRagIndexingBanner(context),
+            Expanded(
+              child: Listener(
+                // Listener doesn't participate in gesture arena - it only observes pointer events
+                // This allows SelectableText to handle long presses without interference
+                // - Long press: handled by SelectableText for text selection (no interference)
+                // - Quick tap: detected here for navigation (menu, progress bar, page navigation)
+                // - Horizontal swipe: handled by PageView for page navigation
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: _handlePointerDown,
+                onPointerUp: _handlePointerUp,
+                onPointerCancel: _handlePointerCancel,
+                child: Stack(
+                  children: [
+                    PageView.builder(
+                      controller: _pageController,
+                      itemCount: pages.length,
+                      onPageChanged: _handlePageChanged,
+                      itemBuilder: (context, index) => pages[index],
                     ),
-                  ),
+                    // Repagination loading overlay
+                    if (_isNavigating || _engine == null || currentPage == null)
+                      Positioned.fill(
+                        child: Container(
+                          color: theme.scaffoldBackgroundColor.withOpacity(0.8),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const CircularProgressIndicator(),
+                                const SizedBox(height: 16),
+                                Text(
+                                  AppLocalizations.of(context)?.repaginating ?? 'Repaginating...',
+                                  style: theme.textTheme.bodyMedium,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    // Progress indicator overlay
+                    if (_showProgressBar)
+                      Positioned(
+                        bottom: 24,
+                        left: 24,
+                        right: 24,
+                        child: _buildProgressIndicator(theme),
+                      ),
+                  ],
                 ),
-              // Progress indicator overlay
-              if (_showProgressBar)
-                Positioned(
-                  bottom: 24,
-                  left: 24,
-                  right: 24,
-                  child: _buildProgressIndicator(theme),
-                ),
-            ],
-          ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1940,6 +2185,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       onFontScaleChanged: _updateFontScale,
       hasChapters: _chapterEntries.isNotEmpty,
       hasSavedWords: count > 0,
+      bookId: widget.book.id,
     );
     if (!mounted || action == null) {
       return;
@@ -1967,6 +2213,12 @@ class _ReaderScreenState extends State<ReaderScreen>
       case ReaderMenuAction.deleteSummaries:
         unawaited(_confirmAndDeleteSummaries());
         break;
+      case ReaderMenuAction.askQuestion:
+        _showRagQuestionDialog();
+        break;
+      case ReaderMenuAction.showLatestEvents:
+        _showLatestEventsDialog();
+        break;
       case ReaderMenuAction.returnToLibrary:
         unawaited(_returnToLibrary());
         break;
@@ -1982,6 +2234,96 @@ class _ReaderScreenState extends State<ReaderScreen>
     });
     unawaited(_settingsService.saveReaderFontScale(_fontScale));
     _scheduleRepagination(retainCurrentPage: true);
+  }
+
+  Future<void> _showRagQuestionDialog() async {
+    if (!mounted) return;
+
+    // Check if book is indexed
+    final isIndexed = await _ragQueryService.isBookIndexed(widget.book.id);
+    if (!isIndexed) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.ragNotIndexed),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // Show question dialog
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _RagQuestionDialog(
+        bookId: widget.book.id,
+        currentCharPosition: _currentCharacterIndex,
+        ragQueryService: _ragQueryService,
+        summaryService: _summaryService,
+        l10n: l10n,
+      ),
+    );
+  }
+
+  Future<void> _showLatestEventsDialog() async {
+    if (!mounted) return;
+
+    // Check if book is indexed
+    final isIndexed = await _ragQueryService.isBookIndexed(widget.book.id);
+    if (!isIndexed) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.ragNotIndexed),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // Show latest events dialog
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _LatestEventsDialog(
+        bookId: widget.book.id,
+        currentCharPosition: _currentCharacterIndex,
+        summaryService: _summaryService,
+        l10n: l10n,
+      ),
+    );
+  }
+
+  /// Check if we should auto-show the latest events dialog
+  Future<void> _checkAutoShowLatestEvents() async {
+    if (!mounted) return;
+
+    // Check if auto-show is enabled for this book
+    final shouldShow = await _settingsService.getAutoShowLatestEvents(widget.book.id);
+    if (!shouldShow) return;
+
+    // Check if book is indexed
+    final isIndexed = await _ragQueryService.isBookIndexed(widget.book.id);
+    if (!isIndexed) return;
+
+    // Check if there are enough chunks to show
+    final latestEventsService = LatestEventsService();
+    final hasEnough = await latestEventsService.hasEnoughChunks(
+      bookId: widget.book.id,
+      currentCharPosition: _currentCharacterIndex,
+      minChunks: 1,
+    );
+    
+    if (!hasEnough) return;
+
+    // Show the dialog automatically
+    if (!mounted) return;
+    await _showLatestEventsDialog();
   }
 
   Future<void> _confirmAndDeleteSummaries() async {
@@ -2045,6 +2387,8 @@ class _ReaderScreenState extends State<ReaderScreen>
       ),
     );
     if (!mounted) return;
+    await _initializeSummaryService();
+    await _loadSelectionActionConfig();
     await _refreshReaderLayoutFromSettings();
   }
 
@@ -3039,6 +3383,16 @@ body {
 #reader svg {
   max-width: 100%;
   height: auto;
+}
+.chapter {
+  break-before: page;
+  page-break-before: always;
+  -webkit-column-break-before: always;
+}
+.chapter:first-child {
+  break-before: auto;
+  page-break-before: auto;
+  -webkit-column-break-before: auto;
 }
 #selection-menu {
   position: fixed;
@@ -4923,3 +5277,403 @@ class _PulsatingChapterTileState extends State<_PulsatingChapterTile>
     );
   }
 }
+
+/// Dialog for asking questions about the book using RAG
+class _RagQuestionDialog extends StatefulWidget {
+  const _RagQuestionDialog({
+    required this.bookId,
+    required this.currentCharPosition,
+    required this.ragQueryService,
+    required this.summaryService,
+    required this.l10n,
+  });
+
+  final String bookId;
+  final int currentCharPosition;
+  final RagQueryService ragQueryService;
+  final EnhancedSummaryService? summaryService;
+  final AppLocalizations l10n;
+
+  @override
+  State<_RagQuestionDialog> createState() => _RagQuestionDialogState();
+}
+
+class _RagQuestionDialogState extends State<_RagQuestionDialog> {
+  final TextEditingController _questionController = TextEditingController();
+  bool _onlyReadSoFar = true;
+  bool _isProcessing = false;
+  String? _answer;
+  String? _error;
+  bool _canSubmit = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _questionController.addListener(_handleQuestionChanged);
+    _handleQuestionChanged();
+  }
+
+  @override
+  void dispose() {
+    _questionController.removeListener(_handleQuestionChanged);
+    _questionController.dispose();
+    super.dispose();
+  }
+
+  void _handleQuestionChanged() {
+    final hasText = _questionController.text.trim().isNotEmpty;
+    if (hasText != _canSubmit && mounted) {
+      setState(() {
+        _canSubmit = hasText;
+      });
+    }
+  }
+
+  Future<void> _submitQuestion() async {
+    final question = _questionController.text.trim();
+    if (question.isEmpty) return;
+
+    setState(() {
+      _isProcessing = true;
+      _answer = null;
+      _error = null;
+    });
+
+    try {
+      final summaryService = widget.summaryService;
+      if (summaryService == null) {
+        throw Exception('Summary service not available');
+      }
+
+      // EnhancedSummaryService wraps a SummaryService, get the underlying service
+      final baseService = summaryService.baseService;
+      
+      final result = await widget.ragQueryService.query(
+        bookId: widget.bookId,
+        question: question,
+        onlyReadSoFar: _onlyReadSoFar,
+        maxCharPosition: widget.currentCharPosition,
+        summaryService: baseService,
+      );
+
+      if (mounted) {
+        setState(() {
+          _answer = result.answer;
+          _isProcessing = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[RAG] Question error: $e');
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isProcessing = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = widget.l10n;
+
+    return AlertDialog(
+      title: Text(l10n.ragAskQuestion),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _questionController,
+                decoration: InputDecoration(
+                  labelText: l10n.ragQuestionField,
+                  hintText: l10n.ragQuestionField,
+                  border: const OutlineInputBorder(),
+                ),
+                maxLines: 4,
+                enabled: !_isProcessing,
+              ),
+              const SizedBox(height: 16),
+              SwitchListTile(
+                title: Text(
+                  _onlyReadSoFar
+                      ? l10n.ragAskReadSoFar
+                      : l10n.ragAskWholeBook,
+                ),
+                value: _onlyReadSoFar,
+                onChanged: _isProcessing
+                    ? null
+                    : (value) {
+                        setState(() {
+                          _onlyReadSoFar = value;
+                        });
+                      },
+                contentPadding: EdgeInsets.zero,
+              ),
+              if (_isProcessing) ...[
+                const SizedBox(height: 16),
+                const Center(child: CircularProgressIndicator()),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: theme.colorScheme.onErrorContainer),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (_answer != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  l10n.ragAnswerLabel,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SelectableText(
+                    _answer!,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isProcessing
+              ? null
+              : () {
+                  Navigator.of(context).pop();
+                },
+          child: Text(l10n.cancel),
+        ),
+        ElevatedButton(
+          onPressed: _isProcessing || !_canSubmit
+              ? null
+              : _submitQuestion,
+          child: Text(l10n.ragSubmitQuestion),
+        ),
+      ],
+    );
+  }
+}
+
+/// Dialog for showing the latest events summary
+class _LatestEventsDialog extends StatefulWidget {
+  const _LatestEventsDialog({
+    required this.bookId,
+    required this.currentCharPosition,
+    required this.summaryService,
+    required this.l10n,
+  });
+
+  final String bookId;
+  final int currentCharPosition;
+  final EnhancedSummaryService? summaryService;
+  final AppLocalizations l10n;
+
+  @override
+  State<_LatestEventsDialog> createState() => _LatestEventsDialogState();
+}
+
+class _LatestEventsDialogState extends State<_LatestEventsDialog> {
+  bool _autoShow = false;
+  bool _isLoading = true;
+  String? _summary;
+  String? _error;
+
+  final LatestEventsService _latestEventsService = LatestEventsService();
+  final SettingsService _settingsService = SettingsService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreference();
+    _generateSummary();
+  }
+
+  Future<void> _loadPreference() async {
+    final autoShow = await _settingsService.getAutoShowLatestEvents(widget.bookId);
+    if (mounted) {
+      setState(() {
+        _autoShow = autoShow;
+      });
+    }
+  }
+
+  Future<void> _generateSummary() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      _summary = null;
+    });
+
+    try {
+      final summaryService = widget.summaryService;
+      if (summaryService == null) {
+        throw Exception('Summary service not available');
+      }
+
+      // EnhancedSummaryService wraps a SummaryService, get the underlying service
+      final baseService = summaryService.baseService;
+
+      final summary = await _latestEventsService.generateLatestEventsSummary(
+        bookId: widget.bookId,
+        currentCharPosition: widget.currentCharPosition,
+        summaryService: baseService,
+        numChunks: 10,
+      );
+
+      if (mounted) {
+        setState(() {
+          _summary = summary;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[LatestEvents] Error generating summary: $e');
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _toggleAutoShow(bool value) async {
+    setState(() {
+      _autoShow = value;
+    });
+    await _settingsService.setAutoShowLatestEvents(widget.bookId, value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final l10n = widget.l10n;
+
+    return AlertDialog(
+      title: Text(l10n.ragLatestEventsTitle),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Auto-show toggle at the top
+              SwitchListTile(
+                title: Text(l10n.ragAutoShowLatestEvents),
+                subtitle: Text(
+                  l10n.ragAutoShowDescription,
+                  style: theme.textTheme.bodySmall,
+                ),
+                value: _autoShow,
+                onChanged: _toggleAutoShow,
+                contentPadding: EdgeInsets.zero,
+              ),
+              const Divider(),
+              const SizedBox(height: 16),
+              
+              // Loading state
+              if (_isLoading) ...[
+                const Center(child: CircularProgressIndicator()),
+                const SizedBox(height: 16),
+                Center(
+                  child: Text(
+                    l10n.ragLatestEventsGenerating,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+              ],
+              
+              // Error state
+              if (_error != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: theme.colorScheme.onErrorContainer),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _error!,
+                          style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              
+              // Summary display
+              if (_summary != null) ...[
+                Text(
+                  l10n.ragLatestEventsPrompt,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: SelectableText(
+                    _summary!,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+          child: Text(l10n.ok),
+        ),
+      ],
+    );
+  }
+}
+

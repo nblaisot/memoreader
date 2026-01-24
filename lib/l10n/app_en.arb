@@ -682,6 +682,171 @@
   "repaginating": "Repaginating...",
   "@repaginating": {
     "description": "Message shown when the app is recalculating page layout"
+  },
+  "ragAskQuestion": "Ask a question",
+  "@ragAskQuestion": {
+    "description": "RAG feature menu item label"
+  },
+  "ragIndexingProgress": "Indexing in progress ({percentage}%)",
+  "@ragIndexingProgress": {
+    "description": "RAG indexing progress message",
+    "placeholders": {
+      "percentage": {
+        "type": "int"
+      }
+    }
+  },
+  "ragIndexingInitializing": "Indexing in progress (...)",
+  "@ragIndexingInitializing": {
+    "description": "RAG indexing message shown before progress is known"
+  },
+  "ragQuestionField": "Enter your question",
+  "@ragQuestionField": {
+    "description": "RAG question input field label"
+  },
+  "ragAskReadSoFar": "Ask about what I've read so far",
+  "@ragAskReadSoFar": {
+    "description": "RAG toggle option for read-so-far mode"
+  },
+  "ragAskWholeBook": "Ask about the whole book",
+  "@ragAskWholeBook": {
+    "description": "RAG toggle option for whole book mode"
+  },
+  "ragSubmitQuestion": "Submit",
+  "@ragSubmitQuestion": {
+    "description": "RAG question submit button label"
+  },
+  "ragAnswerLabel": "Answer",
+  "@ragAnswerLabel": {
+    "description": "RAG answer section label"
+  },
+  "ragSourcesLabel": "Sources",
+  "@ragSourcesLabel": {
+    "description": "RAG sources section label"
+  },
+  "ragErrorGeneric": "An error occurred while processing your question",
+  "@ragErrorGeneric": {
+    "description": "Generic RAG error message"
+  },
+  "ragNotIndexed": "Book is not indexed yet. Please wait for indexing to complete.",
+  "@ragNotIndexed": {
+    "description": "Message when book is not indexed for RAG"
+  },
+  "ragClearDatabase": "Clear RAG database",
+  "@ragClearDatabase": {
+    "description": "Settings action to clear RAG database"
+  },
+  "ragClearDatabaseConfirm": "This will delete all indexed chunks and embeddings. Books will be re-indexed automatically.",
+  "@ragClearDatabaseConfirm": {
+    "description": "Confirmation message for clearing RAG database"
+  },
+  "ragTopKLabel": "RAG context chunks",
+  "@ragTopKLabel": {
+    "description": "Label for RAG top-K chunks setting"
+  },
+  "ragTopKDescription": "Number of relevant chunks attached to each question.",
+  "@ragTopKDescription": {
+    "description": "Description for RAG top-K chunks setting"
+  },
+  "ragLatestEvents": "What are the latest events?",
+  "@ragLatestEvents": {
+    "description": "Menu item label for showing latest events"
+  },
+  "ragLatestEventsTitle": "Latest events from this position",
+  "@ragLatestEventsTitle": {
+    "description": "Title for the latest events modal"
+  },
+  "ragLatestEventsPrompt": "Recent events summary",
+  "@ragLatestEventsPrompt": {
+    "description": "Prompt for the latest events summary"
+  },
+  "ragAutoShowLatestEvents": "Show automatically when reopening",
+  "@ragAutoShowLatestEvents": {
+    "description": "Label for the auto-show toggle"
+  },
+  "ragAutoShowDescription": "This summary will be shown automatically when reopening the book or the app",
+  "@ragAutoShowDescription": {
+    "description": "Description of the auto-show behavior"
+  },
+  "ragLatestEventsGenerating": "Generating latest events summary...",
+  "@ragLatestEventsGenerating": {
+    "description": "Message shown while generating the summary"
+  },
+  "ragIndexingCompleted": "Indexing completed: {chunks} chunks indexed, {apiCalls} API calls",
+  "@ragIndexingCompleted": {
+    "description": "Message shown when RAG indexing completes",
+    "placeholders": {
+      "chunks": {
+        "type": "int"
+      },
+      "apiCalls": {
+        "type": "int"
+      }
+    }
+  },
+  "readerMenuTitle": "Reading Options",
+  "@readerMenuTitle": {
+    "description": "Title for the reader menu"
+  },
+  "questionsSectionTitle": "Questions",
+  "@questionsSectionTitle": {
+    "description": "Section header for question-related actions"
+  },
+  "goToChapter": "Go to Chapter",
+  "@goToChapter": {
+    "description": "Menu item to navigate to a chapter"
+  },
+  "readerDisplaySettings": "Reader Display Settings",
+  "@readerDisplaySettings": {
+    "description": "Title for reader display settings section"
+  },
+  "readerDisplaySettingsDescription": "Adjust the padding of the reader screen. Horizontal padding affects left and right margins, vertical padding affects top and bottom margins.",
+  "@readerDisplaySettingsDescription": {
+    "description": "Description for reader display settings"
+  },
+  "horizontalPaddingLabel": "Horizontal Padding (Left/Right): {value} px",
+  "@horizontalPaddingLabel": {
+    "description": "Label for horizontal padding slider",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "verticalPaddingLabel": "Vertical Padding (Top/Bottom): {value} px",
+  "@verticalPaddingLabel": {
+    "description": "Label for vertical padding slider",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "paddingRangeInfo": "Default: {defaultValue} px. Range: {min} - {max} px",
+  "@paddingRangeInfo": {
+    "description": "Information about padding default and range",
+    "placeholders": {
+      "defaultValue": {
+        "type": "String"
+      },
+      "min": {
+        "type": "String"
+      },
+      "max": {
+        "type": "String"
+      }
+    }
+  },
+  "ragDatabaseTitle": "RAG Database",
+  "@ragDatabaseTitle": {
+    "description": "Title for RAG database section"
+  },
+  "ragDatabaseDescription": "Manage the RAG (Retrieval-Augmented Generation) database. Clearing the database will delete all indexed chunks and embeddings. Books will be re-indexed automatically.",
+  "@ragDatabaseDescription": {
+    "description": "Description for RAG database section"
+  },
+  "debugRagChunks": "Debug RAG Chunks",
+  "@debugRagChunks": {
+    "description": "Button to open RAG debug screen"
   }
 }
-
