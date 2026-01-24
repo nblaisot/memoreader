@@ -83,9 +83,10 @@ class _ReaderScreenState extends State<ReaderScreen>
   final WebViewReaderController _webViewController = WebViewReaderController();
   int? _currentChapterIndex;
   int? _pendingWebViewCharIndex;
-  double? _pendingWebViewProgress;
   double? _pendingRestorePercentage; // For non-WebView readers
   bool _hasRestoredProgress = false; // Track if we've already restored progress
+  bool _isWaitingForWebViewInit = false; // Track if we're waiting for WebView to fully initialize
+  bool _stylesAppliedForRestore = false; // True after we've sent our styles; we restore only after this so layout is stable
   String? _lastWebViewStyleKey;
   String? _lastWebViewLayoutKey;
   String? _lastWebViewActionLabel;
@@ -424,31 +425,31 @@ class _ReaderScreenState extends State<ReaderScreen>
         _lastWebViewLayoutKey = null;
         _lastWebViewActionLabel = null;
         _lastWebViewActionEnabled = null;
+        _stylesAppliedForRestore = false;
         _isLoading = false;
         _hasTriggeredAutoShowLatestEvents = false; // Reset for new book load
       });
 
-      // Use the saved progress percentage for restoration (what user sees at bottom)
-      // This is more reliable than character indices which can differ between save/restore
-      final savedProgressPercentage = progress?.progress;
+      // Use character index for restoration (prefer start of page over end)
+      final savedCharIndex = progress?.currentCharacterIndex ??
+                             progress?.lastVisibleCharacterIndex;
       
       if (kDebugMode) {
-        debugPrint('[ReaderScreen] Restoring progress: savedPercentage=${savedProgressPercentage != null ? (savedProgressPercentage * 100).toStringAsFixed(1) + "%" : "null"}');
+        debugPrint('[ReaderScreen] Restoring progress: savedCharIndex=$savedCharIndex');
       }
       
-      // Store the saved progress to restore after book is loaded
-      // We'll restore it once the book is ready (after first page update)
-      if (savedProgressPercentage != null && savedProgressPercentage > 0) {
-        _pendingWebViewProgress = savedProgressPercentage;
+      // Wait for WebView initialization before restoration
+      if (savedCharIndex != null && savedCharIndex > 0) {
         _hasRestoredProgress = false; // Reset flag for new book load
+        _isWaitingForWebViewInit = _useWebViewReader;
         if (kDebugMode) {
-          debugPrint('[ReaderScreen] SET PENDING: Will restore to ${(savedProgressPercentage * 100).toStringAsFixed(1)}% after book loads');
+          debugPrint('[ReaderScreen] Will restore to character index $savedCharIndex');
         }
       } else {
-        _pendingWebViewProgress = null;
         _hasRestoredProgress = false;
+        _isWaitingForWebViewInit = _useWebViewReader;
         if (kDebugMode) {
-          debugPrint('[ReaderScreen] No progress to restore, starting from beginning');
+          debugPrint('[ReaderScreen] No saved position, starting from beginning');
         }
       }
       
@@ -456,11 +457,12 @@ class _ReaderScreenState extends State<ReaderScreen>
       if (!_useWebViewReader) {
         // For non-WebView, we need to wait for pagination to complete
         // Store the percentage to restore after pagination
-        _pendingRestorePercentage = savedProgressPercentage;
+        _pendingRestorePercentage = progress?.progress;
       }
     } catch (e) {
       setState(() {
         _isLoading = false;
+        _isWaitingForWebViewInit = false; // Clear waiting flag on error
         _errorMessage = e.toString();
       });
     }
@@ -785,6 +787,24 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (progress?.layoutKey == null) return false;
     final currentLayoutKey = _computeLayoutKey(currentMetrics);
     return progress!.layoutKey == currentLayoutKey;
+  }
+
+  /// Check if WebView is fully initialized and ready for restoration
+  bool _isWebViewReadyForRestoration(WebViewPageUpdate update) {
+    // WebView must report it's ready
+    if (!_webViewController.isReady) return false;
+    
+    // Must have calculated total characters (not just 0)
+    if (update.totalChars <= 0) return false;
+    
+    // Must have at least one page
+    // (pageCount = 0 means still calculating, pageCount >= 1 is valid)
+    if (update.pageCount <= 0) return false;
+    
+    // Character indices must be valid
+    if (update.startCharIndex == null || update.endCharIndex == null) return false;
+    
+    return true;
   }
 
   void _scheduleProgressSave() {
@@ -1230,6 +1250,10 @@ class _ReaderScreenState extends State<ReaderScreen>
         ? (math.min(totalChars, math.max(0, endChar + 1)) / totalChars)
         : 0.0;
 
+    if (kDebugMode) {
+      debugPrint('[WebView] PAGE_CHANGED: page=${update.pageIndex}/${update.pageCount}, chars=$startChar-$endChar/$totalChars, waiting=$_isWaitingForWebViewInit, restored=$_hasRestoredProgress, loading=$_isLoading');
+    }
+
     // Update state first so _totalCharacterCount is available
     if (kDebugMode) {
       final previousEnd = _lastVisibleCharacterIndex;
@@ -1252,7 +1276,13 @@ class _ReaderScreenState extends State<ReaderScreen>
       _progress = progress;
       _currentChapterIndex = _resolveChapterIndexForChar(startChar);
       _showProgressBar = false;
-      _isNavigating = false;
+      
+      // Clear navigation flag only when restoration is complete (or not applicable)
+      // During restoration we keep overlay visible until we've reached the saved position
+      if (_hasRestoredProgress) {
+        _isNavigating = false;
+      }
+      
       _navigatingToChapterIndex = null;
     });
 
@@ -1278,56 +1308,65 @@ class _ReaderScreenState extends State<ReaderScreen>
       }
     }
 
-    // Restore from saved page index - MOST RELIABLE method!
-    // CRITICAL: Check if layout matches (screen size, font, etc.) before using page index
-    // If layout changed (e.g., foldable phone opened/closed), use percentage instead
-    if (!_hasRestoredProgress && _webViewController.isReady && update.pageCount > 0) {
-      final savedPageIndex = _savedProgress?.currentPageIndex;
-      final savedProgress = _pendingWebViewProgress;
-      
-      // Check if layout matches - if screen size changed, page index won't be accurate
-      bool layoutMatches = false;
-      if (_savedProgress != null && _currentPageMetrics != null) {
-        layoutMatches = _layoutsMatch(_savedProgress, _currentPageMetrics!);
+    // PHASE 1: First update ("ready") – WebView has loaded. Do NOT restore yet.
+    // We will apply our styles in PostFrameCallback; that triggers updateLayout and a second
+    // page update. We restore only after that, so layout is stable (no re-pagination glitches).
+    if (_isWaitingForWebViewInit) {
+      if (!_isWebViewReadyForRestoration(update)) {
+        debugPrint('[WebView] INIT: Not ready yet - totalChars=${update.totalChars}, pageCount=${update.pageCount}, ready=${_webViewController.isReady}');
+        return;
       }
-      
-      if (savedPageIndex != null && savedPageIndex >= 0 && savedPageIndex < update.pageCount && layoutMatches) {
-        // BEST: Use saved page index directly - layout matches, so page index is accurate!
-        _pendingWebViewProgress = null;
-        _hasRestoredProgress = true;
-        
-        debugPrint('[WebView] ===== RESTORATION START (PAGE INDEX) =====');
-        debugPrint('[WebView] Layout matches - using page index: $savedPageIndex (current: ${update.pageIndex}, total: ${update.pageCount})');
-        
-        if (savedPageIndex != update.pageIndex) {
+      debugPrint('[WebView] INIT: WebView ready (first update) - totalChars=${update.totalChars}, pageCount=${update.pageCount}. Waiting for styles then restore.');
+      if (_currentPageMetrics != null) {
+        _lastWebViewLayoutKey = _computeLayoutKey(_currentPageMetrics!);
+      }
+      setState(() {
+        _isWaitingForWebViewInit = false;
+        _isNavigating = true; // Keep overlay until we've restored on next update
+      });
+      return; // Skip Phase 2; next update will be after our updateStyles → updateLayout
+    }
+
+    // PHASE 2: Restore only after our styles are applied (_stylesAppliedForRestore).
+    // Run restore logic only while we have not yet restored (_hasRestoredProgress false).
+    // Once restored, skip this block on subsequent page flips – we must not navigate back
+    // to saved position when the user flips forward (e.g. past a chapter boundary).
+    if (!_stylesAppliedForRestore || !_webViewController.isReady || update.pageCount <= 0) {
+      return;
+    }
+
+    if (!_hasRestoredProgress) {
+      // Prefer currentCharacterIndex (start of page) over lastVisible (end).
+      // Restoring to start avoids layout-induced jump: when we use end, the page
+      // containing it can extend further after layout change, so displayed % jumps
+      // forward (e.g. 38.6% -> 38.9%). Start is a more stable anchor.
+      final savedCharIndex = _savedProgress?.currentCharacterIndex ??
+                             _savedProgress?.lastVisibleCharacterIndex;
+
+      if (savedCharIndex != null && savedCharIndex > 0) {
+        if (savedCharIndex >= startChar && savedCharIndex <= endChar) {
+          // Reached saved position (second update from updateLayout, or confirm after navigate).
+          _hasRestoredProgress = true;
+          debugPrint('[WebView] RESTORE: Reached saved position (savedChar=$savedCharIndex, page $startChar–$endChar)');
+          setState(() {
+            _isNavigating = false;
+          });
+        } else {
+          // Not at position – navigate once. Next page update will confirm.
+          debugPrint('[WebView] RESTORE: Navigating to character index $savedCharIndex (current page $startChar–$endChar, pageCount=${update.pageCount})');
           setState(() {
             _isNavigating = true;
           });
-          unawaited(_webViewController.goToPage(savedPageIndex, notify: true));
-          debugPrint('[WebView] ===== RESTORATION COMPLETE (PAGE INDEX) =====');
-        } else {
-          debugPrint('[WebView] Already at correct page, no navigation needed');
+          unawaited(_webViewController.goToCharIndex(savedCharIndex));
+          return;
         }
-      } else if (savedProgress != null && _totalCharacterCount > 0 && update.pageCount > 1) {
-        // FALLBACK: Use percentage if layout changed or page index not available
-        // Percentage works across different screen sizes (foldable phone support)
-        _pendingWebViewProgress = null;
+      } else {
+        // No saved position – first open.
         _hasRestoredProgress = true;
-        
-        final savedPercentage = savedProgress.clamp(0.0, 1.0) * 100.0;
-        
-        if (savedPageIndex != null && !layoutMatches) {
-          debugPrint('[WebView] ===== RESTORATION START (PERCENTAGE - LAYOUT CHANGED) =====');
-          debugPrint('[WebView] Layout changed (screen size/font different) - using percentage instead of page index');
-        } else {
-          debugPrint('[WebView] ===== RESTORATION START (PERCENTAGE FALLBACK) =====');
-          debugPrint('[WebView] No saved page index, using percentage: ${savedPercentage.toStringAsFixed(1)}%');
-        }
-        
-        _jumpToPercentage(savedPercentage);
-        debugPrint('[WebView] ===== RESTORATION COMPLETE (PERCENTAGE) =====');
-      } else if (savedProgress != null) {
-        debugPrint('[WebView] RESTORATION: Waiting - totalChars=$_totalCharacterCount, pageCount=${update.pageCount}, ready=${_webViewController.isReady}');
+        debugPrint('[WebView] RESTORE: No saved position, showing from beginning');
+        setState(() {
+          _isNavigating = false;
+        });
       }
     }
 
@@ -1878,7 +1917,13 @@ class _ReaderScreenState extends State<ReaderScreen>
   ) {
     final theme = Theme.of(context);
     final html = _webViewHtml;
+    
+    if (kDebugMode) {
+      debugPrint('[WebView] _buildWebViewReaderContent: html=${html != null ? "present (${html.length} chars)" : "NULL"}, waiting=$_isWaitingForWebViewInit, loading=$_isLoading, ready=${_webViewController.isReady}');
+    }
+    
     if (html == null) {
+      debugPrint('[WebView] HTML is NULL, returning empty widget');
       return const SizedBox.shrink();
     }
 
@@ -1893,8 +1938,13 @@ class _ReaderScreenState extends State<ReaderScreen>
       _updateWebViewAppearance(metrics, theme, actionLabel);
       final layoutKey = _computeLayoutKey(metrics);
       if (_webViewController.isReady && _lastWebViewLayoutKey != layoutKey) {
+        if (kDebugMode) {
+          debugPrint('[WebView] Layout key changed: old=$_lastWebViewLayoutKey, new=$layoutKey - triggering updateLayout()');
+        }
         _lastWebViewLayoutKey = layoutKey;
         unawaited(_webViewController.updateLayout());
+      } else if (kDebugMode && _webViewController.isReady) {
+        debugPrint('[WebView] Layout key unchanged: $layoutKey - skipping updateLayout()');
       }
     });
 
@@ -1915,7 +1965,7 @@ class _ReaderScreenState extends State<ReaderScreen>
             ),
           ),
           if (_webViewSelection != null) _buildWebViewSelectionToolbar(),
-          if (_isNavigating || html.isEmpty)
+          if (_isNavigating || html.isEmpty || _isWaitingForWebViewInit)
             Positioned.fill(
               child: Container(
                 color: theme.scaffoldBackgroundColor.withOpacity(0.8),
@@ -1967,6 +2017,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     ].join('|');
     if (_lastWebViewStyleKey != styleKey) {
       _lastWebViewStyleKey = styleKey;
+      _stylesAppliedForRestore = true; // Layout will reflect our styles; safe to restore after next page update
       unawaited(_webViewController.updateStyles(
         fontSize: fontSize,
         lineHeight: lineHeight,
