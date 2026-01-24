@@ -25,6 +25,7 @@
   "bookFileNotFound": "Fichier du livre introuvable. Le fichier a peut-être été déplacé ou supprimé.",
   "noBooksInLibrary": "Aucun livre dans votre bibliothèque",
   "tapToImportEpub": "Appuyez sur le bouton + pour importer un fichier EPUB ou TXT",
+  "libraryEmptyInfo": "Importez des livres .epub ou des documents .txt simples, dans n'importe quelle langue. Utilisez l'application « Calibre » sur votre ordinateur pour convertir des PDF ou d'autres formats en epub.",
   "deleteBook": "Supprimer le livre",
   "confirmDeleteBook": "Êtes-vous sûr de vouloir supprimer \"{title}\" ?",
   "@confirmDeleteBook": {
@@ -191,8 +192,9 @@
     }
   },
   "settings": "Paramètres",
-  "summaryProvider": "Fournisseur de résumés",
-  "summaryProviderDescription": "Choisissez comment les résumés sont générés",
+  "summaryProvider": "Services IA",
+  "summaryProviderDescription": "Sélectionnez la plate-forme IA pour les services de résumé, traduction et recherches RAG",
+  "aiServicesInfoModal": "Memoreader est une application autonome, elle a besoin d'appeler OpenAI ou Mistral pour fonctionner. Ces appels ont un coût (très faible), et donc requiert que vous vous connectiez sur leur site pour vous procurer une « clé API », pour pouvoir appeler le service en VOTRE nom — et pour que vous puissiez payer pour. Demandez à ChatGPT ou à Le Chat comment faire !",
   "summaryProviderMissing": "Configurez un fournisseur de résumés dans les paramètres pour générer des résumés.",
   "promptSettings": "Paramètres des instructions",
   "promptSettingsDescription": "Personnalisez les instructions utilisées pour la génération de résumés. Vous pouvez utiliser des variables dans vos instructions : text (pour le texte à résumer), bookTitle (pour le titre du livre), et chapterTitle (pour le titre du chapitre). Écrivez-les avec des accolades dans vos instructions.",

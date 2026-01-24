@@ -48,6 +48,10 @@ class AppLocalizationsFr extends AppLocalizations {
       'Appuyez sur le bouton + pour importer un fichier EPUB ou TXT';
 
   @override
+  String get libraryEmptyInfo =>
+      'Importez des livres .epub ou des documents .txt simples, dans n\'importe quelle langue. Utilisez l\'application « Calibre » sur votre ordinateur pour convertir des PDF ou d\'autres formats en epub.';
+
+  @override
   String get deleteBook => 'Supprimer le livre';
 
   @override
@@ -211,11 +215,15 @@ class AppLocalizationsFr extends AppLocalizations {
   String get settings => 'Paramètres';
 
   @override
-  String get summaryProvider => 'Fournisseur de résumés';
+  String get summaryProvider => 'Services IA';
 
   @override
   String get summaryProviderDescription =>
-      'Choisissez comment les résumés sont générés';
+      'Sélectionnez la plate-forme IA pour les services de résumé, traduction et recherches RAG';
+
+  @override
+  String get aiServicesInfoModal =>
+      'Memoreader est une application autonome, elle a besoin d\'appeler OpenAI ou Mistral pour fonctionner. Ces appels ont un coût (très faible), et donc requiert que vous vous connectiez sur leur site pour vous procurer une « clé API », pour pouvoir appeler le service en VOTRE nom — et pour que vous puissiez payer pour. Demandez à ChatGPT ou à Le Chat comment faire !';
 
   @override
   String get summaryProviderMissing =>

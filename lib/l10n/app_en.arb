@@ -54,6 +54,10 @@
   "@tapToImportEpub": {
     "description": "Instruction for importing EPUB or TXT"
   },
+  "libraryEmptyInfo": "Import .epub books, or simple .txt documents, in any language. Use the application \"Calibre\" on your computer to convert PDF documents, or other formats, into epub.",
+  "@libraryEmptyInfo": {
+    "description": "Additional info when library is empty (import formats, Calibre)"
+  },
   "deleteBook": "Delete Book",
   "@deleteBook": {
     "description": "Delete book dialog title"
@@ -300,13 +304,17 @@
   "@settings": {
     "description": "Settings screen title"
   },
-  "summaryProvider": "Summary Provider",
+  "summaryProvider": "AI Services",
   "@summaryProvider": {
-    "description": "Summary provider section title"
+    "description": "AI services section title"
   },
-  "summaryProviderDescription": "Choose how summaries are generated",
+  "summaryProviderDescription": "Select the AI platform for summary, translation and RAG search services",
   "@summaryProviderDescription": {
-    "description": "Summary provider section description"
+    "description": "AI services section description"
+  },
+  "aiServicesInfoModal": "Memoreader is a standalone app; it needs to call OpenAI or Mistral to function. Those calls have a cost (very low), so you must sign in on their site to get an \"API key\" — to call the service in YOUR name and to pay for it. Ask ChatGPT or Le Chat how to do it!",
+  "@aiServicesInfoModal": {
+    "description": "Info modal body explaining API keys and AI services"
   },
   "summaryProviderMissing": "Configure a summary provider in Settings to generate summaries.",
   "@summaryProviderMissing": {

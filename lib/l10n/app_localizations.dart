@@ -164,6 +164,12 @@ abstract class AppLocalizations {
   /// **'Tap the + button to import an EPUB or TXT file'**
   String get tapToImportEpub;
 
+  /// Additional info when library is empty (import formats, Calibre)
+  ///
+  /// In en, this message translates to:
+  /// **'Import .epub books, or simple .txt documents, in any language. Use the application \"Calibre\" on your computer to convert PDF documents, or other formats, into epub.'**
+  String get libraryEmptyInfo;
+
   /// Delete book dialog title
   ///
   /// In en, this message translates to:
@@ -434,17 +440,23 @@ abstract class AppLocalizations {
   /// **'Settings'**
   String get settings;
 
-  /// Summary provider section title
+  /// AI services section title
   ///
   /// In en, this message translates to:
-  /// **'Summary Provider'**
+  /// **'AI Services'**
   String get summaryProvider;
 
-  /// Summary provider section description
+  /// AI services section description
   ///
   /// In en, this message translates to:
-  /// **'Choose how summaries are generated'**
+  /// **'Select the AI platform for summary, translation and RAG search services'**
   String get summaryProviderDescription;
+
+  /// Info modal body explaining API keys and AI services
+  ///
+  /// In en, this message translates to:
+  /// **'Memoreader is a standalone app; it needs to call OpenAI or Mistral to function. Those calls have a cost (very low), so you must sign in on their site to get an \"API key\" — to call the service in YOUR name and to pay for it. Ask ChatGPT or Le Chat how to do it!'**
+  String get aiServicesInfoModal;
 
   /// Message shown when summary provider is not configured
   ///

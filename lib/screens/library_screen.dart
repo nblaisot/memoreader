@@ -907,6 +907,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
                               color: Colors.grey[500],
                             ),
                           ),
+                          const SizedBox(height: 16),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Text(
+                              l10n.libraryEmptyInfo,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[500],
+                                height: 1.4,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
                         ],
                       ),
                     )
