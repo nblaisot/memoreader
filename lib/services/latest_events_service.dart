@@ -14,11 +14,13 @@ class LatestEventsService {
   /// [bookId] - ID of the book
   /// [currentCharPosition] - Current character position in the book
   /// [summaryService] - LLM service for generating the summary
+  /// [language] - Language code ('fr' or 'en') for the prompt and summary
   /// [numChunks] - Number of recent chunks to summarize (default: 10)
   Future<String> generateLatestEventsSummary({
     required String bookId,
     required int currentCharPosition,
     required SummaryService summaryService,
+    required String language,
     int numChunks = 10,
   }) async {
     if (kDebugMode) {
@@ -41,14 +43,25 @@ class LatestEventsService {
     }
 
     // Concatenate chunk texts in chronological order
+    final excerptLabel = language == 'fr' ? 'Extrait' : 'Excerpt';
     final context = chunks.asMap().entries.map((entry) {
       final index = entry.key + 1;
       final chunk = entry.value;
-      return 'Excerpt $index:\n${chunk.text}\n';
+      return '$excerptLabel $index:\n${chunk.text}\n';
     }).join('\n---\n\n');
 
-    // Build prompt for LLM
-    final prompt = '''You are a helpful assistant that summarizes recent events from a book.
+    // Build prompt for LLM based on language
+    final prompt = language == 'fr'
+        ? '''Tu es un assistant utile qui résume les événements récents d'un livre.
+
+Voici des extraits du livre montrant les derniers événements que le lecteur a lus :
+
+$context
+
+Tâche : Écris un résumé concis des derniers événements qui se produisent dans le texte fourni. Concentre-toi sur les actions principales, les développements et les points de l'intrigue. Garde le résumé engageant et facile à comprendre.
+
+Résumé :'''
+        : '''You are a helpful assistant that summarizes recent events from a book.
 
 Here are excerpts from the book showing the latest events the reader has read:
 
@@ -59,7 +72,6 @@ Task: Write a concise summary of the latest events happening in the attached tex
 Summary:''';
 
     // Generate summary using the LLM service
-    final language = 'en'; // Default language for internal prompt
     final summary = await summaryService.generateSummary(prompt, language);
 
     if (kDebugMode) {

@@ -37,6 +37,7 @@ class RagQueryService {
   /// [onlyReadSoFar] - If true, only search in content up to reading position
   /// [maxCharPosition] - Maximum character position (for "read so far" mode)
   /// [summaryService] - LLM service for generating answers
+  /// [language] - Language code ('fr' or 'en') for the prompt and answer
   /// [topK] - Number of top chunks to retrieve (default: 10)
   Future<RagQueryResult> query({
     required String bookId,
@@ -44,6 +45,7 @@ class RagQueryService {
     bool onlyReadSoFar = false,
     int? maxCharPosition,
     SummaryService? summaryService,
+    required String language,
     int? topK,
   }) async {
     final settingsService = SettingsService();
@@ -129,6 +131,7 @@ class RagQueryService {
         chunks: topChunks,
         onlyReadSoFar: onlyReadSoFar,
         summaryService: summaryService,
+        language: language,
       );
     } else {
       // Fallback: just return chunk text
@@ -148,16 +151,30 @@ class RagQueryService {
     required List<RagChunk> chunks,
     required bool onlyReadSoFar,
     required SummaryService summaryService,
+    required String language,
   }) async {
     // Build context from chunks
+    final excerptLabel = language == 'fr' ? 'Extrait' : 'Excerpt';
     final context = chunks.asMap().entries.map((entry) {
       final index = entry.key + 1;
       final chunk = entry.value;
-      return 'Excerpt $index:\n${chunk.text}\n';
+      return '$excerptLabel $index:\n${chunk.text}\n';
     }).join('\n---\n\n');
 
-    // Build prompt
-    final prompt = '''You are a helpful assistant that answers questions about a book using ONLY the provided excerpts.
+    // Build prompt based on language
+    final prompt = language == 'fr'
+        ? '''Tu es un assistant utile qui répond aux questions sur un livre en utilisant UNIQUEMENT les extraits fournis.
+
+${onlyReadSoFar ? 'IMPORTANT : L\'utilisateur n\'a lu que jusqu\'à un certain point dans le livre. NE RÉVÈLE PAS de spoilers ou d\'informations au-delà de ce qu\'il a lu. Utilise uniquement les informations des extraits fournis.' : ''}
+
+Voici des extraits du livre :
+
+$context
+
+Question : $question
+
+Fournis une réponse utile basée UNIQUEMENT sur les extraits fournis. ${onlyReadSoFar ? 'Ne mentionne pas et ne révèle rien au-delà de ce qui est montré dans les extraits.' : 'Si les extraits ne contiennent pas assez d\'informations pour répondre à la question, dis-le.'}'''
+        : '''You are a helpful assistant that answers questions about a book using ONLY the provided excerpts.
 
 ${onlyReadSoFar ? 'IMPORTANT: The user has only read up to a certain point in the book. DO NOT reveal spoilers or information beyond what they have read. Only use information from the provided excerpts.' : ''}
 
@@ -170,7 +187,6 @@ Question: $question
 Please provide a helpful answer based ONLY on the provided excerpts. ${onlyReadSoFar ? 'Do not mention or reveal anything beyond what is shown in the excerpts.' : 'If the excerpts do not contain enough information to answer the question, say so.'}''';
 
     // Generate answer using summary service
-    final language = 'en'; // Default language
     return await summaryService.generateSummary(prompt, language);
   }
 

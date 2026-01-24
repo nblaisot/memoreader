@@ -5398,12 +5398,16 @@ class _RagQuestionDialogState extends State<_RagQuestionDialog> {
       // EnhancedSummaryService wraps a SummaryService, get the underlying service
       final baseService = summaryService.baseService;
       
+      // Get language from app locale
+      final language = widget.l10n.localeName.split('_')[0]; // 'fr' or 'en'
+      
       final result = await widget.ragQueryService.query(
         bookId: widget.bookId,
         question: question,
         onlyReadSoFar: _onlyReadSoFar,
         maxCharPosition: widget.currentCharPosition,
         summaryService: baseService,
+        language: language,
       );
 
       if (mounted) {
@@ -5594,10 +5598,15 @@ class _LatestEventsDialogState extends State<_LatestEventsDialog> {
       // EnhancedSummaryService wraps a SummaryService, get the underlying service
       final baseService = summaryService.baseService;
 
+      // Get language from app locale (use localeName from l10n, which is already available)
+      // localeName is like 'fr' or 'en', extract just the language code
+      final language = widget.l10n.localeName.split('_')[0]; // 'fr' or 'en'
+
       final summary = await _latestEventsService.generateLatestEventsSummary(
         bookId: widget.bookId,
         currentCharPosition: widget.currentCharPosition,
         summaryService: baseService,
+        language: language,
         numChunks: 10,
       );
 
