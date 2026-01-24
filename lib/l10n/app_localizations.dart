@@ -985,6 +985,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Repaginating...'**
   String get repaginating;
+
+  /// RAG feature menu item label
+  ///
+  /// In en, this message translates to:
+  /// **'Ask a question'**
+  String get ragAskQuestion;
+
+  /// RAG indexing progress message
+  ///
+  /// In en, this message translates to:
+  /// **'Indexing in progress ({percentage}%)'**
+  String ragIndexingProgress(int percentage);
+
+  /// RAG indexing message shown before progress is known
+  ///
+  /// In en, this message translates to:
+  /// **'Indexing in progress (...)'**
+  String get ragIndexingInitializing;
+
+  /// RAG question input field label
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your question'**
+  String get ragQuestionField;
+
+  /// RAG toggle option for read-so-far mode
+  ///
+  /// In en, this message translates to:
+  /// **'Ask about what I\'ve read so far'**
+  String get ragAskReadSoFar;
+
+  /// RAG toggle option for whole book mode
+  ///
+  /// In en, this message translates to:
+  /// **'Ask about the whole book'**
+  String get ragAskWholeBook;
+
+  /// RAG question submit button label
+  ///
+  /// In en, this message translates to:
+  /// **'Submit'**
+  String get ragSubmitQuestion;
+
+  /// RAG answer section label
+  ///
+  /// In en, this message translates to:
+  /// **'Answer'**
+  String get ragAnswerLabel;
+
+  /// RAG sources section label
+  ///
+  /// In en, this message translates to:
+  /// **'Sources'**
+  String get ragSourcesLabel;
+
+  /// Generic RAG error message
+  ///
+  /// In en, this message translates to:
+  /// **'An error occurred while processing your question'**
+  String get ragErrorGeneric;
+
+  /// Message when book is not indexed for RAG
+  ///
+  /// In en, this message translates to:
+  /// **'Book is not indexed yet. Please wait for indexing to complete.'**
+  String get ragNotIndexed;
+
+  /// Settings action to clear RAG database
+  ///
+  /// In en, this message translates to:
+  /// **'Clear RAG database'**
+  String get ragClearDatabase;
+
+  /// Confirmation message for clearing RAG database
+  ///
+  /// In en, this message translates to:
+  /// **'This will delete all indexed chunks and embeddings. Books will be re-indexed automatically.'**
+  String get ragClearDatabaseConfirm;
+
+  /// Label for RAG top-K chunks setting
+  ///
+  /// In en, this message translates to:
+  /// **'RAG context chunks'**
+  String get ragTopKLabel;
+
+  /// Description for RAG top-K chunks setting
+  ///
+  /// In en, this message translates to:
+  /// **'Number of relevant chunks attached to each question.'**
+  String get ragTopKDescription;
 }
 
 class _AppLocalizationsDelegate

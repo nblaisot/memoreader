@@ -355,6 +355,70 @@
   "repaginating": "Pagination...",
   "@repaginating": {
     "description": "Message affiché lorsque l'application recalcule la mise en page"
+  },
+  "ragAskQuestion": "Poser une question",
+  "@ragAskQuestion": {
+    "description": "Label de l'option de menu pour la fonctionnalité RAG"
+  },
+  "ragIndexingProgress": "Indexation en cours ({percentage}%)",
+  "@ragIndexingProgress": {
+    "description": "Message de progression de l'indexation RAG",
+    "placeholders": {
+      "percentage": {
+        "type": "int"
+      }
+    }
+  },
+  "ragIndexingInitializing": "Indexation en cours (...)",
+  "@ragIndexingInitializing": {
+    "description": "Message d'indexation RAG avant de connaitre la progression"
+  },
+  "ragQuestionField": "Entrez votre question",
+  "@ragQuestionField": {
+    "description": "Label du champ de saisie de question RAG"
+  },
+  "ragAskReadSoFar": "Demander sur ce que j'ai lu jusqu'à présent",
+  "@ragAskReadSoFar": {
+    "description": "Option de bascule RAG pour le mode lu jusqu'à présent"
+  },
+  "ragAskWholeBook": "Demander sur tout le livre",
+  "@ragAskWholeBook": {
+    "description": "Option de bascule RAG pour le mode livre entier"
+  },
+  "ragSubmitQuestion": "Envoyer",
+  "@ragSubmitQuestion": {
+    "description": "Label du bouton d'envoi de question RAG"
+  },
+  "ragAnswerLabel": "Réponse",
+  "@ragAnswerLabel": {
+    "description": "Label de la section de réponse RAG"
+  },
+  "ragSourcesLabel": "Sources",
+  "@ragSourcesLabel": {
+    "description": "Label de la section des sources RAG"
+  },
+  "ragErrorGeneric": "Une erreur s'est produite lors du traitement de votre question",
+  "@ragErrorGeneric": {
+    "description": "Message d'erreur générique RAG"
+  },
+  "ragNotIndexed": "Le livre n'est pas encore indexé. Veuillez attendre que l'indexation soit terminée.",
+  "@ragNotIndexed": {
+    "description": "Message lorsque le livre n'est pas indexé pour RAG"
+  },
+  "ragClearDatabase": "Effacer la base de données RAG",
+  "@ragClearDatabase": {
+    "description": "Action des paramètres pour effacer la base de données RAG"
+  },
+  "ragClearDatabaseConfirm": "Cela supprimera tous les chunks indexés et les embeddings. Les livres seront ré-indexés automatiquement.",
+  "@ragClearDatabaseConfirm": {
+    "description": "Message de confirmation pour effacer la base de données RAG"
+  },
+  "ragTopKLabel": "Chunks de contexte RAG",
+  "@ragTopKLabel": {
+    "description": "Label du réglage pour le nombre de chunks RAG"
+  },
+  "ragTopKDescription": "Nombre de chunks pertinents attachés à chaque question.",
+  "@ragTopKDescription": {
+    "description": "Description du réglage pour le nombre de chunks RAG"
   }
 }
-

@@ -682,6 +682,70 @@
   "repaginating": "Repaginating...",
   "@repaginating": {
     "description": "Message shown when the app is recalculating page layout"
+  },
+  "ragAskQuestion": "Ask a question",
+  "@ragAskQuestion": {
+    "description": "RAG feature menu item label"
+  },
+  "ragIndexingProgress": "Indexing in progress ({percentage}%)",
+  "@ragIndexingProgress": {
+    "description": "RAG indexing progress message",
+    "placeholders": {
+      "percentage": {
+        "type": "int"
+      }
+    }
+  },
+  "ragIndexingInitializing": "Indexing in progress (...)",
+  "@ragIndexingInitializing": {
+    "description": "RAG indexing message shown before progress is known"
+  },
+  "ragQuestionField": "Enter your question",
+  "@ragQuestionField": {
+    "description": "RAG question input field label"
+  },
+  "ragAskReadSoFar": "Ask about what I've read so far",
+  "@ragAskReadSoFar": {
+    "description": "RAG toggle option for read-so-far mode"
+  },
+  "ragAskWholeBook": "Ask about the whole book",
+  "@ragAskWholeBook": {
+    "description": "RAG toggle option for whole book mode"
+  },
+  "ragSubmitQuestion": "Submit",
+  "@ragSubmitQuestion": {
+    "description": "RAG question submit button label"
+  },
+  "ragAnswerLabel": "Answer",
+  "@ragAnswerLabel": {
+    "description": "RAG answer section label"
+  },
+  "ragSourcesLabel": "Sources",
+  "@ragSourcesLabel": {
+    "description": "RAG sources section label"
+  },
+  "ragErrorGeneric": "An error occurred while processing your question",
+  "@ragErrorGeneric": {
+    "description": "Generic RAG error message"
+  },
+  "ragNotIndexed": "Book is not indexed yet. Please wait for indexing to complete.",
+  "@ragNotIndexed": {
+    "description": "Message when book is not indexed for RAG"
+  },
+  "ragClearDatabase": "Clear RAG database",
+  "@ragClearDatabase": {
+    "description": "Settings action to clear RAG database"
+  },
+  "ragClearDatabaseConfirm": "This will delete all indexed chunks and embeddings. Books will be re-indexed automatically.",
+  "@ragClearDatabaseConfirm": {
+    "description": "Confirmation message for clearing RAG database"
+  },
+  "ragTopKLabel": "RAG context chunks",
+  "@ragTopKLabel": {
+    "description": "Label for RAG top-K chunks setting"
+  },
+  "ragTopKDescription": "Number of relevant chunks attached to each question.",
+  "@ragTopKDescription": {
+    "description": "Description for RAG top-K chunks setting"
   }
 }
-

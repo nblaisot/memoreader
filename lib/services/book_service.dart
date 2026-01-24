@@ -11,12 +11,20 @@ import '../models/reading_progress.dart';
 import 'summary_database_service.dart';
 import 'api_cache_service.dart';
 import 'txt_to_epub_converter.dart';
+import 'rag_indexing_service.dart';
+import 'rag_database_service.dart';
 
 class BookService {
   static const String _booksKey = 'books';
   static const String _progressKey = 'reading_progress_';
   
   final Uuid _uuid = const Uuid();
+  RagIndexingService? _ragIndexingService;
+  
+  RagIndexingService get _ragIndexingServiceInstance {
+    _ragIndexingService ??= RagIndexingService(bookService: this);
+    return _ragIndexingService!;
+  }
 
   Future<String> getBooksDirectory() async {
     try {
@@ -124,6 +132,10 @@ class BookService {
 
       if (existingBook.id.isNotEmpty) {
         debugPrint('Book already exists: ${existingBook.title}');
+        // Trigger RAG indexing for existing book if not already indexed (in background)
+        _triggerRagIndexing(existingBook.id).catchError((e) {
+          debugPrint('Failed to trigger RAG indexing for existing book ${existingBook.id}: $e');
+        });
         return existingBook;
       }
 
@@ -152,6 +164,11 @@ class BookService {
 
       // Save book to preferences
       await _saveBook(book);
+      
+      // Trigger RAG indexing for the new book (in background, don't wait)
+      _triggerRagIndexing(book.id).catchError((e) {
+        debugPrint('Failed to trigger RAG indexing for book ${book.id}: $e');
+      });
       
       return book;
     } catch (e) {
@@ -476,8 +493,53 @@ class BookService {
       } catch (e) {
         debugPrint('Failed to clear API cache: $e');
       }
+
+      // Stop indexing if in progress and delete RAG data
+      try {
+        final ragIndexingService = RagIndexingService();
+        if (ragIndexingService.isIndexing(book.id)) {
+          await ragIndexingService.stopIndexing(book.id);
+        }
+        final ragDbService = RagDatabaseService();
+        await ragDbService.clearBook(book.id);
+      } catch (e) {
+        debugPrint('Failed to clear RAG data: $e');
+      }
     } catch (e) {
       throw Exception('Failed to delete book: $e');
+    }
+  }
+
+  /// Trigger RAG indexing for a book (non-blocking)
+  /// Only starts indexing if not already indexed or actively indexing
+  /// startIndexing is now idempotent, so this can safely call it
+  Future<void> _triggerRagIndexing(String bookId) async {
+    try {
+      final ragDbService = RagDatabaseService();
+      final status = await ragDbService.getIndexStatus(bookId);
+      
+      // Skip if already completed
+      if (status?.isComplete == true) {
+        return;
+      }
+      
+      // Skip if already indexing (let startIndexing handle idempotency)
+      if (_ragIndexingServiceInstance.isIndexing(bookId)) {
+        return;
+      }
+      
+      // Start indexing - startIndexing is now idempotent
+      _ragIndexingServiceInstance.startIndexing(bookId).listen(
+        (progress) {
+          debugPrint('[RAG] Indexing progress for $bookId: ${progress.indexedChunks}/${progress.totalChunks}');
+        },
+        onError: (error) {
+          debugPrint('[RAG] Indexing error for $bookId: $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('Failed to trigger RAG indexing: $e');
+      // Don't throw - indexing is non-critical
     }
   }
 }

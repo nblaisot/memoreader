@@ -514,4 +514,55 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get repaginating => 'Pagination...';
+
+  @override
+  String get ragAskQuestion => 'Poser une question';
+
+  @override
+  String ragIndexingProgress(int percentage) {
+    return 'Indexation en cours ($percentage%)';
+  }
+
+  @override
+  String get ragIndexingInitializing => 'Indexation en cours (...)';
+
+  @override
+  String get ragQuestionField => 'Entrez votre question';
+
+  @override
+  String get ragAskReadSoFar => 'Demander sur ce que j\'ai lu jusqu\'à présent';
+
+  @override
+  String get ragAskWholeBook => 'Demander sur tout le livre';
+
+  @override
+  String get ragSubmitQuestion => 'Envoyer';
+
+  @override
+  String get ragAnswerLabel => 'Réponse';
+
+  @override
+  String get ragSourcesLabel => 'Sources';
+
+  @override
+  String get ragErrorGeneric =>
+      'Une erreur s\'est produite lors du traitement de votre question';
+
+  @override
+  String get ragNotIndexed =>
+      'Le livre n\'est pas encore indexé. Veuillez attendre que l\'indexation soit terminée.';
+
+  @override
+  String get ragClearDatabase => 'Effacer la base de données RAG';
+
+  @override
+  String get ragClearDatabaseConfirm =>
+      'Cela supprimera tous les chunks indexés et les embeddings. Les livres seront ré-indexés automatiquement.';
+
+  @override
+  String get ragTopKLabel => 'Chunks de contexte RAG';
+
+  @override
+  String get ragTopKDescription =>
+      'Nombre de chunks pertinents attachés à chaque question.';
 }

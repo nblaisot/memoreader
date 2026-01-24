@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/summary_config_service.dart';
 import '../services/settings_service.dart';
 import '../services/prompt_config_service.dart';
+import '../services/rag_database_service.dart';
+import 'rag_debug_screen.dart';
 import '../main.dart';
 
 /// Settings screen for configuring summary provider, API keys, and prompts
@@ -53,6 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _showMistralApiKey = false;
   double _horizontalPadding = 30.0;
   double _verticalPadding = 50.0;
+  int _ragTopK = 10;
   final Map<String, bool> _expansionState = {
     'chunkSummary': false,
     'characterExtraction': false,
@@ -113,6 +116,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Load padding preferences
       _horizontalPadding = await _settingsService.getHorizontalPadding();
       _verticalPadding = await _settingsService.getVerticalPadding();
+
+      // Load RAG settings
+      _ragTopK = await _settingsService.getRagTopK();
       
       // Initialize prompt controllers and focus nodes
       _initializePromptControllers();
@@ -366,10 +372,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       await _configService.setOpenAIApiKey(apiKey);
+      await _configService.setProvider('openai');
       setState(() {
         _isOpenAIConfigured = true;
         _showOpenaiApiKey = false;
         _openaiApiKeyController.text = _configService.getOpenAIApiKey() ?? '';
+        _selectedProvider = 'openai';
       });
       
       if (mounted) {
@@ -418,10 +426,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       await _configService.setMistralApiKey(apiKey);
+      await _configService.setProvider('mistral');
       setState(() {
         _isMistralConfigured = true;
         _showMistralApiKey = false;
         _mistralApiKeyController.text = _configService.getMistralApiKey() ?? '';
+        _selectedProvider = 'mistral';
       });
       
       if (mounted) {
@@ -950,8 +960,172 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
+          
+          // RAG Database Section
+          _buildRagDatabaseSection(context),
         ],
       ),
     );
+  }
+
+  Widget _buildRagDatabaseSection(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final minTopK = _settingsService.minRagTopK.toDouble();
+    final maxTopK = _settingsService.maxRagTopK.toDouble();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 32),
+        Text(
+          'RAG Database',
+          style: theme.textTheme.titleLarge,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Manage the RAG (Retrieval-Augmented Generation) database. Clearing the database will delete all indexed chunks and embeddings. Books will be re-indexed automatically.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: Colors.grey[600],
+          ),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          l10n?.ragTopKLabel ?? 'RAG context chunks',
+          style: theme.textTheme.titleMedium,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          l10n?.ragTopKDescription ??
+              'Number of relevant chunks attached to each question.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: Colors.grey[600],
+          ),
+        ),
+        Row(
+          children: [
+            Expanded(
+              child: Slider(
+                min: minTopK,
+                max: maxTopK,
+                divisions: maxTopK.toInt() - minTopK.toInt(),
+                value: _ragTopK.toDouble().clamp(minTopK, maxTopK),
+                label: _ragTopK.toString(),
+                onChanged: (value) {
+                  final rounded = value.round();
+                  if (rounded != _ragTopK) {
+                    setState(() {
+                      _ragTopK = rounded;
+                    });
+                  }
+                },
+                onChangeEnd: (value) async {
+                  final rounded = value.round();
+                  await _settingsService.saveRagTopK(rounded);
+                },
+              ),
+            ),
+            SizedBox(
+              width: 40,
+              child: Text(
+                _ragTopK.toString(),
+                textAlign: TextAlign.end,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton.icon(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const RagDebugScreen(),
+              ),
+            );
+          },
+          icon: const Icon(Icons.bug_report),
+          label: const Text('Debug RAG Chunks'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.primaryContainer,
+            foregroundColor: theme.colorScheme.onPrimaryContainer,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ElevatedButton.icon(
+          onPressed: () => _showClearRagDatabaseDialog(context),
+          icon: const Icon(Icons.delete_outline),
+          label: Text(l10n?.ragClearDatabase ?? 'Clear RAG database'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: theme.colorScheme.errorContainer,
+            foregroundColor: theme.colorScheme.onErrorContainer,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showClearRagDatabaseDialog(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n?.ragClearDatabase ?? 'Clear RAG database'),
+        content: Text(
+          l10n?.ragClearDatabaseConfirm ??
+              'This will delete all indexed chunks and embeddings. Books will be re-indexed automatically.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n?.cancel ?? 'Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: Text(l10n?.delete ?? 'Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await _clearRagDatabase(context);
+    }
+  }
+
+  Future<void> _clearRagDatabase(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final ragDbService = RagDatabaseService();
+      await ragDbService.clearAll();
+
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              l10n?.ragClearDatabaseConfirm ?? 'RAG database cleared successfully',
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Error clearing RAG database: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 }

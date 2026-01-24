@@ -161,6 +161,9 @@ class EnhancedSummaryService {
   final SummaryDatabaseService _dbService = SummaryDatabaseService();
   final BookService _bookService = BookService();
   final ChunkingConfig _chunkConfig;
+
+  /// Get the underlying SummaryService
+  SummaryService get baseService => _baseSummaryService;
   final PromptConfigService _promptConfigService;
   
   // Progress stream
