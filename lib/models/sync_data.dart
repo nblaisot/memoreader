@@ -108,3 +108,36 @@ class SyncTranslationsData {
     );
   }
 }
+
+/// Wrapper for syncing API keys data
+class SyncApiKeysData {
+  final String? openaiApiKey;
+  final String? mistralApiKey;
+  final String? provider; // 'openai' or 'mistral'
+  final DateTime lastModified;
+
+  SyncApiKeysData({
+    this.openaiApiKey,
+    this.mistralApiKey,
+    this.provider,
+    required this.lastModified,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'openaiApiKey': openaiApiKey,
+      'mistralApiKey': mistralApiKey,
+      'provider': provider,
+      'lastModified': lastModified.toIso8601String(),
+    };
+  }
+
+  factory SyncApiKeysData.fromJson(Map<String, dynamic> json) {
+    return SyncApiKeysData(
+      openaiApiKey: json['openaiApiKey'] as String?,
+      mistralApiKey: json['mistralApiKey'] as String?,
+      provider: json['provider'] as String?,
+      lastModified: DateTime.parse(json['lastModified'] as String),
+    );
+  }
+}

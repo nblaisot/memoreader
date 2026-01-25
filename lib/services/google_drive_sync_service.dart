@@ -11,6 +11,7 @@ import '../models/saved_translation.dart';
 import '../models/sync_data.dart';
 import 'book_service.dart';
 import 'saved_translation_database_service.dart';
+import 'summary_config_service.dart';
 
 /// Service for synchronizing data with Google Drive
 class GoogleDriveSyncService {
@@ -22,6 +23,7 @@ class GoogleDriveSyncService {
   static const String _booksFileName = 'memoreader_books.json';
   static const String _progressFileName = 'memoreader_progress.json';
   static const String _translationsFileName = 'memoreader_translations.json';
+  static const String _apiKeysFileName = 'memoreader_api_keys.json';
   static const String _deletedBooksKey = 'google_drive_deleted_books';
   static const String _booksFolderName = 'books';
   static const String _coversFolderName = 'covers';
@@ -190,6 +192,9 @@ class GoogleDriveSyncService {
       // Upload translations
       await _uploadTranslations();
       
+      // Upload API keys
+      await _uploadApiKeys();
+      
       // Upload EPUB files and covers for books that need syncing
       await _uploadBookFiles();
       
@@ -215,6 +220,9 @@ class GoogleDriveSyncService {
       
       // Download and merge translations
       await _downloadAndMergeTranslations();
+      
+      // Download and merge API keys
+      await _downloadAndMergeApiKeys();
       
       // Download EPUB files and covers for books that need them
       await _downloadBookFiles();
@@ -356,6 +364,23 @@ class GoogleDriveSyncService {
 
     final jsonBytes = utf8.encode(jsonEncode(syncData.toJson()));
     await _uploadFile(_translationsFileName, jsonBytes, 'application/json');
+  }
+
+  /// Upload API keys JSON file
+  Future<void> _uploadApiKeys() async {
+    final prefs = await SharedPreferences.getInstance();
+    final configService = SummaryConfigService(prefs);
+    
+    final syncData = SyncApiKeysData(
+      openaiApiKey: configService.getRawOpenAIApiKey(),
+      mistralApiKey: configService.getRawMistralApiKey(),
+      provider: configService.getProvider(),
+      lastModified: DateTime.now(),
+    );
+
+    final jsonBytes = utf8.encode(jsonEncode(syncData.toJson()));
+    await _uploadFile(_apiKeysFileName, jsonBytes, 'application/json');
+    debugPrint('[DriveSync] API keys uploaded');
   }
 
   /// Upload EPUB files and cover images
@@ -597,6 +622,80 @@ class GoogleDriveSyncService {
       }
     } catch (e) {
       debugPrint('[DriveSync] Error downloading translations: $e');
+      // Don't throw - continue with other sync operations
+    }
+  }
+
+  /// Download and merge API keys
+  Future<void> _downloadAndMergeApiKeys() async {
+    try {
+      final jsonBytes = await _downloadFile(_apiKeysFileName);
+      if (jsonBytes == null) {
+        debugPrint('[DriveSync] No API keys file found in Drive');
+        return;
+      }
+
+      final json = jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>;
+      final remoteData = SyncApiKeysData.fromJson(json);
+
+      final prefs = await SharedPreferences.getInstance();
+      final configService = SummaryConfigService(prefs);
+      
+      // Get local API keys
+      final localOpenAIKey = configService.getRawOpenAIApiKey();
+      final localMistralKey = configService.getRawMistralApiKey();
+      final localProvider = configService.getProvider();
+      
+      // Merge strategy for API keys:
+      // - If remote has a key and local doesn't, use remote
+      // - If both have keys, prefer remote (last-write-wins based on lastModified)
+      // This ensures that when a user configures API keys on one device, they sync to others
+      bool shouldUpdate = false;
+      
+      // Check OpenAI key
+      if (remoteData.openaiApiKey != null && remoteData.openaiApiKey!.isNotEmpty) {
+        if (localOpenAIKey == null || localOpenAIKey.isEmpty) {
+          // Local doesn't have OpenAI key, use remote
+          await configService.setOpenAIApiKey(remoteData.openaiApiKey!);
+          shouldUpdate = true;
+          debugPrint('[DriveSync] Synced OpenAI API key from Drive (local was empty)');
+        } else if (localOpenAIKey != remoteData.openaiApiKey) {
+          // Both have keys but they're different - prefer remote (last-write-wins)
+          await configService.setOpenAIApiKey(remoteData.openaiApiKey!);
+          shouldUpdate = true;
+          debugPrint('[DriveSync] Updated OpenAI API key from Drive (remote is newer)');
+        }
+      }
+      
+      // Check Mistral key
+      if (remoteData.mistralApiKey != null && remoteData.mistralApiKey!.isNotEmpty) {
+        if (localMistralKey == null || localMistralKey.isEmpty) {
+          // Local doesn't have Mistral key, use remote
+          await configService.setMistralApiKey(remoteData.mistralApiKey!);
+          shouldUpdate = true;
+          debugPrint('[DriveSync] Synced Mistral API key from Drive (local was empty)');
+        } else if (localMistralKey != remoteData.mistralApiKey) {
+          // Both have keys but they're different - prefer remote (last-write-wins)
+          await configService.setMistralApiKey(remoteData.mistralApiKey!);
+          shouldUpdate = true;
+          debugPrint('[DriveSync] Updated Mistral API key from Drive (remote is newer)');
+        }
+      }
+      
+      // Update provider if remote has one and it's different from local
+      if (remoteData.provider != null && remoteData.provider != localProvider) {
+        await configService.setProvider(remoteData.provider!);
+        shouldUpdate = true;
+        debugPrint('[DriveSync] Updated provider from Drive: ${remoteData.provider}');
+      }
+      
+      if (shouldUpdate) {
+        debugPrint('[DriveSync] API keys configuration synced from Drive');
+      } else {
+        debugPrint('[DriveSync] API keys already in sync');
+      }
+    } catch (e) {
+      debugPrint('[DriveSync] Error downloading API keys: $e');
       // Don't throw - continue with other sync operations
     }
   }

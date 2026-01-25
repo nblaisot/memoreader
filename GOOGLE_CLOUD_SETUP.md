@@ -55,10 +55,15 @@ This guide will walk you through setting up Google Cloud project and OAuth crede
 5. Click **"Save and Continue"**
 
 ### Test Users (for development):
+**⚠️ IMPORTANT: You MUST add test users or you'll get "Access blocked" errors!**
+
 1. If you selected "External" user type, you'll need to add test users
-2. Click **"Add Users"**
-3. Add your Google account email (and any other test accounts)
-4. Click **"Save and Continue"**
+2. Scroll down to the **"Test users"** section
+3. Click **"+ ADD USERS"** button
+4. Add your Google account email (the exact email you'll use to sign in, e.g., `nblaisot@gmail.com`)
+5. Add any other test accounts you want to use
+6. Click **"ADD"**
+7. Click **"Save and Continue"** at the bottom of the page
 
 ### Summary:
 1. Review the summary
@@ -70,17 +75,46 @@ You'll need to create separate OAuth client IDs for each platform (iOS, Android,
 
 ### For Android:
 
+#### For Debug Build (Development):
+
 1. In the left sidebar, go to **"APIs & Services"** > **"Credentials"**
 2. Click **"+ CREATE CREDENTIALS"** > **"OAuth client ID"**
 3. Select **"Android"** as the application type
 4. Enter:
-   - **Name**: `Memoreader Android`
-   - **Package name**: Check your `android/app/build.gradle` file for `applicationId` (usually `com.example.memoreader` or similar)
+   - **Name**: `Memoreader Android Debug`
+   - **Package name**: Check your `android/app/build.gradle.kts` file for `applicationId` (e.g., `com.blaisotbalette.memoreader`)
    - **SHA-1 certificate fingerprint**: 
-     - For debug: Run `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`
+     - Run: `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`
      - Copy the SHA-1 value (looks like: `AA:BB:CC:DD:...`)
 5. Click **"Create"**
 6. **Copy the Client ID** - you'll need this for Android configuration
+
+#### For Release Build (Production):
+
+**Option A: Add Release SHA-1 to Existing Client ID (Recommended)**
+
+1. Go to **"APIs & Services"** > **"Credentials"**
+2. Find your existing Android OAuth Client ID (the one you created for debug)
+3. Click the **pencil icon** (Edit) next to it
+4. In the **"SHA-1 certificate fingerprints"** section, click **"+ ADD SHA-1 CERTIFICATE FINGERPRINT"**
+5. Add your release SHA-1 fingerprint:
+   - If you have a release keystore, run:
+     ```bash
+     keytool -list -v -keystore android/app/your_keystore.jks -alias your_key_alias
+     ```
+   - Copy the SHA-1 value and paste it
+6. Click **"SAVE"**
+
+**Option B: Create Separate Client ID for Release**
+
+1. Click **"+ CREATE CREDENTIALS"** > **"OAuth client ID"** again
+2. Select **"Android"** as the application type
+3. Enter:
+   - **Name**: `Memoreader Android Release`
+   - **Package name**: Same as debug (e.g., `com.blaisotbalette.memoreader`)
+   - **SHA-1 certificate fingerprint**: Your release keystore's SHA-1
+4. Click **"Create"**
+5. **Note**: If you use this option, you'll need to configure your app to use different Client IDs for debug vs release (see Step 5 below)
 
 ### For iOS:
 
@@ -111,22 +145,36 @@ You'll need to create separate OAuth client IDs for each platform (iOS, Android,
 
 ### For Android:
 
-1. Open `android/app/build.gradle`
-2. Find or add the `defaultConfig` section
-3. Add your Android Client ID:
-   ```gradle
-   defaultConfig {
-       // ... existing config ...
-       resValue "string", "google_drive_client_id", "YOUR_ANDROID_CLIENT_ID_HERE"
-   }
+#### If Using a Single Client ID (Option A from Step 4):
+
+1. Open `android/app/src/main/res/values/strings.xml` (create it if it doesn't exist)
+2. Add your Android Client ID:
+   ```xml
+   <string name="google_drive_client_id">YOUR_ANDROID_CLIENT_ID_HERE</string>
+   ```
+3. The AndroidManifest.xml is already configured to use this string resource
+
+**Important:** Replace `YOUR_ANDROID_CLIENT_ID_HERE` with the actual Client ID you copied from Google Cloud Console.
+
+#### If Using Separate Client IDs for Debug and Release (Option B from Step 4):
+
+1. **Debug Client ID** - Open `android/app/src/main/res/values/strings.xml`:
+   ```xml
+   <string name="google_drive_client_id">YOUR_DEBUG_CLIENT_ID_HERE</string>
    ```
 
-Alternatively, you can configure it in `google_sign_in` package by adding to `android/app/src/main/AndroidManifest.xml`:
-```xml
-<meta-data
-    android:name="com.google.android.gms.auth.GOOGLE_SIGN_IN_CLIENT_ID"
-    android:value="YOUR_ANDROID_CLIENT_ID_HERE" />
-```
+2. **Release Client ID** - Create `android/app/src/release/res/values/strings.xml`:
+   ```xml
+   <string name="google_drive_client_id">YOUR_RELEASE_CLIENT_ID_HERE</string>
+   ```
+
+3. The AndroidManifest.xml is already configured to use this string resource. Android will automatically use the appropriate Client ID based on the build type:
+   - Debug builds use `src/main/res/values/strings.xml`
+   - Release builds use `src/release/res/values/strings.xml` (overrides main)
+
+**Important:** 
+- Replace `YOUR_DEBUG_CLIENT_ID_HERE` with your debug Client ID
+- Replace `YOUR_RELEASE_CLIENT_ID_HERE` with your release Client ID
 
 ### For iOS:
 
@@ -179,9 +227,16 @@ final GoogleSignIn _googleSignIn = GoogleSignIn(
 - Check that OAuth consent screen is configured
 - Ensure you're added as a test user (if app is in testing mode)
 
-### "Access blocked" or "App not verified"
-- If you see this, your app needs to go through Google's verification process
-- For development/testing: Add yourself as a test user in OAuth consent screen
+### "Access blocked" or "App not verified" (Error 403: access_denied)
+- **This is the most common issue during development!**
+- Your app is in "Testing" mode and your Google account is not added as a test user
+- **Solution**: 
+  1. Go to [OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent)
+  2. Scroll down to "Test users" section
+  3. Click "+ ADD USERS"
+  4. Add your Google account email (the one you're trying to sign in with)
+  5. Click "ADD" and save
+  6. Try signing in again in the app
 - For production: Submit your app for verification (can take several days)
 
 ### "Quota exceeded"
