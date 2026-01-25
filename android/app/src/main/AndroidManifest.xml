@@ -54,6 +54,11 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        
+        <!-- Google Sign-In OAuth Client ID for Google Drive sync -->
+        <meta-data
+            android:name="com.google.android.gms.auth.GOOGLE_SIGN_IN_CLIENT_ID"
+            android:value="@string/google_drive_client_id" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
