@@ -5,6 +5,7 @@ import '../services/summary_config_service.dart';
 import '../services/settings_service.dart';
 import '../services/prompt_config_service.dart';
 import '../services/rag_database_service.dart';
+import '../services/google_drive_sync_service.dart';
 import 'rag_debug_screen.dart';
 import '../main.dart';
 
@@ -65,6 +66,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Prompt controllers
   final Map<String, TextEditingController> _promptControllers = {};
   final Map<String, FocusNode> _promptFocusNodes = {};
+  
+  // Google Drive sync
+  final GoogleDriveSyncService _driveSyncService = GoogleDriveSyncService();
+  bool _syncEnabled = false;
+  String? _accountEmail;
+  DateTime? _lastSyncTime;
+  bool _isSyncing = false;
 
   @override
   void initState() {
@@ -119,6 +127,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       // Load RAG settings
       _ragTopK = await _settingsService.getRagTopK();
+      
+      // Load Google Drive sync settings
+      _syncEnabled = await _driveSyncService.isSyncEnabled();
+      _accountEmail = await _driveSyncService.getAccountEmail();
+      _lastSyncTime = await _driveSyncService.getLastSyncTime();
       
       // Initialize prompt controllers and focus nodes
       _initializePromptControllers();
@@ -1001,9 +1014,193 @@ class _SettingsScreenState extends State<SettingsScreen> {
           
           // RAG Database Section
           _buildRagDatabaseSection(context),
+          
+          // Google Drive Sync Section
+          _buildGoogleDriveSyncSection(context),
         ],
       ),
     );
+  }
+  
+  Widget _buildGoogleDriveSyncSection(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 32),
+        Text(
+          'Google Drive Sync',
+          style: theme.textTheme.titleLarge,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Synchronize your books, reading progress, and saved words across all your devices using Google Drive.',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: Colors.grey[600],
+          ),
+        ),
+        const SizedBox(height: 16),
+        
+        // Enable/Disable Sync Toggle
+        SwitchListTile(
+          title: const Text('Enable Google Drive Sync'),
+          subtitle: Text(
+            _syncEnabled 
+                ? 'Your data will be synced to Google Drive'
+                : 'Sync is disabled',
+          ),
+          value: _syncEnabled,
+          onChanged: (value) async {
+            if (value) {
+              // Enable sync - sign in first
+              final signedIn = await _driveSyncService.signIn();
+              if (signedIn) {
+                await _driveSyncService.setSyncEnabled(true);
+                final email = await _driveSyncService.getAccountEmail();
+                setState(() {
+                  _syncEnabled = true;
+                  _accountEmail = email;
+                });
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Google Drive sync enabled'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Failed to sign in to Google'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
+            } else {
+              // Disable sync
+              await _driveSyncService.setSyncEnabled(false);
+              setState(() {
+                _syncEnabled = false;
+                _accountEmail = null;
+              });
+            }
+          },
+        ),
+        
+        if (_syncEnabled) ...[
+          const SizedBox(height: 16),
+          
+          // Account Email
+          if (_accountEmail != null)
+            ListTile(
+              leading: const Icon(Icons.account_circle),
+              title: const Text('Account'),
+              subtitle: Text(_accountEmail!),
+            ),
+          
+          // Last Sync Time
+          if (_lastSyncTime != null)
+            ListTile(
+              leading: const Icon(Icons.sync),
+              title: const Text('Last Sync'),
+              subtitle: Text(
+                '${_lastSyncTime!.toLocal().toString().substring(0, 19)}',
+              ),
+            ),
+          
+          const SizedBox(height: 16),
+          
+          // Manual Sync Button
+          ElevatedButton.icon(
+            onPressed: _isSyncing ? null : () => _manualSync(context),
+            icon: _isSyncing 
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.sync),
+            label: Text(_isSyncing ? 'Syncing...' : 'Sync Now'),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 48),
+            ),
+          ),
+          
+          const SizedBox(height: 8),
+          
+          // Sign Out Button
+          OutlinedButton.icon(
+            onPressed: () => _signOut(context),
+            icon: const Icon(Icons.logout),
+            label: const Text('Sign Out'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 48),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+  
+  Future<void> _manualSync(BuildContext context) async {
+    setState(() {
+      _isSyncing = true;
+    });
+    
+    try {
+      await _driveSyncService.syncOnStartup();
+      final lastSync = await _driveSyncService.getLastSyncTime();
+      setState(() {
+        _lastSyncTime = lastSync;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sync completed successfully'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sync failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSyncing = false;
+        });
+      }
+    }
+  }
+  
+  Future<void> _signOut(BuildContext context) async {
+    await _driveSyncService.signOut();
+    await _driveSyncService.setSyncEnabled(false);
+    setState(() {
+      _syncEnabled = false;
+      _accountEmail = null;
+      _lastSyncTime = null;
+    });
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Signed out from Google Drive'),
+        ),
+      );
+    }
   }
 
   Widget _buildRagDatabaseSection(BuildContext context) {

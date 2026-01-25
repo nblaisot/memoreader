@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:epubx/epubx.dart';
 import 'package:image/image.dart' as img;
@@ -6,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import '../models/book.dart';
 import '../models/reading_progress.dart';
 import 'summary_database_service.dart';
@@ -48,13 +50,21 @@ class BookService {
     return coversDir.path;
   }
 
-  Future<String> copyEpubFile(File sourceFile) async {
+  /// Generate a deterministic book ID from EPUB file content using SHA256 hash
+  String _generateBookIdFromContent(Uint8List epubBytes) {
+    final hash = sha256.convert(epubBytes);
+    // Use first 32 characters of the hash as book ID
+    return hash.toString().substring(0, 32);
+  }
+
+  Future<String> copyEpubFile(File sourceFile, {String? bookId}) async {
     try {
       if (!await sourceFile.exists()) {
         throw Exception('Source file does not exist');
       }
       final booksDir = await getBooksDirectory();
-      final fileName = '${_uuid.v4()}.epub';
+      // Use provided bookId if available, otherwise generate UUID (for backward compatibility)
+      final fileName = bookId != null ? '$bookId.epub' : '${_uuid.v4()}.epub';
       final destFile = File('$booksDir/$fileName');
       await sourceFile.copy(destFile.path);
       return destFile.path;
@@ -110,16 +120,33 @@ class BookService {
         throw Exception('EPUB file does not exist');
       }
 
-      // Read the EPUB first to check metadata before copying
+      // Read the EPUB first to check metadata and generate deterministic ID
       final epubBytes = await epubFile.readAsBytes();
       final epub = await EpubReader.readBook(epubBytes);
 
       final title = epub.Title?.isNotEmpty == true ? epub.Title! : 'Unknown Title';
       final author = epub.Author?.isNotEmpty == true ? epub.Author! : 'Unknown Author';
 
-      // Check for existing book with same title and author
+      // Generate deterministic book ID from EPUB content hash
+      final bookId = _generateBookIdFromContent(epubBytes);
+
+      // Check for existing book with same ID (deterministic check)
+      final existingBookById = await getBookById(bookId);
+      if (existingBookById != null) {
+        debugPrint('Book already exists with same content hash: ${existingBookById.title}');
+        // Trigger RAG indexing for existing book if not already indexed (in background)
+        _triggerRagIndexing(existingBookById.id).catchError((e) {
+          debugPrint('Failed to trigger RAG indexing for existing book ${existingBookById.id}: $e');
+        });
+        return existingBookById;
+      }
+      
+      // Note: If book was previously deleted, it won't be in getAllBooks() anymore
+      // The deletion tracking will be handled by GoogleDriveSyncService when the book is re-added
+
+      // Also check for existing book with same title and author (for backward compatibility with UUID-based IDs)
       final allBooks = await getAllBooks();
-      final existingBook = allBooks.firstWhere(
+      final existingBookByTitle = allBooks.firstWhere(
         (b) => b.title == title && b.author == author,
         orElse: () => Book(
             id: '', 
@@ -130,19 +157,41 @@ class BookService {
         ),
       );
 
-      if (existingBook.id.isNotEmpty) {
-        debugPrint('Book already exists: ${existingBook.title}');
-        // Trigger RAG indexing for existing book if not already indexed (in background)
-        _triggerRagIndexing(existingBook.id).catchError((e) {
-          debugPrint('Failed to trigger RAG indexing for existing book ${existingBook.id}: $e');
-        });
-        return existingBook;
+      if (existingBookByTitle.id.isNotEmpty && existingBookByTitle.id != bookId) {
+        // Book with same title+author exists but different ID (likely UUID-based)
+        // Check if the EPUB content matches by comparing file content
+        try {
+          final existingFile = File(existingBookByTitle.filePath);
+          if (await existingFile.exists()) {
+            final existingBytes = await existingFile.readAsBytes();
+            final existingId = _generateBookIdFromContent(existingBytes);
+            if (existingId == bookId) {
+              // Same content, but different ID - update the existing book to use the hash-based ID
+              debugPrint('Updating existing book ID from UUID to hash-based: ${existingBookByTitle.title}');
+              final updatedBook = Book(
+                id: bookId,
+                title: existingBookByTitle.title,
+                author: existingBookByTitle.author,
+                coverImagePath: existingBookByTitle.coverImagePath,
+                filePath: existingBookByTitle.filePath,
+                dateAdded: existingBookByTitle.dateAdded,
+                isValid: existingBookByTitle.isValid,
+              );
+              await updateBook(updatedBook);
+              // Rename the file to use the new ID
+              final newFilePath = '${await getBooksDirectory()}/$bookId.epub';
+              await existingFile.rename(newFilePath);
+              return updatedBook;
+            }
+          }
+        } catch (e) {
+          debugPrint('Error checking existing book content: $e');
+          // Continue with new book creation
+        }
       }
 
-      // If not exists, copy the file to app storage
-      final storedPath = await copyEpubFile(epubFile);
-      
-      final bookId = _uuid.v4();
+      // If not exists, copy the file to app storage with deterministic filename
+      final storedPath = await copyEpubFile(epubFile, bookId: bookId);
       
       // Extract cover image
       String? coverImagePath;
@@ -457,6 +506,9 @@ class BookService {
       books.removeWhere((b) => b.id == book.id);
       final booksJson = books.map((b) => jsonEncode(b.toJson())).toList();
       await prefs.setStringList(_booksKey, booksJson);
+      
+      // Note: Deletion tracking for sync is handled by GoogleDriveSyncService
+      // when it detects the book is no longer in the library
       
       // Delete file
       final file = File(book.filePath);

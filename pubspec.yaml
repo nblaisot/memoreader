@@ -83,6 +83,12 @@ dependencies:
   webview_flutter: ^4.7.0
 
   crypto: any
+  
+  # Google Drive sync
+  google_sign_in: ^6.2.1
+  googleapis: ^13.0.0
+  googleapis_auth: ^1.5.0
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter
