@@ -98,6 +98,11 @@ class SummaryConfigService {
     return '${key.substring(0, 4)}••••${key.substring(key.length - 4)}';
   }
 
+  /// Get the raw OpenAI API key (for sync purposes, not masked)
+  String? getRawOpenAIApiKey() {
+    return _prefs.getString(_openaiApiKeyKey);
+  }
+
   /// Check if OpenAI API key is configured
   bool isOpenAIConfigured() {
     final key = _prefs.getString(_openaiApiKeyKey);
@@ -122,6 +127,11 @@ class SummaryConfigService {
       return '••••••••';
     }
     return '${key.substring(0, 4)}••••${key.substring(key.length - 4)}';
+  }
+
+  /// Get the raw Mistral API key (for sync purposes, not masked)
+  String? getRawMistralApiKey() {
+    return _prefs.getString(_mistralApiKeyKey);
   }
 
   /// Check if Mistral API key is configured

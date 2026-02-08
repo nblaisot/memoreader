@@ -24,8 +24,8 @@
   },
   "bookFileNotFound": "Fichier du livre introuvable. Le fichier a peut-être été déplacé ou supprimé.",
   "noBooksInLibrary": "Aucun livre dans votre bibliothèque",
-  "tapToImportEpub": "Appuyez sur le bouton + pour importer un fichier EPUB ou TXT",
-  "libraryEmptyInfo": "Importez des livres .epub ou des documents .txt simples, dans n'importe quelle langue. Utilisez l'application « Calibre » sur votre ordinateur pour convertir des PDF ou d'autres formats en epub.",
+  "tapToImportEpub": "Appuyez sur le bouton + pour importer un fichier EPUB, TXT ou PDF",
+  "libraryEmptyInfo": "Importez des livres .epub, des documents .txt ou des fichiers .pdf, dans n'importe quelle langue.",
   "deleteBook": "Supprimer le livre",
   "confirmDeleteBook": "Êtes-vous sûr de vouloir supprimer \"{title}\" ?",
   "@confirmDeleteBook": {

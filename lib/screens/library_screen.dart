@@ -10,6 +10,8 @@ import '../services/app_state_service.dart';
 import '../services/sharing_service.dart';
 import '../services/rag_indexing_service.dart';
 import '../services/rag_database_service.dart';
+import '../services/google_drive_sync_service.dart';
+import '../utils/import_extensions.dart';
 import 'reader_screen.dart';
 import 'settings_screen.dart';
 
@@ -23,6 +25,7 @@ class LibraryScreen extends StatefulWidget {
 class _LibraryScreenState extends State<LibraryScreen> {
   final BookService _bookService = BookService();
   final AppStateService _appStateService = AppStateService();
+  final GoogleDriveSyncService _driveSyncService = GoogleDriveSyncService();
   List<Book> _books = [];
   Map<String, ReadingProgress> _bookProgress = {}; // Map bookId to progress
   bool _isLoading = true;
@@ -210,6 +213,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
+  /// Imports a book file based on its extension (txt, pdf, or epub).
+  Future<Book?> _importBookByExtension(File file, String extension) async {
+    switch (extension) {
+      case 'txt':
+        return _bookService.importTxt(file);
+      case 'pdf':
+        return _bookService.importPdf(file);
+      case 'epub':
+      default:
+        return _bookService.importEpub(file);
+    }
+  }
+
   Future<void> _importEpub() async {
     if (_isImporting) return;
     
@@ -221,7 +237,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       debugPrint('Starting file picker...');
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['epub', 'txt'],
+        allowedExtensions: allowedBookImportExtensions,
         withData: false,
         withReadStream: false,
       );
@@ -269,14 +285,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
           );
         }
         
-        // Import the book - determine type by extension
-        final extension = filePath.toLowerCase().split('.').last;
+        final extension = extensionFromPath(filePath);
         debugPrint('Importing file with extension: $extension');
+
+        final Book? importedBook = await _importBookByExtension(file, extension);
         
-        if (extension == 'txt') {
-          await _bookService.importTxt(file);
-        } else {
-          await _bookService.importEpub(file);
+        // If book was re-imported (was previously deleted), remove from deletion tracking
+        if (importedBook != null) {
+          final syncEnabled = await _driveSyncService.isSyncEnabled();
+          if (syncEnabled) {
+            // Check if this book was previously deleted and remove from tracking
+            // The upload logic will handle this, but we can also do it here for immediate effect
+            await _driveSyncService.onBookReAdded(importedBook.id);
+          }
         }
 
         if (mounted) {
@@ -443,6 +464,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await _bookService.deleteBook(book);
+      
+      // Track deletion for Google Drive sync
+      final syncEnabled = await _driveSyncService.isSyncEnabled();
+      if (syncEnabled) {
+        await _driveSyncService.onBookDeleted(book.id);
+      }
+      
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(

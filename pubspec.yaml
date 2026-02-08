@@ -37,6 +37,7 @@ dependencies:
   
   # EPUB parsing and reading
   epubx: ^4.0.0
+  archive: ^3.6.0
 
   # Handle file sharing/opening intents
   receive_sharing_intent: ^1.8.1
@@ -52,6 +53,9 @@ dependencies:
   
   # File picker for importing EPUB files
   file_picker: ^8.1.2
+
+  # PDF text extraction for PDF import
+  flutter_pdf_text: ^0.9.0
   
   # Local storage for files and preferences
   path_provider: ^2.1.2
@@ -83,6 +87,12 @@ dependencies:
   webview_flutter: ^4.7.0
 
   crypto: any
+  
+  # Google Drive sync
+  google_sign_in: ^6.2.1
+  googleapis: ^13.0.0
+  googleapis_auth: ^1.5.0
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter

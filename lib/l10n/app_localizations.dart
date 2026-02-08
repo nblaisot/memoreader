@@ -158,16 +158,16 @@ abstract class AppLocalizations {
   /// **'No books in your library'**
   String get noBooksInLibrary;
 
-  /// Instruction for importing EPUB or TXT
+  /// Instruction for importing EPUB, TXT or PDF
   ///
   /// In en, this message translates to:
-  /// **'Tap the + button to import an EPUB or TXT file'**
+  /// **'Tap the + button to import an EPUB, TXT, or PDF file'**
   String get tapToImportEpub;
 
-  /// Additional info when library is empty (import formats, Calibre)
+  /// Additional info when library is empty (import formats)
   ///
   /// In en, this message translates to:
-  /// **'Import .epub books, or simple .txt documents, in any language. Use the application \"Calibre\" on your computer to convert PDF documents, or other formats, into epub.'**
+  /// **'Import .epub books, .txt documents, or .pdf files, in any language.'**
   String get libraryEmptyInfo;
 
   /// Delete book dialog title

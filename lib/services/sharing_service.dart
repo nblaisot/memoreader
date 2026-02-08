@@ -6,6 +6,7 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:open_file_handler/open_file_handler.dart';
 import 'package:memoreader/services/book_service.dart';
 import 'package:memoreader/models/book.dart';
+import 'package:memoreader/utils/import_extensions.dart';
 
 class SharingService {
   static final SharingService _instance = SharingService._internal();
@@ -125,28 +126,33 @@ class SharingService {
         return;
       }
       
-      // Check file extension
-      final pathLower = filePath.toLowerCase();
-      if (!pathLower.endsWith('.epub') && !pathLower.endsWith('.txt')) {
-        debugPrint('SharingService: File is not EPUB or TXT: $filePath');
+      if (!isAllowedBookImportPath(filePath)) {
+        debugPrint('SharingService: File is not EPUB, TXT or PDF: $filePath');
         return;
       }
-      
-      // Import the file
-      Book importedBook;
-      if (pathLower.endsWith('.txt')) {
-        debugPrint('SharingService: Importing TXT file: $filePath');
-        importedBook = await _bookService.importTxt(file);
-      } else {
-        debugPrint('SharingService: Importing EPUB file: $filePath');
-        importedBook = await _bookService.importEpub(file);
-      }
+
+      final extension = extensionFromPath(filePath);
+      debugPrint('SharingService: Importing $extension file: $filePath');
+      final Book importedBook =
+          await _importBookByExtension(file, extension);
       
       debugPrint('SharingService: Successfully imported book: ${importedBook.title} by ${importedBook.author}');
       _bookImportedController.add(importedBook);
     } catch (e, stackTrace) {
       debugPrint('SharingService: ERROR importing file $filePath: $e');
       debugPrint('SharingService: Stack trace: $stackTrace');
+    }
+  }
+
+  Future<Book> _importBookByExtension(File file, String extension) async {
+    switch (extension) {
+      case 'txt':
+        return _bookService.importTxt(file);
+      case 'pdf':
+        return _bookService.importPdf(file);
+      case 'epub':
+      default:
+        return _bookService.importEpub(file);
     }
   }
 
@@ -196,22 +202,15 @@ class SharingService {
           continue;
         }
         
-        // Check file extension
-        final pathLower = normalizedPath.toLowerCase();
-        if (!pathLower.endsWith('.epub') && !pathLower.endsWith('.txt')) {
-          debugPrint('Skipping file - not an EPUB or TXT: $normalizedPath');
+        if (!isAllowedBookImportPath(normalizedPath)) {
+          debugPrint('Skipping file - not an EPUB, TXT or PDF: $normalizedPath');
           continue;
         }
-        
-        // Determine file type and import accordingly
-        Book importedBook;
-        if (pathLower.endsWith('.txt')) {
-          debugPrint('Importing TXT file: $normalizedPath');
-          importedBook = await _bookService.importTxt(fileObj);
-        } else {
-          debugPrint('Importing EPUB file: $normalizedPath');
-          importedBook = await _bookService.importEpub(fileObj);
-        }
+
+        final extension = extensionFromPath(normalizedPath);
+        debugPrint('Importing $extension file: $normalizedPath');
+        final Book importedBook =
+            await _importBookByExtension(fileObj, extension);
         
         debugPrint('Successfully imported book: ${importedBook.title} by ${importedBook.author}');
         _bookImportedController.add(importedBook);

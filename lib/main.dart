@@ -13,8 +13,8 @@ import 'utils/app_route_observer.dart';
 import 'services/rag_indexing_service.dart';
 import 'services/rag_database_service.dart';
 import 'services/book_service.dart';
+import 'services/google_drive_sync_service.dart';
 import 'models/rag_index_progress.dart';
-import 'models/book.dart';
 
 void main() {
   runApp(const MyApp());
@@ -44,6 +44,23 @@ class MyAppState extends State<MyApp> {
     SharingService().initialize();
     // Auto-resume RAG indexing for any incomplete books
     _autoResumeRagIndexing();
+    // Start Google Drive sync in background (non-blocking)
+    _startDriveSync();
+  }
+
+  /// Start Google Drive sync in background
+  Future<void> _startDriveSync() async {
+    try {
+      final syncService = GoogleDriveSyncService();
+      // Run sync in background without blocking app startup
+      syncService.syncOnStartup().catchError((e) {
+        debugPrint('[Main] Drive sync error: $e');
+        // Don't throw - sync failures shouldn't block app startup
+      });
+    } catch (e) {
+      debugPrint('[Main] Failed to start drive sync: $e');
+      // Don't throw - sync is optional
+    }
   }
   
   /// Automatically resume RAG indexing for books with incomplete indexing

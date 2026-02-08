@@ -50,13 +50,13 @@
   "@noBooksInLibrary": {
     "description": "Message when library is empty"
   },
-  "tapToImportEpub": "Tap the + button to import an EPUB or TXT file",
+  "tapToImportEpub": "Tap the + button to import an EPUB, TXT, or PDF file",
   "@tapToImportEpub": {
-    "description": "Instruction for importing EPUB or TXT"
+    "description": "Instruction for importing EPUB, TXT or PDF"
   },
-  "libraryEmptyInfo": "Import .epub books, or simple .txt documents, in any language. Use the application \"Calibre\" on your computer to convert PDF documents, or other formats, into epub.",
+  "libraryEmptyInfo": "Import .epub books, .txt documents, or .pdf files, in any language.",
   "@libraryEmptyInfo": {
-    "description": "Additional info when library is empty (import formats, Calibre)"
+    "description": "Additional info when library is empty (import formats)"
   },
   "deleteBook": "Delete Book",
   "@deleteBook": {
