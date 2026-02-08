@@ -141,6 +141,11 @@ class _ReaderScreenState extends State<ReaderScreen>
   int? _activePointerId;
   Offset? _activePointerDownPosition;
   DateTime? _activePointerDownTime;
+
+  /// Tracks horizontal drag distance for swipe-to-turn-page (native reader).
+  double _horizontalSwipeCumulativeDx = 0;
+  static const double _swipeThresholdPx = 60;
+  static const double _swipeThresholdWithSelectionPx = 100;
   static const Duration _quickTapThreshold = Duration(milliseconds: 300);
   // Pre-instantiated selection controls to avoid lazy loading and JIT delays
   ImmediateTextSelectionControls? _sharedSelectionControls;
@@ -1860,18 +1865,38 @@ class _ReaderScreenState extends State<ReaderScreen>
                 // This allows SelectableText to handle long presses without interference
                 // - Long press: handled by SelectableText for text selection (no interference)
                 // - Quick tap: detected here for navigation (menu, progress bar, page navigation)
-                // - Horizontal swipe: handled by PageView for page navigation
+                // - Horizontal swipe: handled by GestureDetector for discrete page turn (no sliding)
                 behavior: HitTestBehavior.translucent,
                 onPointerDown: _handlePointerDown,
                 onPointerUp: _handlePointerUp,
                 onPointerCancel: _handlePointerCancel,
                 child: Stack(
                   children: [
-                    PageView.builder(
-                      controller: _pageController,
-                      itemCount: pages.length,
-                      onPageChanged: _handlePageChanged,
-                      itemBuilder: (context, index) => pages[index],
+                    GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onHorizontalDragStart: (_) {
+                        _horizontalSwipeCumulativeDx = 0;
+                      },
+                      onHorizontalDragUpdate: (DragUpdateDetails details) {
+                        _horizontalSwipeCumulativeDx += details.delta.dx;
+                      },
+                      onHorizontalDragEnd: (DragEndDetails details) {
+                        final threshold = _hasActiveSelection
+                            ? _swipeThresholdWithSelectionPx
+                            : _swipeThresholdPx;
+                        if (_horizontalSwipeCumulativeDx > threshold) {
+                          _goToPreviousPage();
+                        } else if (_horizontalSwipeCumulativeDx < -threshold) {
+                          unawaited(_goToNextPage());
+                        }
+                      },
+                      child: PageView.builder(
+                        controller: _pageController,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: pages.length,
+                        onPageChanged: _handlePageChanged,
+                        itemBuilder: (context, index) => pages[index],
+                      ),
                     ),
                     // Repagination loading overlay
                     if (_isNavigating || _engine == null || currentPage == null)
@@ -3425,9 +3450,10 @@ body {
   column-gap: 0;
   column-fill: auto;
   box-sizing: border-box;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   scroll-behavior: auto;
+  touch-action: pan-y;
 }
 #reader img,
 #reader svg {
@@ -3513,8 +3539,10 @@ body {
   let lastEndChar = 0;
   let actionEnabled = true;
   let selectionTimer = null;
+  let selectionActiveDeactivateTimer = null;
   let touchStart = null;
   let lastTouchTime = 0;
+  let selectionActive = false;
   let pageChangeQueue = Promise.resolve();
   let pageChangeToken = 0;
 
@@ -4262,6 +4290,11 @@ body {
   }
 
   function clearSelection() {
+    if (selectionActiveDeactivateTimer) {
+      clearTimeout(selectionActiveDeactivateTimer);
+      selectionActiveDeactivateTimer = null;
+    }
+    selectionActive = false;
     const selection = window.getSelection();
     if (selection) {
       selection.removeAllRanges();
@@ -4294,8 +4327,20 @@ body {
       if (!info) {
         hideSelectionMenu();
         postMessage({ type: 'selectionChanged', hasSelection: false, text: '', rect: null });
+        if (selectionActiveDeactivateTimer) {
+          clearTimeout(selectionActiveDeactivateTimer);
+        }
+        selectionActiveDeactivateTimer = setTimeout(function() {
+          selectionActiveDeactivateTimer = null;
+          selectionActive = false;
+        }, 1200);
         return;
       }
+      if (selectionActiveDeactivateTimer) {
+        clearTimeout(selectionActiveDeactivateTimer);
+        selectionActiveDeactivateTimer = null;
+      }
+      selectionActive = true;
       hideSelectionMenu();
       postMessage({
         type: 'selectionChanged',
@@ -4334,6 +4379,9 @@ body {
       clearSelection();
       return;
     }
+    if (selectionActive) {
+      return;
+    }
     const action = determineTapAction(x, y);
     if (action === 'nextPage') {
       setPage(currentPage + 1, true);
@@ -4356,10 +4404,23 @@ body {
       return;
     }
     const touch = event.touches[0];
+    let startedInSelectionUI = false;
+    const sel = window.getSelection();
+    const hadSelectionAtTouchStart = !!(sel && sel.rangeCount > 0 && sel.toString().trim().length > 0);
+    if (hadSelectionAtTouchStart) {
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      const padTop = 120;
+      const padSides = 40;
+      const padBottom = 40;
+      startedInSelectionUI = (touch.clientX >= rect.left - padSides && touch.clientX <= rect.right + padSides &&
+        touch.clientY >= rect.top - padTop && touch.clientY <= rect.bottom + padBottom);
+    }
     touchStart = {
       x: touch.clientX,
       y: touch.clientY,
-      time: Date.now()
+      time: Date.now(),
+      startedInSelectionUI: startedInSelectionUI,
+      hadSelectionAtTouchStart: hadSelectionAtTouchStart
     };
   }
 
@@ -4384,6 +4445,8 @@ body {
     const dt = Date.now() - touchStart.time;
     const absDx = Math.abs(dx);
     const absDy = Math.abs(dy);
+    const startedInSelectionUI = touchStart.startedInSelectionUI === true;
+    const hadSelectionAtTouchStart = touchStart.hadSelectionAtTouchStart === true;
     touchStart = null;
 
     const selection = window.getSelection();
@@ -4396,7 +4459,7 @@ body {
       return;
     }
 
-    if (absDx > 50 && absDx > absDy && dt < 500) {
+    if (!selectionActive && !startedInSelectionUI && !hadSelectionAtTouchStart && absDx > 50 && absDx > absDy && dt < 500) {
       if (dx < 0) {
         setPage(currentPage + 1, true);
       } else {
@@ -4408,6 +4471,21 @@ body {
       handleTap(touch.clientX, touch.clientY);
     }
     lastTouchTime = Date.now();
+  }
+
+  function handleTouchMove(event) {
+    if (!touchStart) {
+      return;
+    }
+    if (!event.touches || event.touches.length === 0) {
+      return;
+    }
+    const touch = event.touches[0];
+    const dx = Math.abs(touch.clientX - touchStart.x);
+    const dy = Math.abs(touch.clientY - touchStart.y);
+    if (dx > dy && dx > 15) {
+      event.preventDefault();
+    }
   }
 
   function handleTouchCancel() {
@@ -4471,8 +4549,17 @@ body {
   }
 
   document.addEventListener('selectionchange', handleSelectionChange);
+  if (reader) {
+    reader.addEventListener('scroll', function() {
+      var expected = Math.round(currentPage * pageStride);
+      if (Math.abs(reader.scrollLeft - expected) > 2) {
+        reader.scrollLeft = expected;
+      }
+    });
+  }
   const tapTarget = reader || document;
   tapTarget.addEventListener('touchstart', handleTouchStart, { passive: true });
+  tapTarget.addEventListener('touchmove', handleTouchMove, { passive: false });
   tapTarget.addEventListener('touchend', handleTouchEnd, { passive: true });
   tapTarget.addEventListener('touchcancel', handleTouchCancel, { passive: true });
   tapTarget.addEventListener('click', handleClick);
