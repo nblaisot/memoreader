@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:epubx/epubx.dart';
 import 'package:image/image.dart' as img;
@@ -13,6 +12,7 @@ import '../models/reading_progress.dart';
 import 'summary_database_service.dart';
 import 'api_cache_service.dart';
 import 'txt_to_epub_converter.dart';
+import 'pdf_to_epub_converter.dart';
 import 'rag_indexing_service.dart';
 import 'rag_database_service.dart';
 
@@ -93,24 +93,55 @@ class BookService {
       );
       
       debugPrint('TXT converted to EPUB. Title: ${metadata.title}, Author: ${metadata.author}');
-      
-      // Now import the generated EPUB file
+
       final tempEpubFile = File(tempEpubPath);
       final book = await importEpub(tempEpubFile);
-      
-      // Clean up the temporary EPUB file (it's been copied to final location by importEpub)
-      try {
-        if (await tempEpubFile.exists()) {
-          await tempEpubFile.delete();
-        }
-      } catch (e) {
-        debugPrint('Failed to delete temporary EPUB file: $e');
-      }
-      
+      await _deleteTempEpubIfExists(tempEpubFile);
       return book;
     } catch (e) {
       if (e is Exception) rethrow;
       throw Exception('Failed to import TXT: $e');
+    }
+  }
+
+  Future<Book> importPdf(File pdfFile) async {
+    try {
+      if (!await pdfFile.exists()) {
+        throw Exception('PDF file does not exist');
+      }
+
+      debugPrint('Converting PDF to EPUB: ${pdfFile.path}');
+
+      final booksDir = await getBooksDirectory();
+      final tempEpubPath = '$booksDir/${_uuid.v4()}_temp.epub';
+
+      final converter = PdfToEpubConverter();
+      final metadata = await converter.convertToEpub(
+        pdfFile: pdfFile,
+        outputEpubPath: tempEpubPath,
+      );
+
+      debugPrint(
+          'PDF converted to EPUB. Title: ${metadata.title}, Author: ${metadata.author}');
+
+      final tempEpubFile = File(tempEpubPath);
+      final book = await importEpub(tempEpubFile);
+      await _deleteTempEpubIfExists(tempEpubFile);
+      return book;
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Failed to import PDF: $e');
+    }
+  }
+
+  /// Deletes a temporary EPUB file if it exists. Logs and swallows errors.
+  Future<void> _deleteTempEpubIfExists(File tempEpubFile) async {
+    try {
+      if (await tempEpubFile.exists()) {
+        await tempEpubFile.delete();
+      }
+    } catch (e) {
+      debugPrint('Failed to delete temporary EPUB file: $e');
     }
   }
 

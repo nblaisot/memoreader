@@ -11,6 +11,7 @@ import '../services/sharing_service.dart';
 import '../services/rag_indexing_service.dart';
 import '../services/rag_database_service.dart';
 import '../services/google_drive_sync_service.dart';
+import '../utils/import_extensions.dart';
 import 'reader_screen.dart';
 import 'settings_screen.dart';
 
@@ -212,6 +213,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
+  /// Imports a book file based on its extension (txt, pdf, or epub).
+  Future<Book?> _importBookByExtension(File file, String extension) async {
+    switch (extension) {
+      case 'txt':
+        return _bookService.importTxt(file);
+      case 'pdf':
+        return _bookService.importPdf(file);
+      case 'epub':
+      default:
+        return _bookService.importEpub(file);
+    }
+  }
+
   Future<void> _importEpub() async {
     if (_isImporting) return;
     
@@ -223,7 +237,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       debugPrint('Starting file picker...');
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['epub', 'txt'],
+        allowedExtensions: allowedBookImportExtensions,
         withData: false,
         withReadStream: false,
       );
@@ -271,16 +285,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
           );
         }
         
-        // Import the book - determine type by extension
-        final extension = filePath.toLowerCase().split('.').last;
+        final extension = extensionFromPath(filePath);
         debugPrint('Importing file with extension: $extension');
-        
-        Book? importedBook;
-        if (extension == 'txt') {
-          importedBook = await _bookService.importTxt(file);
-        } else {
-          importedBook = await _bookService.importEpub(file);
-        }
+
+        final Book? importedBook = await _importBookByExtension(file, extension);
         
         // If book was re-imported (was previously deleted), remove from deletion tracking
         if (importedBook != null) {

@@ -45,11 +45,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get tapToImportEpub =>
-      'Tap the + button to import an EPUB or TXT file';
+      'Tap the + button to import an EPUB, TXT, or PDF file';
 
   @override
   String get libraryEmptyInfo =>
-      'Import .epub books, or simple .txt documents, in any language. Use the application \"Calibre\" on your computer to convert PDF documents, or other formats, into epub.';
+      'Import .epub books, .txt documents, or .pdf files, in any language.';
 
   @override
   String get deleteBook => 'Delete Book';
