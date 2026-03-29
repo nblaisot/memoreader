@@ -12,70 +12,209 @@ import '../models/sync_data.dart';
 import 'book_service.dart';
 import 'saved_translation_database_service.dart';
 import 'summary_config_service.dart';
+import 'drive_api_keys_cipher.dart';
+import 'drive_sync_merge.dart';
+import 'drive_sync_secrets_service.dart';
 
-/// Service for synchronizing data with Google Drive
+/// Status of an ongoing or completed sync cycle.
+enum SyncStatus { idle, syncing, success, error }
+
+/// Why encrypted API keys from Drive could not be merged (for localized UI).
+enum DriveApiKeysSyncIssue {
+  missingPassphrase,
+  decryptFailed,
+  unreadableRemote,
+}
+
+/// Service for synchronising data with Google Drive.
+///
+/// This is a singleton — every call to [GoogleDriveSyncService()] returns the
+/// same instance, so authenticated state (the [DriveApi]) is shared across all
+/// callers (main.dart startup sync, SettingsScreen, LibraryScreen, …).
 class GoogleDriveSyncService {
+  // ---------------------------------------------------------------------------
+  // Singleton
+  // ---------------------------------------------------------------------------
+
+  static final GoogleDriveSyncService _instance =
+      GoogleDriveSyncService._internal();
+
+  factory GoogleDriveSyncService() => _instance;
+
+  GoogleDriveSyncService._internal();
+
+  // ---------------------------------------------------------------------------
+  // Constants
+  // ---------------------------------------------------------------------------
+
   static const String _syncEnabledKey = 'google_drive_sync_enabled';
   static const String _lastSyncTimeKey = 'google_drive_last_sync_time';
   static const String _accountEmailKey = 'google_drive_account_email';
-  
-  // File names in Google Drive appDataFolder
+  static const String _deletedBooksKey = 'google_drive_deleted_books';
+  static const String _pendingDriveBlobDeletesKey =
+      'google_drive_pending_blob_deletes';
+
   static const String _booksFileName = 'memoreader_books.json';
   static const String _progressFileName = 'memoreader_progress.json';
   static const String _translationsFileName = 'memoreader_translations.json';
   static const String _apiKeysFileName = 'memoreader_api_keys.json';
-  static const String _deletedBooksKey = 'google_drive_deleted_books';
   static const String _booksFolderName = 'books';
   static const String _coversFolderName = 'covers';
 
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
+
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: [
-      'https://www.googleapis.com/auth/drive.appdata',
-    ],
+    scopes: ['https://www.googleapis.com/auth/drive.appdata'],
   );
 
   final BookService _bookService = BookService();
-  final SavedTranslationDatabaseService _translationService = SavedTranslationDatabaseService();
+  final SavedTranslationDatabaseService _translationService =
+      SavedTranslationDatabaseService();
 
   drive.DriveApi? _driveApi;
   bool _isAuthenticated = false;
 
-  /// Check if sync is enabled
+  /// Guards against concurrent sync runs.
+  bool _isSyncing = false;
+
+  /// Set to true if any download/merge step encountered an error.
+  /// Checked before running the upload phase to avoid overwriting
+  /// remote data with potentially incomplete local state.
+  bool _downloadHadErrors = false;
+
+  /// Observable sync status so the UI can show global toasts.
+  final ValueNotifier<SyncStatus> syncStatus =
+      ValueNotifier(SyncStatus.idle);
+
+  /// Non-null when encrypted API keys on Drive could not be applied (missing
+  /// or wrong passphrase). Cleared when merge succeeds or the remote file is
+  /// absent / not encrypted.
+  final ValueNotifier<DriveApiKeysSyncIssue?> apiKeysSyncIssue =
+      ValueNotifier(null);
+
+  /// Book IDs whose EPUB files are known to exist on Drive.
+  /// Populated during sync by listing the appDataFolder, and updated
+  /// immediately after a successful [uploadBookToDrive].
+  final Set<String> _uploadedBookIds = {};
+
+  /// Whether [bookId]'s EPUB file is already on Drive.
+  bool isBookUploadedToDrive(String bookId) =>
+      _uploadedBookIds.contains(bookId);
+
+  // ---------------------------------------------------------------------------
+  // Auth — public
+  // ---------------------------------------------------------------------------
+
+  bool get isAuthenticated => _isAuthenticated && _driveApi != null;
+
+  /// Interactive sign-in — must be called from a user-initiated action because
+  /// it shows the Google account-picker UI.
+  Future<bool> signIn() async {
+    try {
+      final account = await _googleSignIn.signIn();
+      if (account == null) return false; // user cancelled
+
+      _driveApi = drive.DriveApi(_AuthenticatedHttpClient(_googleSignIn));
+      _isAuthenticated = true;
+      await _setAccountEmail(account.email);
+      debugPrint('[DriveSync] Signed in as ${account.email}');
+      return true;
+    } catch (e) {
+      debugPrint('[DriveSync] Sign-in error: $e');
+      _isAuthenticated = false;
+      return false;
+    }
+  }
+
+  /// Sign out and clear local auth state.
+  ///
+  /// Does **not** clear the Drive sync passphrase or encryption preference;
+  /// those live in secure storage / SharedPreferences so the user can sign in
+  /// again without re-entering secrets.
+  Future<void> signOut() async {
+    try {
+      await _googleSignIn.signOut();
+    } catch (e) {
+      debugPrint('[DriveSync] Sign-out error: $e');
+    } finally {
+      _driveApi = null;
+      _isAuthenticated = false;
+      await _setAccountEmail(null);
+      debugPrint('[DriveSync] Signed out');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auth — private helpers
+  // ---------------------------------------------------------------------------
+
+  /// Ensures we have a valid [DriveApi].
+  ///
+  /// First tries a *silent* sign-in (uses the cached OS session — no UI).
+  /// Falls back to the interactive flow only when [interactive] is `true`.
+  Future<bool> _ensureAuthenticated({bool interactive = false}) async {
+    if (isAuthenticated) return true;
+
+    // Try silent re-authentication (no UI, reuses the stored OS credential).
+    try {
+      final account = await _googleSignIn.signInSilently();
+      if (account != null) {
+        _driveApi = drive.DriveApi(_AuthenticatedHttpClient(_googleSignIn));
+        _isAuthenticated = true;
+        await _setAccountEmail(account.email);
+        debugPrint('[DriveSync] Silently re-authenticated as ${account.email}');
+        return true;
+      }
+    } catch (e) {
+      debugPrint('[DriveSync] Silent sign-in failed: $e');
+    }
+
+    if (!interactive) {
+      debugPrint('[DriveSync] No cached session — skipping background sync');
+      return false;
+    }
+
+    return signIn();
+  }
+
+  // ---------------------------------------------------------------------------
+  // SharedPreferences helpers
+  // ---------------------------------------------------------------------------
+
   Future<bool> isSyncEnabled() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_syncEnabledKey) ?? false;
   }
 
-  /// Enable or disable sync
   Future<void> setSyncEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_syncEnabledKey, enabled);
-    if (!enabled) {
-      await signOut();
-    }
+    if (!enabled) await signOut();
   }
 
-  /// Get last sync time
   Future<DateTime?> getLastSyncTime() async {
     final prefs = await SharedPreferences.getInstance();
-    final timeString = prefs.getString(_lastSyncTimeKey);
-    if (timeString == null) return null;
-    return DateTime.parse(timeString);
+    final s = prefs.getString(_lastSyncTimeKey);
+    return s == null ? null : DateTime.parse(s);
   }
 
-  /// Set last sync time
   Future<void> _setLastSyncTime(DateTime time) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_lastSyncTimeKey, time.toIso8601String());
   }
 
-  /// Get account email
+  Future<void> _clearLastSyncTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_lastSyncTimeKey);
+  }
+
   Future<String?> getAccountEmail() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_accountEmailKey);
   }
 
-  /// Set account email
   Future<void> _setAccountEmail(String? email) async {
     final prefs = await SharedPreferences.getInstance();
     if (email == null) {
@@ -85,785 +224,905 @@ class GoogleDriveSyncService {
     }
   }
 
-  /// Sign in to Google account
-  Future<bool> signIn() async {
-    try {
-      final account = await _googleSignIn.signIn();
-      if (account == null) {
-        return false; // User cancelled
+  // ---------------------------------------------------------------------------
+  // Deletion tombstone helpers
+  // ---------------------------------------------------------------------------
+
+  Future<Map<String, DateTime>> _getDeletedBooks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final json = prefs.getString(_deletedBooksKey);
+    if (json == null) return {};
+    return (jsonDecode(json) as Map<String, dynamic>)
+        .map((k, v) => MapEntry(k, DateTime.parse(v as String)));
+  }
+
+  Future<void> _saveDeletedBooks(Map<String, DateTime> map) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (map.isEmpty) {
+      await prefs.remove(_deletedBooksKey);
+    } else {
+      await prefs.setString(
+        _deletedBooksKey,
+        jsonEncode(map.map((k, v) => MapEntry(k, v.toIso8601String()))),
+      );
+    }
+  }
+
+  Future<void> _trackBookDeletion(String bookId) async {
+    final deleted = await _getDeletedBooks();
+    deleted[bookId] = DateTime.now();
+    await _saveDeletedBooks(deleted);
+  }
+
+  Future<void> _untrackBookDeletion(String bookId) async {
+    final deleted = await _getDeletedBooks();
+    deleted.remove(bookId);
+    await _saveDeletedBooks(deleted);
+  }
+
+  Future<List<String>> _getPendingDriveBlobDeletes() async {
+    final prefs = await SharedPreferences.getInstance();
+    return List<String>.from(
+      prefs.getStringList(_pendingDriveBlobDeletesKey) ?? const [],
+    );
+  }
+
+  Future<void> _setPendingDriveBlobDeletes(List<String> ids) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (ids.isEmpty) {
+      await prefs.remove(_pendingDriveBlobDeletesKey);
+    } else {
+      await prefs.setStringList(_pendingDriveBlobDeletesKey, ids);
+    }
+  }
+
+  Future<void> _enqueueDriveBlobDelete(String bookId) async {
+    final pending = await _getPendingDriveBlobDeletes();
+    if (!pending.contains(bookId)) {
+      pending.add(bookId);
+      await _setPendingDriveBlobDeletes(pending);
+      debugPrint('[DriveSync] Queued remote blob delete for $bookId');
+    }
+  }
+
+  Future<void> _removePendingDriveBlobDelete(String bookId) async {
+    final pending = await _getPendingDriveBlobDeletes();
+    if (pending.remove(bookId)) {
+      await _setPendingDriveBlobDeletes(pending);
+    }
+  }
+
+  /// Deletes `books/{id}.epub` and `covers/{id}.*` from Drive when present.
+  Future<void> _deleteDriveBlobsForBook(String bookId) async {
+    if (!isAuthenticated) return;
+    final names = <String>[
+      '$_booksFolderName/$bookId.epub',
+      for (final ext in ['png', 'jpg', 'jpeg', 'webp'])
+        '$_coversFolderName/$bookId.$ext',
+    ];
+    for (final name in names) {
+      try {
+        final f = await _findFile(name);
+        final id = f?.id;
+        if (id == null || id.isEmpty) continue;
+        await _driveApi!.files.delete(id);
+        debugPrint('[DriveSync] Deleted remote file $name');
+      } catch (e) {
+        debugPrint('[DriveSync] Failed to delete remote $name: $e');
       }
+    }
+    _uploadedBookIds.remove(bookId);
+  }
 
-      // Wait a bit for auth headers to be available
-      await Future.delayed(const Duration(milliseconds: 500));
-      
-      // Get auth headers - may need to call signInSilently first
-      final currentUser = _googleSignIn.currentUser;
-      if (currentUser == null) {
-        debugPrint('[DriveSync] Current user is null after sign in');
-        return false;
+  /// Removes queued remote EPUB/cover files. Safe to call often; no-ops when
+  /// not signed in (queue is kept until [uploadSync] or the next delete).
+  Future<void> processPendingDriveBlobDeletes() async {
+    if (!isAuthenticated) return;
+    final pending = await _getPendingDriveBlobDeletes();
+    if (pending.isEmpty) return;
+    final stillPending = <String>[];
+    for (final bookId in pending) {
+      try {
+        await _deleteDriveBlobsForBook(bookId);
+      } catch (e) {
+        debugPrint('[DriveSync] Blob delete failed for $bookId: $e');
+        stillPending.add(bookId);
       }
+    }
+    await _setPendingDriveBlobDeletes(stillPending);
+  }
 
-      final authHeaders = await currentUser.authHeaders;
-      if (authHeaders.isEmpty) {
-        debugPrint('[DriveSync] Failed to get auth headers');
-        return false;
-      }
-
-      // Create authenticated HTTP client
-      // Google Sign-In provides authHeaders that include Authorization header
-      // We need to create a client that uses these headers
-      final client = _AuthenticatedHttpClient(authHeaders);
-      
-      _driveApi = drive.DriveApi(client);
-      _isAuthenticated = true;
-      await _setAccountEmail(account.email);
-
-      debugPrint('[DriveSync] Signed in as ${account.email}');
-      return true;
-    } catch (e) {
-      debugPrint('[DriveSync] Sign in error: $e');
-      _isAuthenticated = false;
+  /// Call when a book is deleted locally so the deletion is propagated on next sync.
+  ///
+  /// Returns `true` if signed in to Drive and the pending blob delete queue was
+  /// processed (remote EPUB/cover removal attempted). Returns `false` if offline
+  /// from Drive; cleanup runs on the next successful [uploadSync] or sign-in.
+  Future<bool> onBookDeleted(String bookId) async {
+    await _trackBookDeletion(bookId);
+    await _enqueueDriveBlobDelete(bookId);
+    if (!isAuthenticated) {
+      debugPrint('[DriveSync] Tracked deletion of book $bookId '
+          '(Drive blobs queued until sign-in)');
       return false;
     }
+    await processPendingDriveBlobDeletes();
+    debugPrint('[DriveSync] Tracked deletion of book $bookId '
+        '(processed Drive blob queue)');
+    return true;
   }
 
-  /// Sign out from Google account
-  Future<void> signOut() async {
-    try {
-      await _googleSignIn.signOut();
-      _driveApi = null;
-      _isAuthenticated = false;
-      await _setAccountEmail(null);
-      debugPrint('[DriveSync] Signed out');
-    } catch (e) {
-      debugPrint('[DriveSync] Sign out error: $e');
-    }
+  /// Call when a previously-deleted book is re-imported.
+  Future<void> onBookReAdded(String bookId) async {
+    await _untrackBookDeletion(bookId);
+    await _removePendingDriveBlobDelete(bookId);
+    debugPrint('[DriveSync] Cleared deletion tracking for re-added book $bookId');
   }
 
-  /// Check if currently authenticated
-  bool get isAuthenticated => _isAuthenticated && _driveApi != null;
+  // ---------------------------------------------------------------------------
+  // Sync entry points
+  // ---------------------------------------------------------------------------
 
-  /// Main sync method called on app startup
+  /// Called on app startup.
+  ///
+  /// Uses silent authentication (no UI).  If the user has never signed in, or
+  /// revoked access, this is a no-op — the app continues normally.
   Future<void> syncOnStartup() async {
     if (!await isSyncEnabled()) {
-      debugPrint('[DriveSync] Sync is disabled');
+      debugPrint('[DriveSync] Sync disabled — skipping');
       return;
     }
 
+    if (_isSyncing) {
+      debugPrint('[DriveSync] Sync already in progress — skipping');
+      return;
+    }
+
+    _isSyncing = true;
+    _downloadHadErrors = false;
+    apiKeysSyncIssue.value = null;
+    syncStatus.value = SyncStatus.syncing;
     try {
-      // Check if already authenticated
-      if (!isAuthenticated) {
-        final signedIn = await signIn();
-        if (!signedIn) {
-          debugPrint('[DriveSync] Not signed in, skipping sync');
-          return;
-        }
+      final ok = await _ensureAuthenticated(interactive: false);
+      if (!ok) {
+        syncStatus.value = SyncStatus.idle;
+        return;
       }
 
-      debugPrint('[DriveSync] Starting sync...');
-      
-      // Download and merge remote data
+      debugPrint('[DriveSync] Starting sync…');
       await downloadSync();
-      
-      // Upload local data
-      await uploadSync();
-      
+      await _refreshUploadedBookIds();
+
+      if (_downloadHadErrors) {
+        debugPrint('[DriveSync] Download had errors — skipping upload phase');
+      } else {
+        await uploadSync();
+      }
+
       await _setLastSyncTime(DateTime.now());
+      syncStatus.value = SyncStatus.success;
       debugPrint('[DriveSync] Sync completed successfully');
     } catch (e) {
       debugPrint('[DriveSync] Sync error: $e');
-      // Don't throw - sync failures shouldn't crash the app
+      syncStatus.value = SyncStatus.error;
+    } finally {
+      _isSyncing = false;
     }
   }
 
-  /// Upload local data to Drive
-  Future<void> uploadSync() async {
+  /// Clears the queue of pending per-book Drive blob deletes (EPUB/cover paths).
+  ///
+  /// Call after [resetRemoteSyncData], since the remote folder is empty; avoids
+  /// redundant delete attempts on the next sync.
+  Future<void> clearPendingDriveBlobDeletes() async {
+    await _setPendingDriveBlobDeletes([]);
+  }
+
+  /// Deletes every file in the Drive [appDataFolder] for this app (all remote
+  /// sync blobs: JSON, EPUBs, covers, etc.). Does **not** remove books or
+  /// progress stored on this device, and does **not** clear the local sync
+  /// passphrase (so the user can upload again with the same passphrase).
+  /// Clears the pending per-book blob delete queue.
+  Future<void> resetRemoteSyncData() async {
     if (!isAuthenticated) {
       throw Exception('Not authenticated');
     }
-
-    try {
-      // Upload books metadata
-      await _uploadBooksMetadata();
-      
-      // Upload reading progress
-      await _uploadProgress();
-      
-      // Upload translations
-      await _uploadTranslations();
-      
-      // Upload API keys
-      await _uploadApiKeys();
-      
-      // Upload EPUB files and covers for books that need syncing
-      await _uploadBookFiles();
-      
-      debugPrint('[DriveSync] Upload completed');
-    } catch (e) {
-      debugPrint('[DriveSync] Upload error: $e');
-      rethrow;
-    }
-  }
-
-  /// Download and merge remote data from Drive
-  Future<void> downloadSync() async {
-    if (!isAuthenticated) {
-      throw Exception('Not authenticated');
+    if (_isSyncing) {
+      throw Exception('Sync in progress — try again when it finishes');
     }
 
-    try {
-      // Download and merge books
-      await _downloadAndMergeBooks();
-      
-      // Download and merge progress
-      await _downloadAndMergeProgress();
-      
-      // Download and merge translations
-      await _downloadAndMergeTranslations();
-      
-      // Download and merge API keys
-      await _downloadAndMergeApiKeys();
-      
-      // Download EPUB files and covers for books that need them
-      await _downloadBookFiles();
-      
-      debugPrint('[DriveSync] Download completed');
-    } catch (e) {
-      debugPrint('[DriveSync] Download error: $e');
-      rethrow;
-    }
-  }
+    var totalListed = 0;
+    var totalDeleted = 0;
+    String? pageToken;
 
-  // Private helper methods
-
-  /// Get locally tracked deleted books
-  Future<Map<String, DateTime>> _getDeletedBooks() async {
-    final prefs = await SharedPreferences.getInstance();
-    final deletedJson = prefs.getString(_deletedBooksKey);
-    if (deletedJson == null) return {};
-    
-    final deletedMap = jsonDecode(deletedJson) as Map<String, dynamic>;
-    return deletedMap.map(
-      (key, value) => MapEntry(key, DateTime.parse(value as String)),
-    );
-  }
-
-  /// Track a book deletion
-  Future<void> _trackBookDeletion(String bookId) async {
-    final deletedBooks = await _getDeletedBooks();
-    deletedBooks[bookId] = DateTime.now();
-    
-    final prefs = await SharedPreferences.getInstance();
-    final deletedJson = jsonEncode(
-      deletedBooks.map((key, value) => MapEntry(key, value.toIso8601String())),
-    );
-    await prefs.setString(_deletedBooksKey, deletedJson);
-  }
-
-  /// Remove a book from deletion tracking (if it was re-added)
-  Future<void> _untrackBookDeletion(String bookId) async {
-    final deletedBooks = await _getDeletedBooks();
-    deletedBooks.remove(bookId);
-    
-    final prefs = await SharedPreferences.getInstance();
-    if (deletedBooks.isEmpty) {
-      await prefs.remove(_deletedBooksKey);
-    } else {
-      final deletedJson = jsonEncode(
-        deletedBooks.map((key, value) => MapEntry(key, value.toIso8601String())),
+    do {
+      final response = await _driveApi!.files.list(
+        q: "'appDataFolder' in parents",
+        spaces: 'appDataFolder',
+        pageSize: 1000,
+        pageToken: pageToken,
+        $fields: 'nextPageToken, files(id, name)',
       );
-      await prefs.setString(_deletedBooksKey, deletedJson);
-    }
+
+      final files = response.files ?? <drive.File>[];
+      totalListed += files.length;
+
+      for (final f in files) {
+        final id = f.id;
+        if (id == null || id.isEmpty) continue;
+        try {
+          await _driveApi!.files.delete(id);
+          totalDeleted++;
+          debugPrint('[DriveSync] Deleted remote file ${f.name ?? id}');
+        } catch (e) {
+          debugPrint(
+              '[DriveSync] Failed to delete remote file ${f.name ?? id}: $e');
+        }
+      }
+
+      pageToken = response.nextPageToken;
+    } while (pageToken != null && pageToken.isNotEmpty);
+
+    _uploadedBookIds.clear();
+    await _clearLastSyncTime();
+    await clearPendingDriveBlobDeletes();
+    debugPrint(
+        '[DriveSync] resetRemoteSyncData done: listed $totalListed, '
+        'deleted $totalDeleted');
   }
 
-  /// Upload books metadata JSON file
-  Future<void> _uploadBooksMetadata() async {
-    final books = await _bookService.getAllBooks();
-    final deletedBooks = await _getDeletedBooks();
-    
-    // Remove books from deletion tracking if they were re-added (dateAdded is newer than deletion)
-    final now = DateTime.now();
-    final booksToRemoveFromDeletion = <String>[];
-    for (final book in books) {
-      final deletionTime = deletedBooks[book.id];
-      if (deletionTime != null && book.dateAdded.isAfter(deletionTime)) {
-        // Book was re-added after deletion - remove from deletion tracking
-        booksToRemoveFromDeletion.add(book.id);
+  /// Download and merge remote Drive data into local storage.
+  ///
+  /// Book metadata (title, author, progress, translations) is synced
+  /// automatically.  EPUB files are NOT downloaded automatically — the user
+  /// downloads them on demand via [downloadBookFromDrive].
+  Future<void> downloadSync() async {
+    if (!isAuthenticated) throw Exception('Not authenticated');
+    await _downloadAndMergeBooks();
+    await _downloadAndMergeProgress();
+    await _downloadAndMergeTranslations();
+    await _downloadAndMergeApiKeys();
+    debugPrint('[DriveSync] Download phase complete');
+  }
+
+  /// Upload local data to Drive.
+  ///
+  /// Book metadata is synced automatically.  EPUB files are NOT uploaded
+  /// automatically — the user uploads them on demand via [uploadBookToDrive].
+  Future<void> uploadSync() async {
+    if (!isAuthenticated) throw Exception('Not authenticated');
+    await processPendingDriveBlobDeletes();
+    await _uploadBooksMetadata();
+    await _uploadProgress();
+    await _uploadTranslations();
+    await _uploadApiKeys();
+    debugPrint('[DriveSync] Upload phase complete');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Per-book on-demand file transfer (user-initiated)
+  // ---------------------------------------------------------------------------
+
+  /// Upload a single book's EPUB and cover to Drive.
+  ///
+  /// Called manually from the library when the user chooses "Upload to Drive".
+  /// Overwrites any existing Drive copy so the latest version is always stored.
+  Future<void> uploadBookToDrive(Book book) async {
+    if (!isAuthenticated) throw Exception('Not authenticated');
+
+    final epubFile = File(book.filePath);
+    if (await epubFile.exists()) {
+      await _uploadFile(
+        '$_booksFolderName/${book.id}.epub',
+        await epubFile.readAsBytes(),
+        'application/epub+zip',
+      );
+      debugPrint('[DriveSync] Uploaded EPUB for "${book.title}"');
+      _uploadedBookIds.add(book.id);
+    }
+
+    if (book.coverImagePath != null) {
+      final coverFile = File(book.coverImagePath!);
+      if (await coverFile.exists()) {
+        final ext = book.coverImagePath!.split('.').last;
+        await _uploadFile(
+          '$_coversFolderName/${book.id}.$ext',
+          await coverFile.readAsBytes(),
+          _getImageMimeType(ext),
+        );
+        debugPrint('[DriveSync] Uploaded cover for "${book.title}"');
       }
     }
-    for (final bookId in booksToRemoveFromDeletion) {
-      deletedBooks.remove(bookId);
-      await _untrackBookDeletion(bookId);
-      debugPrint('[DriveSync] Removed book $bookId from deletion tracking (was re-added)');
+
+    // Keep the books metadata in sync so other devices know this book exists.
+    await _uploadBooksMetadata();
+  }
+
+  /// Download a single book's EPUB from Drive.
+  ///
+  /// Called when the user taps a grayed-out (file-missing) book and confirms
+  /// the download dialog.  Returns `true` if the file was found and written,
+  /// or `false` if the EPUB does not exist on Drive.
+  ///
+  /// Also pulls `covers/{id}.{ext}` when present (matching [uploadBookToDrive]),
+  /// or extracts a cover from the EPUB as a fallback.
+  Future<bool> downloadBookFromDrive(Book book) async {
+    if (!isAuthenticated) throw Exception('Not authenticated');
+
+    final bytes = await _downloadFile('$_booksFolderName/${book.id}.epub');
+    if (bytes == null) {
+      debugPrint('[DriveSync] EPUB not found on Drive for "${book.title}"');
+      return false;
     }
-    
-    // Clean up old deletions (older than 30 days) to prevent unbounded growth
-    final cutoffDate = now.subtract(const Duration(days: 30));
-    deletedBooks.removeWhere((key, value) => value.isBefore(cutoffDate));
-    
+
+    final epubFile = File(book.filePath);
+    await epubFile.parent.create(recursive: true);
+    await epubFile.writeAsBytes(bytes);
+    debugPrint('[DriveSync] Downloaded EPUB for "${book.title}"');
+
+    // Persist isValid: true immediately so the library screen shows the book
+    // as valid on the next _loadBooks() without waiting for _validateBookFile.
+    final validBook = Book(
+      id: book.id,
+      title: book.title,
+      author: book.author,
+      coverImagePath: book.coverImagePath,
+      filePath: book.filePath,
+      dateAdded: book.dateAdded,
+      isValid: true,
+    );
+    await _bookService.addOrUpdateBook(validBook);
+
+    await _downloadOrExtractCoverAfterEpub(validBook);
+    return true;
+  }
+
+  static bool _isPlausibleImageExt(String ext) {
+    final e = ext.toLowerCase();
+    if (e.length < 2 || e.length > 5) return false;
+    return RegExp(r'^[a-z0-9]+$').hasMatch(e);
+  }
+
+  /// After the EPUB exists locally: fetch cover from Drive, else extract from EPUB.
+  Future<void> _downloadOrExtractCoverAfterEpub(Book book) async {
+    final coversDir = await _bookService.getCoversDirectory();
+
+    final extensionsToTry = <String>[];
+    if (book.coverImagePath != null && book.coverImagePath!.isNotEmpty) {
+      final ext = book.coverImagePath!.split('.').last;
+      if (_isPlausibleImageExt(ext)) {
+        extensionsToTry.add(ext.toLowerCase());
+      }
+    }
+    for (final e in ['png', 'jpg', 'jpeg', 'webp']) {
+      if (!extensionsToTry.contains(e)) {
+        extensionsToTry.add(e);
+      }
+    }
+
+    String? savedPath;
+    for (final ext in extensionsToTry) {
+      final remoteName = '$_coversFolderName/${book.id}.$ext';
+      final coverBytes = await _downloadFile(remoteName);
+      if (coverBytes == null || coverBytes.isEmpty) continue;
+
+      final targetPath = (book.coverImagePath != null &&
+              book.coverImagePath!.toLowerCase().endsWith('.$ext'))
+          ? book.coverImagePath!
+          : '$coversDir/${book.id}.$ext';
+
+      final out = File(targetPath);
+      await out.parent.create(recursive: true);
+      await out.writeAsBytes(coverBytes);
+      savedPath = out.path;
+      debugPrint('[DriveSync] Downloaded cover for "${book.title}" ($ext)');
+      break;
+    }
+
+    Book current = book;
+    if (savedPath != null) {
+      current = Book(
+        id: book.id,
+        title: book.title,
+        author: book.author,
+        coverImagePath: savedPath,
+        filePath: book.filePath,
+        dateAdded: book.dateAdded,
+        isValid: book.isValid,
+      );
+      await _bookService.addOrUpdateBook(current);
+    }
+
+    final checkPath = current.coverImagePath;
+    if (checkPath != null) {
+      final f = File(checkPath);
+      if (await f.exists() && await f.length() > 0) {
+        return;
+      }
+    }
+
+    final extracted = await _bookService.extractCoverFromEpubPath(
+        book.filePath, book.id);
+    if (extracted != null) {
+      final withCover = Book(
+        id: current.id,
+        title: current.title,
+        author: current.author,
+        coverImagePath: extracted,
+        filePath: current.filePath,
+        dateAdded: current.dateAdded,
+        isValid: current.isValid,
+      );
+      await _bookService.addOrUpdateBook(withCover);
+      debugPrint('[DriveSync] Extracted cover from EPUB for "${book.title}"');
+    } else {
+      debugPrint(
+          '[DriveSync] No cover on Drive and EPUB extraction failed for '
+          '"${book.title}"');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Upload helpers
+  // ---------------------------------------------------------------------------
+
+  Future<void> _uploadBooksMetadata() async {
+    final books = await _bookService.getAllBooks();
+    var deletedBooks = await _getDeletedBooks();
+
+    debugPrint('[DriveSync] Uploading books metadata: '
+        '${books.length} book(s), ${deletedBooks.length} tombstone(s)');
+
+    if (books.isEmpty && deletedBooks.isEmpty) {
+      debugPrint('[DriveSync] WARNING: both books and tombstones are empty — '
+          'skipping upload to avoid overwriting Drive with empty data');
+      return;
+    }
+
+    // Expire tombstones older than 30 days so they don't grow forever.
+    final cutoff = DateTime.now().subtract(const Duration(days: 30));
+    deletedBooks.removeWhere((_, v) => v.isBefore(cutoff));
+    await _saveDeletedBooks(deletedBooks);
+
     final syncData = SyncBooksData(
       books: books,
       deletedBooks: deletedBooks,
-      lastModified: now,
+      lastModified: DateTime.now(),
     );
-
-    final jsonBytes = utf8.encode(jsonEncode(syncData.toJson()));
-    await _uploadFile(_booksFileName, jsonBytes, 'application/json');
-  }
-  
-  /// Called when a book is deleted to track it for sync
-  Future<void> onBookDeleted(String bookId) async {
-    await _trackBookDeletion(bookId);
-    debugPrint('[DriveSync] Tracked deletion of book $bookId');
+    await _uploadFile(
+      _booksFileName,
+      utf8.encode(jsonEncode(syncData.toJson())),
+      'application/json',
+    );
   }
 
-  /// Called when a book is re-added to remove it from deletion tracking
-  Future<void> onBookReAdded(String bookId) async {
-    final deletedBooks = await _getDeletedBooks();
-    if (deletedBooks.containsKey(bookId)) {
-      await _untrackBookDeletion(bookId);
-      debugPrint('[DriveSync] Removed book $bookId from deletion tracking (was re-added)');
-    }
-  }
-
-  /// Upload reading progress JSON file
   Future<void> _uploadProgress() async {
     final books = await _bookService.getAllBooks();
     final progressMap = <String, ReadingProgress>{};
-
     for (final book in books) {
-      final progress = await _bookService.getReadingProgress(book.id);
-      if (progress != null) {
-        progressMap[book.id] = progress;
-      }
+      final p = await _bookService.getReadingProgress(book.id);
+      if (p != null) progressMap[book.id] = p;
     }
-
-    final syncData = SyncProgressData(
-      progress: progressMap,
-      lastModified: DateTime.now(),
+    final syncData =
+        SyncProgressData(progress: progressMap, lastModified: DateTime.now());
+    await _uploadFile(
+      _progressFileName,
+      utf8.encode(jsonEncode(syncData.toJson())),
+      'application/json',
     );
-
-    final jsonBytes = utf8.encode(jsonEncode(syncData.toJson()));
-    await _uploadFile(_progressFileName, jsonBytes, 'application/json');
   }
 
-  /// Upload translations JSON file
   Future<void> _uploadTranslations() async {
     final books = await _bookService.getAllBooks();
-    final allTranslations = <SavedTranslation>[];
-
+    final all = <SavedTranslation>[];
     for (final book in books) {
-      final translations = await _translationService.getTranslations(book.id);
-      allTranslations.addAll(translations);
+      all.addAll(await _translationService.getTranslations(book.id));
     }
-
-    final syncData = SyncTranslationsData(
-      translations: allTranslations,
-      lastModified: DateTime.now(),
+    final syncData =
+        SyncTranslationsData(translations: all, lastModified: DateTime.now());
+    await _uploadFile(
+      _translationsFileName,
+      utf8.encode(jsonEncode(syncData.toJson())),
+      'application/json',
     );
-
-    final jsonBytes = utf8.encode(jsonEncode(syncData.toJson()));
-    await _uploadFile(_translationsFileName, jsonBytes, 'application/json');
   }
 
-  /// Upload API keys JSON file
   Future<void> _uploadApiKeys() async {
+    if (!await DriveSyncSecretsService.canEncryptApiKeysForUpload()) {
+      debugPrint(
+        '[DriveSync] API keys upload skipped — cloud encryption off or no '
+        'passphrase (keys are not stored on Drive in plaintext)',
+      );
+      return;
+    }
+    final passphrase = await DriveSyncSecretsService.getPassphrase();
+    if (passphrase == null || passphrase.isEmpty) {
+      debugPrint('[DriveSync] API keys upload skipped — passphrase missing');
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
-    final configService = SummaryConfigService(prefs);
-    
+    final config = SummaryConfigService(prefs);
     final syncData = SyncApiKeysData(
-      openaiApiKey: configService.getRawOpenAIApiKey(),
-      mistralApiKey: configService.getRawMistralApiKey(),
-      provider: configService.getProvider(),
+      openaiApiKey: config.getRawOpenAIApiKey(),
+      mistralApiKey: config.getRawMistralApiKey(),
+      provider: config.getProvider(),
       lastModified: DateTime.now(),
     );
-
-    final jsonBytes = utf8.encode(jsonEncode(syncData.toJson()));
-    await _uploadFile(_apiKeysFileName, jsonBytes, 'application/json');
-    debugPrint('[DriveSync] API keys uploaded');
+    final plain = utf8.encode(jsonEncode(syncData.toJson()));
+    final envelope = await DriveApiKeysCipher.encrypt(
+      plaintextUtf8: plain,
+      passphrase: passphrase,
+    );
+    await _uploadFile(
+      _apiKeysFileName,
+      utf8.encode(jsonEncode(envelope)),
+      'application/json',
+    );
+    debugPrint('[DriveSync] Encrypted API keys uploaded');
   }
 
-  /// Upload EPUB files and cover images
-  Future<void> _uploadBookFiles() async {
-    final books = await _bookService.getAllBooks();
-    final deletedBooks = await _getDeletedBooks();
+  // ---------------------------------------------------------------------------
+  // Download / merge helpers
+  // ---------------------------------------------------------------------------
 
-    for (final book in books) {
-      try {
-        // Skip if book is marked as deleted
-        if (deletedBooks.containsKey(book.id)) {
-          continue;
-        }
-        
-        // Upload EPUB file
-        final epubFile = File(book.filePath);
-        if (await epubFile.exists()) {
-          final epubBytes = await epubFile.readAsBytes();
-          final filePath = '$_booksFolderName/${book.id}.epub';
-          await _uploadFile(filePath, epubBytes, 'application/epub+zip');
-        }
-
-        // Upload cover image if exists
-        if (book.coverImagePath != null) {
-          final coverFile = File(book.coverImagePath!);
-          if (await coverFile.exists()) {
-            final coverBytes = await coverFile.readAsBytes();
-            final extension = book.coverImagePath!.split('.').last;
-            final filePath = '$_coversFolderName/${book.id}.$extension';
-            final mimeType = _getImageMimeType(extension);
-            await _uploadFile(filePath, coverBytes, mimeType);
-          }
-        }
-      } catch (e) {
-        debugPrint('[DriveSync] Error uploading files for book ${book.id}: $e');
-        // Continue with next book
-      }
-    }
-    
-    // Delete EPUB files and covers from Drive for deleted books
-    for (final bookId in deletedBooks.keys) {
-      try {
-        // Try to delete EPUB file
-        final epubPath = '$_booksFolderName/$bookId.epub';
-        await _deleteFile(epubPath);
-        
-        // Try to delete cover images with different extensions
-        for (final ext in ['png', 'jpg', 'jpeg', 'webp']) {
-          final coverPath = '$_coversFolderName/$bookId.$ext';
-          await _deleteFile(coverPath);
-        }
-      } catch (e) {
-        debugPrint('[DriveSync] Error deleting files for deleted book $bookId: $e');
-        // Continue - file might not exist
-      }
-    }
-  }
-
-  /// Download and merge books
+  /// Merges remote book metadata with local state.
+  ///
+  /// The algorithm is a single-pass "last-write-wins" over all known book IDs:
+  ///
+  ///   • For each book ID seen in any source (local books, remote books, local
+  ///     tombstones, remote tombstones), determine the most-recent *alive*
+  ///     timestamp (= newest `dateAdded` across both devices) and the
+  ///     most-recent *deletion* timestamp.
+  ///
+  ///   • If alive > deleted (or no deletion): the book should exist.
+  ///   • If deleted >= alive (or no alive event): the book should be gone.
+  ///
+  ///   Then enforce that state locally.
   Future<void> _downloadAndMergeBooks() async {
     try {
       final jsonBytes = await _downloadFile(_booksFileName);
       if (jsonBytes == null) {
-        debugPrint('[DriveSync] No books file found in Drive');
+        debugPrint('[DriveSync] No books file on Drive — skipping book merge');
         return;
       }
 
-      final json = jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>;
       final remoteData = SyncBooksData.fromJson(
-        json,
+        jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>,
         booksDirectory: await _bookService.getBooksDirectory(),
         coversDirectory: await _bookService.getCoversDirectory(),
       );
 
+      debugPrint('[DriveSync] Remote has ${remoteData.books.length} book(s), '
+          '${remoteData.deletedBooks.length} tombstone(s)');
+
       final localBooks = await _bookService.getAllBooks();
-      final localBooksMap = {for (var b in localBooks) b.id: b};
       final localDeletedBooks = await _getDeletedBooks();
 
-      // Handle remote deletions - delete books that are marked as deleted in Drive
-      for (final entry in remoteData.deletedBooks.entries) {
-        final bookId = entry.key;
-        final remoteDeletionTime = entry.value;
-        final localDeletionTime = localDeletedBooks[bookId];
-        
-        // If book exists locally and wasn't deleted locally, or was deleted later remotely
-        if (localBooksMap.containsKey(bookId)) {
-          if (localDeletionTime == null || remoteDeletionTime.isAfter(localDeletionTime)) {
-            // Remote deletion is newer or local wasn't deleted - delete locally
-            final book = localBooksMap[bookId]!;
-            await _bookService.deleteBook(book);
-            await _trackBookDeletion(bookId);
-            debugPrint('[DriveSync] Deleted book ${book.title} (ID: $bookId) due to remote deletion');
-          }
-        } else if (localDeletionTime == null) {
-          // Book doesn't exist locally and wasn't deleted locally - track the deletion
-          await _trackBookDeletion(bookId);
-        }
-      }
+      debugPrint('[DriveSync] Local has ${localBooks.length} book(s), '
+          '${localDeletedBooks.length} tombstone(s)');
 
-      // Merge books - only add books that aren't marked as deleted
-      for (final remoteBook in remoteData.books) {
-        final remoteDeletionTime = remoteData.deletedBooks[remoteBook.id];
-        final localBook = localBooksMap[remoteBook.id];
-        final localDeletionTime = localDeletedBooks[remoteBook.id];
-        
-        // If book was deleted but re-added (dateAdded is newer than deletion), remove from deletion tracking
-        if (remoteDeletionTime != null && remoteBook.dateAdded.isAfter(remoteDeletionTime)) {
-          // Book was re-added after deletion - remove from deletion tracking
-          await _untrackBookDeletion(remoteBook.id);
-          debugPrint('[DriveSync] Book ${remoteBook.id} was re-added, removed from deletion tracking');
-        }
-        
-        // Skip if this book is marked as deleted remotely (and deletion is newer than book)
-        if (remoteDeletionTime != null && remoteDeletionTime.isAfter(remoteBook.dateAdded)) {
-          // Book was deleted after it was added - don't restore it
-          // But if we have it locally and it wasn't deleted locally, delete it
-          if (localBook != null && localDeletionTime == null) {
-            await _bookService.deleteBook(localBook);
-            await _trackBookDeletion(remoteBook.id);
-            debugPrint('[DriveSync] Deleted local book ${localBook.title} (ID: ${localBook.id}) due to remote deletion');
-          }
-          continue;
-        }
-        
-        if (localBook == null) {
-          // Book exists in Drive but not locally
-          // Only add if it wasn't deleted locally, or if remote book is newer than local deletion
-          if (localDeletionTime == null) {
-            // Never deleted locally - add it
-            await _bookService.updateBook(remoteBook);
-            debugPrint('[DriveSync] Added book ${remoteBook.title} (ID: ${remoteBook.id}) from Drive');
-          } else if (remoteDeletionTime == null && remoteBook.dateAdded.isAfter(localDeletionTime)) {
-            // Was deleted locally, but remote has a newer version - restore it
-            await _bookService.updateBook(remoteBook);
-            await _untrackBookDeletion(remoteBook.id);
-            debugPrint('[DriveSync] Restored book ${remoteBook.title} (ID: ${remoteBook.id}) from Drive');
-          }
-          // Otherwise, keep it deleted (local deletion is newer)
-        } else {
-          // Book exists in both - keep the one with newer dateAdded
-          if (remoteBook.dateAdded.isAfter(localBook.dateAdded)) {
-            await _bookService.updateBook(remoteBook);
-          }
-          // If book exists locally and wasn't deleted, remove from deletion tracking (it was re-added)
-          if (localDeletionTime != null) {
-            await _untrackBookDeletion(remoteBook.id);
-            debugPrint('[DriveSync] Book ${remoteBook.id} exists locally, removed from deletion tracking');
-          }
-        }
-      }
+      final localBookMap = {for (final b in localBooks) b.id: b};
+      final remoteBookMap = {for (final b in remoteData.books) b.id: b};
 
-      // Handle local deletions - upload deletion tracking for books deleted locally
-      for (final entry in localDeletedBooks.entries) {
-        final bookId = entry.key;
-        final localDeletionTime = entry.value;
-        final remoteDeletionTime = remoteData.deletedBooks[bookId];
-        
-        // If book exists in Drive but wasn't deleted there, or was deleted later locally
-        if (remoteData.books.any((b) => b.id == bookId)) {
-          if (remoteDeletionTime == null || localDeletionTime.isAfter(remoteDeletionTime)) {
-            // Local deletion is newer - will be uploaded in next sync
-            debugPrint('[DriveSync] Local deletion of book $bookId will be synced');
+      final allIds = {
+        ...localBookMap.keys,
+        ...remoteBookMap.keys,
+        ...localDeletedBooks.keys,
+        ...remoteData.deletedBooks.keys,
+      };
+
+      for (final bookId in allIds) {
+        try {
+          final localBook = localBookMap[bookId];
+          final remoteBook = remoteBookMap[bookId];
+          final localDeletion = localDeletedBooks[bookId];
+          final remoteDeletion = remoteData.deletedBooks[bookId];
+
+          final (:newestBook, :newestDeletion) =
+              mergeBookAndDeletionTimestamps(
+            localBook: localBook,
+            remoteBook: remoteBook,
+            localDeletion: localDeletion,
+            remoteDeletion: remoteDeletion,
+          );
+
+          final shouldExist =
+              bookShouldExistAfterMerge(newestBook, newestDeletion);
+
+          if (shouldExist) {
+            final resolvedBook = newestBook!;
+            if (localBook == null) {
+              await _bookService.addOrUpdateBook(resolvedBook);
+              debugPrint(
+                  '[DriveSync] Added book "${resolvedBook.title}" from Drive');
+            } else if (remoteBook != null &&
+                remoteBook.dateAdded.isAfter(localBook.dateAdded)) {
+              await _bookService.addOrUpdateBook(remoteBook);
+              debugPrint(
+                  '[DriveSync] Updated book "${remoteBook.title}" from Drive');
+            }
+            if (localDeletion != null) await _untrackBookDeletion(bookId);
+          } else {
+            if (localBook != null) {
+              await _bookService.deleteBook(localBook);
+              // Queue Drive blob cleanup so EPUB/cover are removed from Drive
+              // on the next upload phase (mirrors what onBookDeleted does for
+              // user-initiated deletes).
+              await _enqueueDriveBlobDelete(bookId);
+              debugPrint(
+                  '[DriveSync] Deleted book "${localBook.title}" per remote state');
+            }
+            if (localDeletion == null) await _trackBookDeletion(bookId);
           }
+        } catch (e) {
+          debugPrint('[DriveSync] Error merging book $bookId: $e');
+          _downloadHadErrors = true;
         }
       }
     } catch (e) {
       debugPrint('[DriveSync] Error downloading books: $e');
-      // Don't throw - continue with other sync operations
+      _downloadHadErrors = true;
     }
   }
 
-  /// Download and merge progress
   Future<void> _downloadAndMergeProgress() async {
     try {
       final jsonBytes = await _downloadFile(_progressFileName);
-      if (jsonBytes == null) {
-        debugPrint('[DriveSync] No progress file found in Drive');
-        return;
-      }
+      if (jsonBytes == null) return;
 
-      final json = jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>;
-      final remoteData = SyncProgressData.fromJson(json);
+      final remoteData = SyncProgressData.fromJson(
+        jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>,
+      );
 
-      // Merge progress - keep the one with most recent lastRead
+      // Only apply progress for books that exist locally after the book merge
+      // to avoid creating orphaned progress entries for deleted books.
+      final localBooks = await _bookService.getAllBooks();
+      final localBookIds = {for (final b in localBooks) b.id};
+
       for (final entry in remoteData.progress.entries) {
-        final localProgress = await _bookService.getReadingProgress(entry.key);
-        
-        if (localProgress == null) {
-          // Progress exists in Drive but not locally
+        if (!localBookIds.contains(entry.key)) continue;
+        final local = await _bookService.getReadingProgress(entry.key);
+        if (local == null || entry.value.lastRead.isAfter(local.lastRead)) {
           await _bookService.saveReadingProgress(entry.value);
-        } else {
-          // Progress exists in both - keep the one with newer lastRead
-          if (entry.value.lastRead.isAfter(localProgress.lastRead)) {
-            await _bookService.saveReadingProgress(entry.value);
-          }
         }
       }
     } catch (e) {
       debugPrint('[DriveSync] Error downloading progress: $e');
-      // Don't throw - continue with other sync operations
+      _downloadHadErrors = true;
     }
   }
 
-  /// Download and merge translations
   Future<void> _downloadAndMergeTranslations() async {
     try {
       final jsonBytes = await _downloadFile(_translationsFileName);
-      if (jsonBytes == null) {
-        debugPrint('[DriveSync] No translations file found in Drive');
-        return;
-      }
+      if (jsonBytes == null) return;
 
-      final json = jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>;
-      final remoteData = SyncTranslationsData.fromJson(json);
+      final remoteData = SyncTranslationsData.fromJson(
+        jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>,
+      );
 
-      // Get all local translations
       final books = await _bookService.getAllBooks();
+      final localBookIds = {for (final b in books) b.id};
       final localTranslations = <SavedTranslation>[];
       for (final book in books) {
-        localTranslations.addAll(await _translationService.getTranslations(book.id));
+        localTranslations.addAll(
+            await _translationService.getTranslations(book.id));
       }
-      final localTranslationsMap = {for (var t in localTranslations) t.id: t};
+      final localMap = {
+        for (final t in localTranslations)
+          if (t.id != null) t.id!: t,
+      };
 
-      // Merge translations
-      for (final remoteTranslation in remoteData.translations) {
-        final localTranslation = remoteTranslation.id != null 
-            ? localTranslationsMap[remoteTranslation.id] 
-            : null;
-        
-        if (localTranslation == null) {
-          // Translation exists in Drive but not locally - add it
-          await _translationService.saveTranslation(remoteTranslation);
-        } else {
-          // Translation exists in both - keep the one with newer createdAt
-          if (remoteTranslation.createdAt.isAfter(localTranslation.createdAt)) {
-            await _translationService.saveTranslation(remoteTranslation);
-          }
+      for (final remote in remoteData.translations) {
+        if (!localBookIds.contains(remote.bookId)) {
+          continue;
+        }
+        final local = remote.id != null ? localMap[remote.id] : null;
+        if (local == null || remote.createdAt.isAfter(local.createdAt)) {
+          await _translationService.saveTranslation(remote);
         }
       }
     } catch (e) {
       debugPrint('[DriveSync] Error downloading translations: $e');
-      // Don't throw - continue with other sync operations
+      _downloadHadErrors = true;
     }
   }
 
-  /// Download and merge API keys
   Future<void> _downloadAndMergeApiKeys() async {
     try {
+      apiKeysSyncIssue.value = null;
       final jsonBytes = await _downloadFile(_apiKeysFileName);
-      if (jsonBytes == null) {
-        debugPrint('[DriveSync] No API keys file found in Drive');
-        return;
-      }
+      if (jsonBytes == null) return;
 
-      final json = jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>;
-      final remoteData = SyncApiKeysData.fromJson(json);
+      final map =
+          jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>;
+
+      late final SyncApiKeysData remote;
+      if (DriveApiKeysCipher.isEncryptedEnvelope(map)) {
+        final passphrase = await DriveSyncSecretsService.getPassphrase();
+        if (passphrase == null || passphrase.isEmpty) {
+          apiKeysSyncIssue.value = DriveApiKeysSyncIssue.missingPassphrase;
+          debugPrint(
+            '[DriveSync] Encrypted API keys on Drive — passphrase missing',
+          );
+          return;
+        }
+        try {
+          final plain = await DriveApiKeysCipher.decrypt(
+            envelope: map,
+            passphrase: passphrase,
+          );
+          remote = SyncApiKeysData.fromJson(
+            jsonDecode(utf8.decode(plain)) as Map<String, dynamic>,
+          );
+        } on DriveApiKeysDecryptException catch (e) {
+          apiKeysSyncIssue.value = DriveApiKeysSyncIssue.decryptFailed;
+          debugPrint('[DriveSync] API key decrypt failed: $e');
+          return;
+        }
+      } else {
+        try {
+          remote = SyncApiKeysData.fromJson(map);
+        } catch (e) {
+          apiKeysSyncIssue.value = DriveApiKeysSyncIssue.unreadableRemote;
+          debugPrint('[DriveSync] API keys JSON parse error: $e');
+          return;
+        }
+      }
 
       final prefs = await SharedPreferences.getInstance();
-      final configService = SummaryConfigService(prefs);
-      
-      // Get local API keys
-      final localOpenAIKey = configService.getRawOpenAIApiKey();
-      final localMistralKey = configService.getRawMistralApiKey();
-      final localProvider = configService.getProvider();
-      
-      // Merge strategy for API keys:
-      // - If remote has a key and local doesn't, use remote
-      // - If both have keys, prefer remote (last-write-wins based on lastModified)
-      // This ensures that when a user configures API keys on one device, they sync to others
-      bool shouldUpdate = false;
-      
-      // Check OpenAI key
-      if (remoteData.openaiApiKey != null && remoteData.openaiApiKey!.isNotEmpty) {
-        if (localOpenAIKey == null || localOpenAIKey.isEmpty) {
-          // Local doesn't have OpenAI key, use remote
-          await configService.setOpenAIApiKey(remoteData.openaiApiKey!);
-          shouldUpdate = true;
-          debugPrint('[DriveSync] Synced OpenAI API key from Drive (local was empty)');
-        } else if (localOpenAIKey != remoteData.openaiApiKey) {
-          // Both have keys but they're different - prefer remote (last-write-wins)
-          await configService.setOpenAIApiKey(remoteData.openaiApiKey!);
-          shouldUpdate = true;
-          debugPrint('[DriveSync] Updated OpenAI API key from Drive (remote is newer)');
+      final config = SummaryConfigService(prefs);
+
+      // Merge policy: only populate empty local slots from Drive.
+      // We never overwrite a key the user has already set on this device to
+      // avoid accidentally clobbering intentional local configuration.
+      bool updated = false;
+
+      if (remote.openaiApiKey?.isNotEmpty == true) {
+        final local = config.getRawOpenAIApiKey();
+        if (local == null || local.isEmpty) {
+          await config.setOpenAIApiKey(remote.openaiApiKey!);
+          updated = true;
+          debugPrint('[DriveSync] Populated OpenAI API key from Drive');
         }
       }
-      
-      // Check Mistral key
-      if (remoteData.mistralApiKey != null && remoteData.mistralApiKey!.isNotEmpty) {
-        if (localMistralKey == null || localMistralKey.isEmpty) {
-          // Local doesn't have Mistral key, use remote
-          await configService.setMistralApiKey(remoteData.mistralApiKey!);
-          shouldUpdate = true;
-          debugPrint('[DriveSync] Synced Mistral API key from Drive (local was empty)');
-        } else if (localMistralKey != remoteData.mistralApiKey) {
-          // Both have keys but they're different - prefer remote (last-write-wins)
-          await configService.setMistralApiKey(remoteData.mistralApiKey!);
-          shouldUpdate = true;
-          debugPrint('[DriveSync] Updated Mistral API key from Drive (remote is newer)');
+      if (remote.mistralApiKey?.isNotEmpty == true) {
+        final local = config.getRawMistralApiKey();
+        if (local == null || local.isEmpty) {
+          await config.setMistralApiKey(remote.mistralApiKey!);
+          updated = true;
+          debugPrint('[DriveSync] Populated Mistral API key from Drive');
         }
       }
-      
-      // Update provider if remote has one and it's different from local
-      if (remoteData.provider != null && remoteData.provider != localProvider) {
-        await configService.setProvider(remoteData.provider!);
-        shouldUpdate = true;
-        debugPrint('[DriveSync] Updated provider from Drive: ${remoteData.provider}');
+      // Provider: only apply if the user hasn't explicitly chosen one locally.
+      // getProvider() always returns a default, so we inspect SharedPreferences
+      // directly.  'summary_provider' is the key used by SummaryConfigService.
+      final prefs2 = await SharedPreferences.getInstance();
+      if (remote.provider != null &&
+          !prefs2.containsKey('summary_provider')) {
+        await config.setProvider(remote.provider!);
+        updated = true;
+        debugPrint('[DriveSync] Populated provider from Drive: ${remote.provider}');
       }
-      
-      if (shouldUpdate) {
-        debugPrint('[DriveSync] API keys configuration synced from Drive');
-      } else {
-        debugPrint('[DriveSync] API keys already in sync');
-      }
+
+      if (!updated) debugPrint('[DriveSync] API keys already in sync');
     } catch (e) {
       debugPrint('[DriveSync] Error downloading API keys: $e');
-      // Don't throw - continue with other sync operations
+      _downloadHadErrors = true;
     }
   }
 
-  /// Download EPUB files and cover images
-  Future<void> _downloadBookFiles() async {
-    final books = await _bookService.getAllBooks();
+  // ---------------------------------------------------------------------------
+  // Uploaded-books inventory
+  // ---------------------------------------------------------------------------
 
-    for (final book in books) {
-      try {
-        // Download EPUB file if it doesn't exist locally
-        final epubFile = File(book.filePath);
-        if (!await epubFile.exists()) {
-          final filePath = '$_booksFolderName/${book.id}.epub';
-          final epubBytes = await _downloadFile(filePath);
-          if (epubBytes != null) {
-            // Ensure directory exists
-            await epubFile.parent.create(recursive: true);
-            await epubFile.writeAsBytes(epubBytes);
-            debugPrint('[DriveSync] Downloaded EPUB for book ${book.id}');
-          }
-        }
-
-        // Download cover image if it doesn't exist locally
-        if (book.coverImagePath == null || !await File(book.coverImagePath!).exists()) {
-          // Try different image extensions
-          for (final ext in ['png', 'jpg', 'jpeg', 'webp']) {
-            final filePath = '$_coversFolderName/${book.id}.$ext';
-            final coverBytes = await _downloadFile(filePath);
-            if (coverBytes != null) {
-              final coversDir = await _bookService.getCoversDirectory();
-              final coverFile = File('$coversDir/${book.id}.$ext');
-              await coverFile.writeAsBytes(coverBytes);
-              
-              // Update book with cover path
-              final updatedBook = Book(
-                id: book.id,
-                title: book.title,
-                author: book.author,
-                coverImagePath: coverFile.path,
-                filePath: book.filePath,
-                dateAdded: book.dateAdded,
-                isValid: book.isValid,
-              );
-              await _bookService.updateBook(updatedBook);
-              debugPrint('[DriveSync] Downloaded cover for book ${book.id}');
-              break;
-            }
-          }
-        }
-      } catch (e) {
-        debugPrint('[DriveSync] Error downloading files for book ${book.id}: $e');
-        // Continue with next book
-      }
-    }
-  }
-
-  /// Upload a file to Google Drive appDataFolder
-  Future<void> _uploadFile(String fileName, List<int> fileBytes, String mimeType) async {
-    if (!isAuthenticated) {
-      throw Exception('Not authenticated');
-    }
-
+  /// Lists all EPUB files in the appDataFolder and populates
+  /// [_uploadedBookIds] so the UI can show "Already uploaded".
+  Future<void> _refreshUploadedBookIds() async {
+    if (!isAuthenticated) return;
     try {
-      // Check if file already exists
-      final existingFile = await _findFile(fileName);
-      
+      final response = await _driveApi!.files.list(
+        q: "'appDataFolder' in parents",
+        spaces: 'appDataFolder',
+        $fields: 'files(name)',
+      );
+      _uploadedBookIds.clear();
+      for (final file in response.files ?? <drive.File>[]) {
+        final name = file.name;
+        if (name != null &&
+            name.startsWith('$_booksFolderName/') &&
+            name.endsWith('.epub')) {
+          final id = name
+              .substring('$_booksFolderName/'.length,
+                  name.length - '.epub'.length);
+          if (id.isNotEmpty) _uploadedBookIds.add(id);
+        }
+      }
+      debugPrint(
+          '[DriveSync] Found ${_uploadedBookIds.length} EPUB(s) on Drive');
+    } catch (e) {
+      debugPrint('[DriveSync] Error listing uploaded books: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Drive API primitives
+  // ---------------------------------------------------------------------------
+
+  /// Uploads [fileBytes] to the appDataFolder under [fileName].
+  /// Creates the file if it doesn't exist; updates it if it does.
+  Future<void> _uploadFile(
+    String fileName,
+    List<int> fileBytes,
+    String mimeType,
+  ) async {
+    if (!isAuthenticated) throw Exception('Not authenticated');
+    try {
+      final existing = await _findFile(fileName);
       final media = drive.Media(
         Stream.value(fileBytes),
         fileBytes.length,
         contentType: mimeType,
       );
 
-      if (existingFile != null) {
-        // Update existing file
+      if (existing != null) {
         await _driveApi!.files.update(
           drive.File()..name = fileName,
-          existingFile.id!,
+          existing.id!,
           uploadMedia: media,
         );
-        debugPrint('[DriveSync] Updated file: $fileName');
+        debugPrint('[DriveSync] Updated $fileName');
       } else {
-        // Create new file
         await _driveApi!.files.create(
           drive.File()
             ..name = fileName
             ..parents = ['appDataFolder'],
           uploadMedia: media,
         );
-        debugPrint('[DriveSync] Created file: $fileName');
+        debugPrint('[DriveSync] Created $fileName');
       }
     } catch (e) {
-      debugPrint('[DriveSync] Error uploading file $fileName: $e');
+      debugPrint('[DriveSync] Error uploading $fileName: $e');
       rethrow;
     }
   }
 
-  /// Download a file from Google Drive appDataFolder
+  /// Downloads [fileName] from the appDataFolder.
+  ///
+  /// Returns `null` when the file does not exist on Drive (not an error).
+  /// Throws on API/network failures so callers can correctly set
+  /// [_downloadHadErrors] rather than silently treating errors as "not found".
   Future<List<int>?> _downloadFile(String fileName) async {
-    if (!isAuthenticated) {
-      throw Exception('Not authenticated');
+    if (!isAuthenticated) throw Exception('Not authenticated');
+    final file = await _findFile(fileName);
+    if (file == null) return null; // file not on Drive — not an error
+
+    // File was found; fetch its bytes. Let any API/network error propagate.
+    final response = await _driveApi!.files.get(
+      file.id!,
+      downloadOptions: drive.DownloadOptions.fullMedia,
+    ) as drive.Media;
+
+    final bytes = <int>[];
+    await for (final chunk in response.stream) {
+      bytes.addAll(chunk);
     }
-
-    try {
-      final file = await _findFile(fileName);
-      if (file == null) {
-        return null;
-      }
-
-      final response = await _driveApi!.files.get(
-        file.id!,
-        downloadOptions: drive.DownloadOptions.fullMedia,
-      ) as drive.Media;
-
-      final bytes = <int>[];
-      await for (final chunk in response.stream) {
-        bytes.addAll(chunk);
-      }
-
-      debugPrint('[DriveSync] Downloaded file: $fileName (${bytes.length} bytes)');
-      return bytes;
-    } catch (e) {
-      debugPrint('[DriveSync] Error downloading file $fileName: $e');
-      return null;
-    }
+    debugPrint('[DriveSync] Downloaded $fileName (${bytes.length} bytes)');
+    return bytes;
   }
 
-  /// Find a file in appDataFolder by name
+  /// Finds a file by [fileName] in the appDataFolder.
+  ///
+  /// Returns `null` when the file is not found. Throws on API/network errors.
   Future<drive.File?> _findFile(String fileName) async {
-    if (!isAuthenticated) {
-      throw Exception('Not authenticated');
-    }
-
-    try {
-      final response = await _driveApi!.files.list(
-        q: "name='$fileName' and 'appDataFolder' in parents",
-        spaces: 'appDataFolder',
-      );
-
-      if (response.files != null && response.files!.isNotEmpty) {
-        return response.files!.first;
-      }
-      return null;
-    } catch (e) {
-      debugPrint('[DriveSync] Error finding file $fileName: $e');
-      return null;
-    }
+    if (!isAuthenticated) throw Exception('Not authenticated');
+    final response = await _driveApi!.files.list(
+      q: "name='$fileName' and 'appDataFolder' in parents",
+      spaces: 'appDataFolder',
+    );
+    return response.files?.firstOrNull;
   }
 
-  /// Delete a file from Google Drive appDataFolder
-  Future<void> _deleteFile(String fileName) async {
-    if (!isAuthenticated) {
-      throw Exception('Not authenticated');
-    }
-
-    try {
-      final file = await _findFile(fileName);
-      if (file != null && file.id != null) {
-        await _driveApi!.files.delete(file.id!);
-        debugPrint('[DriveSync] Deleted file: $fileName');
-      }
-    } catch (e) {
-      debugPrint('[DriveSync] Error deleting file $fileName: $e');
-      // Don't throw - file might not exist
-    }
-  }
-
-  /// Get MIME type for image extension
   String _getImageMimeType(String extension) {
     switch (extension.toLowerCase()) {
       case 'png':
@@ -879,24 +1138,32 @@ class GoogleDriveSyncService {
   }
 }
 
-/// HTTP client wrapper that adds authentication headers to requests
+// ---------------------------------------------------------------------------
+// Authenticated HTTP client
+// ---------------------------------------------------------------------------
+
+/// HTTP client that injects fresh Google OAuth headers on every request.
+///
+/// By calling [GoogleSignInAccount.authHeaders] per-request rather than
+/// caching the headers at sign-in time, we let the Google Sign-In SDK handle
+/// token refresh transparently.  OAuth access tokens expire after ~1 hour;
+/// the SDK refreshes them automatically when [authHeaders] is awaited.
 class _AuthenticatedHttpClient extends http.BaseClient {
-  final Map<String, String> _authHeaders;
-  final http.Client _client = http.Client();
+  final GoogleSignIn _googleSignIn;
+  final http.Client _inner = http.Client();
 
-  _AuthenticatedHttpClient(this._authHeaders);
+  _AuthenticatedHttpClient(this._googleSignIn);
 
   @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) {
-    // Add auth headers to the request
-    _authHeaders.forEach((key, value) {
-      request.headers[key] = value;
-    });
-    return _client.send(request);
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final user = _googleSignIn.currentUser;
+    if (user != null) {
+      final headers = await user.authHeaders;
+      headers.forEach((k, v) => request.headers[k] = v);
+    }
+    return _inner.send(request);
   }
 
   @override
-  void close() {
-    _client.close();
-  }
+  void close() => _inner.close();
 }

@@ -10,11 +10,15 @@ import 'api_cache_service.dart';
 class OpenAISummaryService implements SummaryService {
   final String apiKey;
   final ApiCacheService _cacheService = ApiCacheService();
-  
+  final http.Client _httpClient;
+
   static const String _apiUrl = 'https://api.openai.com/v1/chat/completions';
   static const String _provider = 'openai';
-  
-  OpenAISummaryService(this.apiKey);
+
+  OpenAISummaryService(
+    this.apiKey, {
+    http.Client? httpClient,
+  }) : _httpClient = httpClient ?? http.Client();
 
   @override
   String get serviceName => 'OpenAI (GPT)';
@@ -87,7 +91,7 @@ class OpenAISummaryService implements SummaryService {
         debugPrint('[LLM] OpenAI prompt end <<<');
       }
 
-      final response = await http.post(
+      final response = await _httpClient.post(
         Uri.parse(_apiUrl),
         headers: {
           'Content-Type': 'application/json',

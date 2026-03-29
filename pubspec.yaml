@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 4.0.1+11
+version: 5.0.0+13
 
 environment:
   sdk: ^3.9.2
@@ -74,6 +74,7 @@ dependencies:
   
   # HTTP client for OpenAI API
   http: ^1.2.2
+  url_launcher: ^6.3.1
   
   # SQLite database for summary caching
   sqflite: ^2.3.3+1
@@ -87,6 +88,9 @@ dependencies:
   webview_flutter: ^4.7.0
 
   crypto: any
+
+  flutter_secure_storage: ^9.2.4
+  cryptography: ^2.7.0
   
   # Google Drive sync
   google_sign_in: ^6.2.1
@@ -97,6 +101,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
+  sqflite_common: ^2.5.4
   sqflite_common_ffi: ^2.3.3
 
   # The "flutter_lints" package below contains a set of recommended lints to

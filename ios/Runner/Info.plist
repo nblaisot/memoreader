@@ -83,5 +83,41 @@
 	</dict>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>This app does not access your photo library. This permission is requested by a third-party library but is not used.</string>
+
+	<!-- ═══════════════════════════════════════════════════════════════════════
+	     Google Sign-In / Drive Sync configuration
+	     ───────────────────────────────────────────────────────────────────────
+	     TODO: Replace the two placeholder values below with the real iOS OAuth
+	     client ID created in Google Cloud Console for this app.
+
+	     Steps:
+	       1. Open https://console.cloud.google.com → APIs & Services → Credentials
+	       2. Create an OAuth 2.0 Client ID → Application type: iOS
+	          Bundle ID: com.blaisotbalette.memoreader
+	       3. Copy the generated client ID  (looks like 123456-abc.apps.googleusercontent.com)
+	       4. Replace YOUR_IOS_CLIENT_ID below with that value
+	       5. The REVERSED_CLIENT_ID is the client ID written backwards:
+	             com.googleusercontent.apps.YOUR_IOS_CLIENT_ID
+	          e.g. if client ID is  123456-abc.apps.googleusercontent.com
+	               reversed is     com.googleusercontent.apps.123456-abc
+	     ═══════════════════════════════════════════════════════════════════════ -->
+
+	<!-- The iOS OAuth client ID from Google Cloud Console. -->
+	<key>GIDClientID</key>
+	<string>YOUR_IOS_CLIENT_ID.apps.googleusercontent.com</string>
+
+	<!-- URL scheme required so the OS can return control to the app after the
+	     Google OAuth redirect.  Must be the reversed client ID. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.YOUR_IOS_CLIENT_ID</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

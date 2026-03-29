@@ -30,36 +30,93 @@ class MyApp extends StatefulWidget {
       context.findAncestorStateOfType<MyAppState>()!;
 }
 
-class MyAppState extends State<MyApp> {
+class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final SettingsService _settingsService = SettingsService();
+  final GoogleDriveSyncService _syncService = GoogleDriveSyncService();
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
   Locale? _locale;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _syncService.syncStatus.addListener(_onSyncStatusChanged);
     _loadLanguagePreference();
-    // Initialize background summary service
     BackgroundSummaryService().initialize();
-    // Initialize sharing service to handle "Open with" intents
     SharingService().initialize();
-    // Auto-resume RAG indexing for any incomplete books
     _autoResumeRagIndexing();
-    // Start Google Drive sync in background (non-blocking)
     _startDriveSync();
   }
 
-  /// Start Google Drive sync in background
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _syncService.syncStatus.removeListener(_onSyncStatusChanged);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.resumed) {
+      _startDriveSync();
+    }
+  }
+
+  void _onSyncStatusChanged() {
+    final status = _syncService.syncStatus.value;
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+
+    switch (status) {
+      case SyncStatus.syncing:
+        messenger.showSnackBar(const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(width: 12),
+              Text('Syncing with Google Drive…'),
+            ],
+          ),
+          duration: Duration(seconds: 2),
+        ));
+        break;
+      case SyncStatus.success:
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Sync complete'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ));
+        break;
+      case SyncStatus.error:
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(const SnackBar(
+          content: Text('Sync encountered errors'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ));
+        break;
+      case SyncStatus.idle:
+        break;
+    }
+  }
+
   Future<void> _startDriveSync() async {
     try {
-      final syncService = GoogleDriveSyncService();
-      // Run sync in background without blocking app startup
-      syncService.syncOnStartup().catchError((e) {
+      _syncService.syncOnStartup().catchError((e) {
         debugPrint('[Main] Drive sync error: $e');
-        // Don't throw - sync failures shouldn't block app startup
       });
     } catch (e) {
       debugPrint('[Main] Failed to start drive sync: $e');
-      // Don't throw - sync is optional
     }
   }
   
@@ -118,6 +175,7 @@ class MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      scaffoldMessengerKey: _scaffoldMessengerKey,
       debugShowCheckedModeBanner: false,
       title: 'MemoReader',
       theme: ThemeData(

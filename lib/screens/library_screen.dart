@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/book.dart';
@@ -12,8 +13,10 @@ import '../services/rag_indexing_service.dart';
 import '../services/rag_database_service.dart';
 import '../services/google_drive_sync_service.dart';
 import '../utils/import_extensions.dart';
+import '../widgets/book_cover_image.dart';
 import 'reader_screen.dart';
 import 'settings_screen.dart';
+import 'rag_question_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -32,6 +35,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _isImporting = false;
   String? _errorMessage;
   bool _isListView = false;
+  bool _syncEnabled = false;
   StreamSubscription? _sharingSubscription;
 
   @override
@@ -85,8 +89,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
     });
     
     try {
-      final books = await _bookService.getAllBooks();
-      
+      final results = await Future.wait([
+        _bookService.getAllBooks(),
+        _driveSyncService.isSyncEnabled(),
+      ]);
+      final books = results[0] as List<Book>;
+      final syncEnabled = results[1] as bool;
+
       // Validate book files and load progress in parallel
       final validationFutures = books.map((book) => _validateBookFile(book));
       final validatedBooks = await Future.wait(validationFutures);
@@ -106,6 +115,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       setState(() {
         _books = validatedBooks;
         _bookProgress = progressMap;
+        _syncEnabled = syncEnabled;
         _isLoading = false;
       });
       
@@ -342,8 +352,32 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   void _openBook(Book book) {
-    // Don't open invalid books
     if (!book.isValid) {
+      _handleInvalidBookTap(book);
+      return;
+    }
+
+    unawaited(_appStateService.setLastOpenedBook(book.id));
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ReaderScreen(book: book),
+      ),
+    ).then((_) async {
+      await _loadBooks();
+      await _appStateService.clearLastOpenedBook();
+    });
+  }
+
+  /// Called when the user taps a book whose local file is missing.
+  ///
+  /// If Google Drive sync is enabled, offers to download the EPUB from Drive.
+  /// Otherwise shows the existing "file not found" snackbar.
+  Future<void> _handleInvalidBookTap(Book book) async {
+    final syncEnabled = await _driveSyncService.isSyncEnabled();
+    if (!mounted) return;
+
+    if (!syncEnabled) {
       final l10n = AppLocalizations.of(context)!;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -359,18 +393,183 @@ class _LibraryScreenState extends State<LibraryScreen> {
       );
       return;
     }
-    
-    unawaited(_appStateService.setLastOpenedBook(book.id));
+
+    _showDriveDownloadDialog(book);
+  }
+
+  /// Shows a confirmation dialog offering to download [book] from Google Drive.
+  Future<void> _openExternalUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  void _openSettingsToGoogleSync() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ReaderScreen(book: book),
+        builder: (context) => const SettingsScreen(scrollToSync: true),
       ),
-    ).then((_) async {
-      // User returned from reading a book
-      await _loadBooks();
-      await _appStateService.clearLastOpenedBook();
-    });
+    ).then((_) => _loadBooks());
+  }
+
+  Widget _buildLibraryOnboarding(AppLocalizations l10n) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final bodyStyle = theme.textTheme.bodyLarge?.copyWith(height: 1.45);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 96),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: constraints.maxWidth),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Icon(Icons.cloud_outlined, size: 44, color: scheme.primary),
+                const SizedBox(height: 12),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 4,
+                  children: [
+                    Text(l10n.libraryOnboardingSyncPrefix, style: bodyStyle),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: _openSettingsToGoogleSync,
+                      child: Text(
+                        l10n.libraryOnboardingSyncHere,
+                        style: TextStyle(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 36),
+                Icon(Icons.auto_awesome, size: 44, color: scheme.tertiary),
+                const SizedBox(height: 12),
+                Text(
+                  l10n.libraryOnboardingAiPrefix,
+                  style: bodyStyle,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => _openExternalUrl(
+                          'https://console.mistral.ai/api-keys'),
+                      child: Text(
+                        l10n.libraryOnboardingGetMistralKey,
+                        style: TextStyle(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      l10n.libraryOnboardingAiOrBetweenProviders,
+                      style: bodyStyle,
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => _openExternalUrl(
+                          'https://platform.openai.com/api-keys'),
+                      child: Text(
+                        l10n.libraryOnboardingGetOpenAIKey,
+                        style: TextStyle(
+                          color: scheme.primary,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 40),
+                Text(
+                  l10n.libraryOnboardingImportBody,
+                  style: bodyStyle,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showDriveDownloadDialog(Book book) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(book.title),
+        content: const Text(
+          'The file for this book is not on this device.\n\n'
+          'Download it from Google Drive?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Download'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final ok = await _driveSyncService.downloadBookFromDrive(book);
+      if (!mounted) return;
+      if (ok) {
+        final coverPath = book.coverImagePath;
+        if (coverPath != null && coverPath.isNotEmpty) {
+          await FileImage(File(coverPath)).evict();
+        }
+        PaintingBinding.instance.imageCache.clear();
+        await _loadBooks();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This book is not available on Google Drive.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildBooksGrid(AppLocalizations l10n) {
@@ -460,25 +659,50 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return result ?? false;
   }
 
+  void _showBookDeletedSnackBar(
+    AppLocalizations l10n,
+    String title, {
+    required bool syncEnabled,
+    required bool driveBlobsHandled,
+  }) {
+    final lines = <String>[l10n.bookDeleted(title)];
+    if (syncEnabled) {
+      lines.add(
+        driveBlobsHandled
+            ? l10n.driveBookFilesRemovedFromCloud
+            : l10n.driveBookFilesRemovalQueued,
+      );
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(lines.join('\n')),
+        duration: Duration(seconds: syncEnabled ? 4 : 2),
+      ),
+    );
+  }
+
+  Future<void> _deleteBookAndRefreshLibrary(
+      Book book, AppLocalizations l10n) async {
+    await _bookService.deleteBook(book);
+    var driveBlobsHandled = false;
+    final syncEnabled = await _driveSyncService.isSyncEnabled();
+    if (syncEnabled) {
+      driveBlobsHandled = await _driveSyncService.onBookDeleted(book.id);
+    }
+    if (!mounted) return;
+    _showBookDeletedSnackBar(
+      l10n,
+      book.title,
+      syncEnabled: syncEnabled,
+      driveBlobsHandled: driveBlobsHandled,
+    );
+    await _loadBooks();
+  }
+
   Future<void> _deleteBookFromLibrary(Book book, AppLocalizations l10n) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await _bookService.deleteBook(book);
-      
-      // Track deletion for Google Drive sync
-      final syncEnabled = await _driveSyncService.isSyncEnabled();
-      if (syncEnabled) {
-        await _driveSyncService.onBookDeleted(book.id);
-      }
-      
-      if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(l10n.bookDeleted(book.title)),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      await _loadBooks();
+      await _deleteBookAndRefreshLibrary(book, l10n);
     } catch (e) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -506,7 +730,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              _buildCoverImage(book),
+              BookCoverImage(book: book),
               if (!book.isValid)
                 Positioned.fill(
                   child: Container(
@@ -632,7 +856,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        _buildCoverImage(book),
+                        BookCoverImage(book: book),
                         if (!book.isValid)
                           Container(
                             color: Colors.black54,
@@ -698,20 +922,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  Widget _buildCoverImage(Book book) {
-    if (book.coverImagePath != null && book.coverImagePath!.isNotEmpty) {
-      return Image.file(
-        File(book.coverImagePath!),
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          debugPrint('Error loading cover image: $error');
-          return _buildDefaultCover(book);
-        },
-      );
-    }
-    return _buildDefaultCover(book);
-  }
-
   Widget _buildBookMenu(Book book, AppLocalizations l10n, {bool onDarkBackground = false}) {
     final backgroundColor = onDarkBackground ? Colors.black.withOpacity(0.45) : Colors.white.withOpacity(0.9);
     final iconColor = onDarkBackground ? Colors.white : Colors.black87;
@@ -731,9 +941,35 @@ class _LibraryScreenState extends State<LibraryScreen> {
       onSelected: (value) {
         if (value == 'delete') {
           _showDeleteConfirmationDialog(book);
+        } else if (value == 'upload_to_drive') {
+          _uploadBookToDrive(book);
         }
       },
       itemBuilder: (context) => [
+        if (_syncEnabled && book.isValid)
+          _driveSyncService.isBookUploadedToDrive(book.id)
+              ? const PopupMenuItem<String>(
+                  enabled: false,
+                  value: 'upload_to_drive',
+                  child: Row(
+                    children: [
+                      Icon(Icons.cloud_done, size: 20, color: Colors.grey),
+                      SizedBox(width: 8),
+                      Text('Already uploaded',
+                          style: TextStyle(color: Colors.grey)),
+                    ],
+                  ),
+                )
+              : const PopupMenuItem<String>(
+                  value: 'upload_to_drive',
+                  child: Row(
+                    children: [
+                      Icon(Icons.cloud_upload_outlined, size: 20),
+                      SizedBox(width: 8),
+                      Text('Upload to Drive'),
+                    ],
+                  ),
+                ),
         PopupMenuItem<String>(
           value: 'delete',
           child: Row(
@@ -746,6 +982,31 @@ class _LibraryScreenState extends State<LibraryScreen> {
         ),
       ],
     );
+  }
+
+  /// Upload [book]'s EPUB to Google Drive.
+  Future<void> _uploadBookToDrive(Book book) async {
+    try {
+      await _driveSyncService.uploadBookToDrive(book);
+      if (mounted) {
+        setState(() {}); // refresh menu to show "Already uploaded"
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('"${book.title}" uploaded to Google Drive'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _showDeleteDialog(Book book, int index) {
@@ -770,17 +1031,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     ).then((confirmed) async {
       if (confirmed == true) {
         try {
-          await _bookService.deleteBook(book);
-          if (mounted) {
-            final l10n = AppLocalizations.of(context)!;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(l10n.bookDeleted(book.title)),
-                duration: const Duration(seconds: 2),
-              ),
-            );
-            _loadBooks();
-          }
+          if (!mounted) return;
+          final l10n = AppLocalizations.of(context)!;
+          await _deleteBookAndRefreshLibrary(book, l10n);
         } catch (e) {
           if (mounted) {
             final l10n = AppLocalizations.of(context)!;
@@ -819,17 +1072,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     ).then((confirmed) async {
       if (confirmed == true) {
         try {
-          await _bookService.deleteBook(book);
-          if (mounted) {
-            final l10n = AppLocalizations.of(context)!;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(l10n.bookDeleted(book.title)),
-                duration: const Duration(seconds: 2),
-              ),
-            );
-            _loadBooks();
-          }
+          if (!mounted) return;
+          final l10n = AppLocalizations.of(context)!;
+          await _deleteBookAndRefreshLibrary(book, l10n);
         } catch (e) {
           if (mounted) {
             final l10n = AppLocalizations.of(context)!;
@@ -861,7 +1106,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 MaterialPageRoute(
                   builder: (context) => const SettingsScreen(),
                 ),
-              );
+              ).then((_) => _loadBooks());
             },
             tooltip: l10n.settings,
           ),
@@ -909,97 +1154,60 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                 )
               : _books.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.menu_book,
-                            size: 80,
-                            color: Colors.grey[400],
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            l10n.noBooksInLibrary,
-                            style: TextStyle(
-                              fontSize: 20,
-                              color: Colors.grey[700],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            l10n.tapToImportEpub,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[500],
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 32),
-                            child: Text(
-                              l10n.libraryEmptyInfo,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey[500],
-                                height: 1.4,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
+                  ? _buildLibraryOnboarding(l10n)
                   : RefreshIndicator(
                       onRefresh: _loadBooks,
                       child: _isListView
                           ? _buildBooksList(l10n)
                           : _buildBooksGrid(l10n),
                     ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _isImporting ? null : _importEpub,
-        tooltip: l10n.importEpub,
-        icon: _isImporting
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : const Icon(Icons.add),
-        label: Text(_isImporting ? l10n.importing : l10n.importEpub),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (_books.isNotEmpty)
+            FloatingActionButton(
+              heroTag: 'ask_library_fab',
+              onPressed: _openLibraryQuestionScreen,
+              tooltip: l10n.libraryAskQuestion,
+              child: const Icon(Icons.question_answer_outlined),
+            ),
+          if (_books.isNotEmpty) const SizedBox(height: 12),
+          FloatingActionButton(
+            heroTag: 'import_fab',
+            onPressed: _isImporting ? null : _importEpub,
+            tooltip: l10n.importEpub,
+            child: _isImporting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildDefaultCover(Book book) {
-    // Create a gradient cover with book initial
-    final initial = book.title.isNotEmpty ? book.title[0].toUpperCase() : '?';
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Theme.of(context).colorScheme.primary,
-            Theme.of(context).colorScheme.secondary,
-          ],
-        ),
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(8),
-        ),
-      ),
-      child: Center(
-        child: Text(
-          initial,
-          style: const TextStyle(
-            fontSize: 48,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+  Future<void> _openLibraryQuestionScreen() async {
+    // Build read-positions map from already-loaded _bookProgress
+    final positions = <String, int?>{};
+    for (final book in _books) {
+      positions[book.id] = _bookProgress[book.id]?.currentCharacterIndex;
+    }
+
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RagQuestionScreen(
+          books: _books,
+          currentBookId: null,
+          bookReadPositions: positions,
         ),
       ),
     );

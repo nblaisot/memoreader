@@ -26,6 +26,13 @@
   "noBooksInLibrary": "Aucun livre dans votre bibliothèque",
   "tapToImportEpub": "Appuyez sur le bouton + pour importer un fichier EPUB, TXT ou PDF",
   "libraryEmptyInfo": "Importez des livres .epub, des documents .txt ou des fichiers .pdf, dans n'importe quelle langue.",
+  "libraryOnboardingSyncPrefix": "Activez la synchro Google pour retrouver vos contenus ou synchroniser plusieurs appareils, en allant ",
+  "libraryOnboardingSyncHere": "ici",
+  "libraryOnboardingAiPrefix": "Résumez, demandez des traductions ou posez des questions sur le texte des livres, avec l'IA ! Pour débloquer ces fonctionnalités uniques, vous devez obtenir une clé API auprès de ",
+  "libraryOnboardingAiOrBetweenProviders": " ou ",
+  "libraryOnboardingGetMistralKey": "Mistral",
+  "libraryOnboardingGetOpenAIKey": "OpenAI",
+  "libraryOnboardingImportBody": "Vous pouvez importer vos livres EPUB, ou des documents TXT ou PDF (texte uniquement) via le bouton « + » en bas de l'écran.",
   "deleteBook": "Supprimer le livre",
   "confirmDeleteBook": "Êtes-vous sûr de vouloir supprimer \"{title}\" ?",
   "@confirmDeleteBook": {
@@ -523,5 +530,71 @@
   "debugRagChunks": "Déboguer les fragments RAG",
   "@debugRagChunks": {
     "description": "Bouton pour ouvrir l'écran de débogage RAG"
-  }
+  },
+  "libraryAskQuestion": "Interroger la bibliothèque",
+  "@libraryAskQuestion": {
+    "description": "Info-bulle pour le bouton Interroger la bibliothèque"
+  },
+  "ragQuestionScreenTitle": "Poser une question",
+  "@ragQuestionScreenTitle": {
+    "description": "Titre de l'AppBar de l'écran de question RAG"
+  },
+  "ragAllBooks": "Toute la bibliothèque",
+  "@ragAllBooks": {
+    "description": "Libellé affiché quand tous les livres sont sélectionnés"
+  },
+  "ragBooksSelected": "{count} livres sélectionnés",
+  "@ragBooksSelected": {
+    "description": "Libellé affiché quand un sous-ensemble de livres est sélectionné",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ragSelectAll": "Tout sélectionner",
+  "@ragSelectAll": {
+    "description": "Bouton pour sélectionner tous les livres"
+  },
+  "ragDeselectAll": "Tout désélectionner",
+  "@ragDeselectAll": {
+    "description": "Bouton pour désélectionner tous les livres"
+  },
+  "ragBookNotIndexed": "Non indexé",
+  "@ragBookNotIndexed": {
+    "description": "Badge affiché sur les livres non encore indexés"
+  },
+  "ragNoBooksIndexed": "Aucun livre n'est encore indexé",
+  "@ragNoBooksIndexed": {
+    "description": "Message quand aucun livre n'est indexé"
+  },
+  "ragAlreadyRead": "Déjà lu",
+  "@ragAlreadyRead": {
+    "description": "Libellé court pour restreindre la recherche RAG au contenu déjà lu"
+  },
+  "driveEncryptApiKeysTitle": "Chiffrer les clés API sur Google Drive",
+  "driveEncryptApiKeysSubtitleOn": "Les clés sont chiffrées avec votre phrase secrète avant l’envoi.",
+  "driveEncryptApiKeysSubtitleOff": "Les clés API ne sont pas envoyées vers Google Drive.",
+  "driveSyncPassphraseDescription": "Choisissez une phrase secrète distincte du mot de passe Google. Utilisez la même sur chaque appareil. Si vous la perdez, les données chiffrées sur Drive ne pourront pas être récupérées.",
+  "driveSyncPassphraseSetButton": "Définir ou changer la phrase secrète",
+  "driveSyncPassphraseDialogTitle": "Phrase secrète de synchronisation Drive",
+  "driveSyncPassphraseField": "Phrase secrète",
+  "driveSyncPassphraseConfirmField": "Confirmer la phrase secrète",
+  "driveSyncPassphraseSave": "Enregistrer",
+  "driveSyncPassphraseMismatch": "Les phrases secrètes ne correspondent pas.",
+  "driveSyncPassphraseTooShort": "La phrase secrète doit contenir au moins 8 caractères.",
+  "driveSyncPassphraseSaved": "Phrase secrète enregistrée.",
+  "driveSyncPassphraseConfigured": "La phrase secrète est enregistrée sur cet appareil.",
+  "driveSyncPassphraseMissingWarning": "Activez le chiffrement et enregistrez une phrase secrète pour synchroniser vos clés API en toute sécurité.",
+  "driveSyncIssueMissingPassphrase": "Enregistrez votre phrase secrète Drive dans les réglages pour restaurer les clés API depuis Google Drive.",
+  "driveSyncIssueDecryptFailed": "Impossible de déchiffrer les clés API depuis Google Drive. Vérifiez votre phrase secrète.",
+  "driveSyncIssueUnreadableRemote": "Le fichier des clés API sur Google Drive est illisible.",
+  "driveSyncLegacyPlaintextHint": "Les anciennes versions pouvaient enregistrer les clés API sur Drive sans chiffrement. Après enregistrement d’une phrase secrète et une synchro, les clés sont chiffrées. Envisagez de régénérer vos clés API si vous vous en inquiétez.",
+  "driveSyncLegacyPlaintextDismiss": "Masquer",
+  "driveSyncConfirmDisableEncryptionTitle": "Arrêter l’envoi des clés API ?",
+  "driveSyncConfirmDisableEncryptionBody": "Les clés API ne seront plus stockées sur Google Drive. Vos clés locales ne sont pas supprimées. La phrase secrète de synchro est aussi effacée sur cet appareil.",
+  "driveSyncStopEncrypting": "Désactiver",
+  "driveBookFilesRemovedFromCloud": "Les fichiers associés ont été supprimés de Google Drive.",
+  "driveBookFilesRemovalQueued": "Les copies sur Google Drive seront supprimées après connexion et synchronisation.",
+  "driveResetSyncBlobQueueCleared": "Données Google Drive supprimées. La liste des suppressions de fichiers en attente a été effacée."
 }

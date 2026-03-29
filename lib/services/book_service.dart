@@ -15,6 +15,7 @@ import 'txt_to_epub_converter.dart';
 import 'pdf_to_epub_converter.dart';
 import 'rag_indexing_service.dart';
 import 'rag_database_service.dart';
+import 'saved_translation_database_service.dart';
 
 class BookService {
   static const String _booksKey = 'books';
@@ -479,6 +480,21 @@ class BookService {
     }
   }
 
+  /// Insert [book] if it doesn't exist yet, or replace it if it does.
+  /// Used by the sync service which may encounter books from other devices.
+  Future<void> addOrUpdateBook(Book book) async {
+    final prefs = await SharedPreferences.getInstance();
+    final books = await getAllBooks();
+    final index = books.indexWhere((b) => b.id == book.id);
+    if (index == -1) {
+      books.add(book);
+    } else {
+      books[index] = book;
+    }
+    final booksJson = books.map((b) => jsonEncode(b.toJson())).toList();
+    await prefs.setStringList(_booksKey, booksJson);
+  }
+
   Future<ReadingProgress?> getReadingProgress(String bookId) async {
     try {
       if (bookId.isEmpty) return null;
@@ -529,6 +545,18 @@ class BookService {
     }
   }
 
+  /// Extract a cover image from an EPUB on disk (same logic as [importEpub]).
+  /// Used after on-demand EPUB download from Drive when the cover blob is missing.
+  Future<String?> extractCoverFromEpubPath(String epubPath, String bookId) async {
+    try {
+      final epub = await loadEpubBook(epubPath);
+      return await _extractCoverImage(epub, bookId);
+    } catch (e) {
+      debugPrint('extractCoverFromEpubPath failed: $e');
+      return null;
+    }
+  }
+
   Future<void> deleteBook(Book book) async {
     try {
       // Remove from preferences
@@ -561,6 +589,12 @@ class BookService {
       
       // Delete reading progress
       await prefs.remove('$_progressKey${book.id}');
+
+      try {
+        await SavedTranslationDatabaseService().deleteAllForBook(book.id);
+      } catch (e) {
+        debugPrint('Failed to delete saved translations: $e');
+      }
       
       // Delete summary and cache data
       try {

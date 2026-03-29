@@ -1,8 +1,27 @@
 # Uncomment this line to define a global platform for your project
-# platform :ios, '13.0'
+platform :ios, '13.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+# flutter_pdf_text: add flutter_pdf_text.podspec (name matches Flutter) and fix .m to use that module's Swift header
+plugin_ios = File.join(__dir__, '.symlinks', 'plugins', 'flutter_pdf_text', 'ios')
+plugin_classes = File.join(plugin_ios, 'Classes')
+pdf_text_path = File.join(plugin_ios, 'pdf_text.podspec')
+flutter_pdf_text_path = File.join(plugin_ios, 'flutter_pdf_text.podspec')
+plugin_m = File.join(plugin_classes, 'PdfTextPlugin.m')
+if File.exist?(pdf_text_path)
+  File.delete(flutter_pdf_text_path) if File.exist?(flutter_pdf_text_path)
+  content = File.read(pdf_text_path).sub(/s\.name\s*=\s*['"]pdf_text['"]/, "s.name = 'flutter_pdf_text'")
+  File.write(flutter_pdf_text_path, content)
+  # Plugin .m imports pdf_text-Swift.h; with pod name flutter_pdf_text the header is flutter_pdf_text-Swift.h
+  if File.exist?(plugin_m)
+    m_content = File.read(plugin_m)
+      .gsub('pdf_text/pdf_text-Swift.h', 'flutter_pdf_text/flutter_pdf_text-Swift.h')
+      .gsub('"pdf_text-Swift.h"', '"flutter_pdf_text-Swift.h"')
+    File.write(plugin_m, m_content)
+  end
+end
 
 project 'Runner', {
   'Debug' => :debug,

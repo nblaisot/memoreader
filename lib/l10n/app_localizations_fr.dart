@@ -52,6 +52,30 @@ class AppLocalizationsFr extends AppLocalizations {
       'Importez des livres .epub, des documents .txt ou des fichiers .pdf, dans n\'importe quelle langue.';
 
   @override
+  String get libraryOnboardingSyncPrefix =>
+      'Activez la synchro Google pour retrouver vos contenus ou synchroniser plusieurs appareils, en allant ';
+
+  @override
+  String get libraryOnboardingSyncHere => 'ici';
+
+  @override
+  String get libraryOnboardingAiPrefix =>
+      'Résumez, demandez des traductions ou posez des questions sur le texte des livres, avec l\'IA ! Pour débloquer ces fonctionnalités uniques, vous devez obtenir une clé API auprès de ';
+
+  @override
+  String get libraryOnboardingAiOrBetweenProviders => ' ou ';
+
+  @override
+  String get libraryOnboardingGetMistralKey => 'Mistral';
+
+  @override
+  String get libraryOnboardingGetOpenAIKey => 'OpenAI';
+
+  @override
+  String get libraryOnboardingImportBody =>
+      'Vous pouvez importer vos livres EPUB, ou des documents TXT ou PDF (texte uniquement) via le bouton « + » en bas de l\'écran.';
+
+  @override
   String get deleteBook => 'Supprimer le livre';
 
   @override
@@ -646,4 +670,127 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get debugRagChunks => 'Déboguer les fragments RAG';
+
+  @override
+  String get libraryAskQuestion => 'Interroger la bibliothèque';
+
+  @override
+  String get ragQuestionScreenTitle => 'Poser une question';
+
+  @override
+  String get ragAllBooks => 'Toute la bibliothèque';
+
+  @override
+  String ragBooksSelected(int count) {
+    return '$count livres sélectionnés';
+  }
+
+  @override
+  String get ragSelectAll => 'Tout sélectionner';
+
+  @override
+  String get ragDeselectAll => 'Tout désélectionner';
+
+  @override
+  String get ragBookNotIndexed => 'Non indexé';
+
+  @override
+  String get ragNoBooksIndexed => 'Aucun livre n\'est encore indexé';
+
+  @override
+  String get ragAlreadyRead => 'Déjà lu';
+
+  @override
+  String get driveEncryptApiKeysTitle =>
+      'Chiffrer les clés API sur Google Drive';
+
+  @override
+  String get driveEncryptApiKeysSubtitleOn =>
+      'Les clés sont chiffrées avec votre phrase secrète avant l’envoi.';
+
+  @override
+  String get driveEncryptApiKeysSubtitleOff =>
+      'Les clés API ne sont pas envoyées vers Google Drive.';
+
+  @override
+  String get driveSyncPassphraseDescription =>
+      'Choisissez une phrase secrète distincte du mot de passe Google. Utilisez la même sur chaque appareil. Si vous la perdez, les données chiffrées sur Drive ne pourront pas être récupérées.';
+
+  @override
+  String get driveSyncPassphraseSetButton =>
+      'Définir ou changer la phrase secrète';
+
+  @override
+  String get driveSyncPassphraseDialogTitle =>
+      'Phrase secrète de synchronisation Drive';
+
+  @override
+  String get driveSyncPassphraseField => 'Phrase secrète';
+
+  @override
+  String get driveSyncPassphraseConfirmField => 'Confirmer la phrase secrète';
+
+  @override
+  String get driveSyncPassphraseSave => 'Enregistrer';
+
+  @override
+  String get driveSyncPassphraseMismatch =>
+      'Les phrases secrètes ne correspondent pas.';
+
+  @override
+  String get driveSyncPassphraseTooShort =>
+      'La phrase secrète doit contenir au moins 8 caractères.';
+
+  @override
+  String get driveSyncPassphraseSaved => 'Phrase secrète enregistrée.';
+
+  @override
+  String get driveSyncPassphraseConfigured =>
+      'La phrase secrète est enregistrée sur cet appareil.';
+
+  @override
+  String get driveSyncPassphraseMissingWarning =>
+      'Activez le chiffrement et enregistrez une phrase secrète pour synchroniser vos clés API en toute sécurité.';
+
+  @override
+  String get driveSyncIssueMissingPassphrase =>
+      'Enregistrez votre phrase secrète Drive dans les réglages pour restaurer les clés API depuis Google Drive.';
+
+  @override
+  String get driveSyncIssueDecryptFailed =>
+      'Impossible de déchiffrer les clés API depuis Google Drive. Vérifiez votre phrase secrète.';
+
+  @override
+  String get driveSyncIssueUnreadableRemote =>
+      'Le fichier des clés API sur Google Drive est illisible.';
+
+  @override
+  String get driveSyncLegacyPlaintextHint =>
+      'Les anciennes versions pouvaient enregistrer les clés API sur Drive sans chiffrement. Après enregistrement d’une phrase secrète et une synchro, les clés sont chiffrées. Envisagez de régénérer vos clés API si vous vous en inquiétez.';
+
+  @override
+  String get driveSyncLegacyPlaintextDismiss => 'Masquer';
+
+  @override
+  String get driveSyncConfirmDisableEncryptionTitle =>
+      'Arrêter l’envoi des clés API ?';
+
+  @override
+  String get driveSyncConfirmDisableEncryptionBody =>
+      'Les clés API ne seront plus stockées sur Google Drive. Vos clés locales ne sont pas supprimées. La phrase secrète de synchro est aussi effacée sur cet appareil.';
+
+  @override
+  String get driveSyncStopEncrypting => 'Désactiver';
+
+  @override
+  String get driveBookFilesRemovedFromCloud =>
+      'Les fichiers associés ont été supprimés de Google Drive.';
+
+  @override
+  String get driveBookFilesRemovalQueued =>
+      'Les copies sur Google Drive seront supprimées après connexion et synchronisation.';
+
+  @override
+  String get driveResetSyncBlobQueueCleared =>
+      'Données Google Drive supprimées. La liste des suppressions de fichiers en attente a été effacée.';
 }

@@ -45,6 +45,7 @@ import 'routes.dart';
 import 'settings_screen.dart';
 import 'summary_screen.dart';
 import 'saved_words_screen.dart';
+import 'rag_question_screen.dart';
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({super.key, required this.book});
@@ -85,6 +86,8 @@ class _ReaderScreenState extends State<ReaderScreen>
   int? _pendingWebViewCharIndex;
   double? _pendingRestorePercentage; // For non-WebView readers
   bool _hasRestoredProgress = false; // Track if we've already restored progress
+  bool _isRestoringPosition = false; // True while restoration is in flight – blocks progress saves to avoid overwriting good data with transient page-0 state
+  int _restoreAttempts = 0; // Number of goToCharIndex calls attempted during current restoration
   bool _isWaitingForWebViewInit = false; // Track if we're waiting for WebView to fully initialize
   bool _stylesAppliedForRestore = false; // True after we've sent our styles; we restore only after this so layout is stable
   String? _lastWebViewStyleKey;
@@ -441,24 +444,30 @@ class _ReaderScreenState extends State<ReaderScreen>
                              progress?.lastVisibleCharacterIndex;
       
       if (kDebugMode) {
-        debugPrint('[ReaderScreen] Restoring progress: savedCharIndex=$savedCharIndex');
+        debugPrint('[ReaderScreen] Restoring progress: savedCharIndex=$savedCharIndex, progress=${progress?.progress}');
       }
-      
-      // Wait for WebView initialization before restoration
-      if (savedCharIndex != null && savedCharIndex > 0) {
-        _hasRestoredProgress = false; // Reset flag for new book load
-        _isWaitingForWebViewInit = _useWebViewReader;
-        if (kDebugMode) {
-          debugPrint('[ReaderScreen] Will restore to character index $savedCharIndex');
-        }
-      } else {
-        _hasRestoredProgress = false;
-        _isWaitingForWebViewInit = _useWebViewReader;
-        if (kDebugMode) {
+
+      // Determine whether there is a meaningful position to restore.
+      // Either a char index > 0, or a percentage > 0 (for Drive-sync cases where
+      // char indices are null but percentage survived).
+      final hasPositionToRestore = (savedCharIndex != null && savedCharIndex > 0) ||
+          (progress?.progress != null && progress!.progress! > 0);
+
+      _hasRestoredProgress = false; // Reset flag for new book load
+      _restoreAttempts = 0;
+      _isWaitingForWebViewInit = _useWebViewReader;
+      // Guard: block progress saves until restoration is confirmed, to avoid
+      // overwriting the real saved position with the transient page-0 state.
+      _isRestoringPosition = _useWebViewReader && hasPositionToRestore;
+
+      if (kDebugMode) {
+        if (hasPositionToRestore) {
+          debugPrint('[ReaderScreen] Will restore to: charIndex=$savedCharIndex, progress=${progress?.progress}');
+        } else {
           debugPrint('[ReaderScreen] No saved position, starting from beginning');
         }
       }
-      
+
       // Don't set _isNavigating here - wait for first page update, then restore
       if (!_useWebViewReader) {
         // For non-WebView, we need to wait for pagination to complete
@@ -469,6 +478,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       setState(() {
         _isLoading = false;
         _isWaitingForWebViewInit = false; // Clear waiting flag on error
+        _isRestoringPosition = false;
         _errorMessage = e.toString();
       });
     }
@@ -478,7 +488,25 @@ class _ReaderScreenState extends State<ReaderScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_useWebViewReader) {
         if (!mounted) return;
-        final targetCharIndex = initialCharIndex ?? _currentCharacterIndex;
+        int targetCharIndex;
+        if (initialCharIndex != null) {
+          targetCharIndex = initialCharIndex;
+        } else if (_isRestoringPosition && _savedProgress != null) {
+          // During restoration _currentCharacterIndex is the transient page-0 value.
+          // Use the saved position so that a layout change (e.g. fold/unfold) re-lays
+          // out to the correct page rather than snapping back to the beginning.
+          final saved = _savedProgress!;
+          final charIdx = saved.currentCharacterIndex ?? saved.lastVisibleCharacterIndex;
+          if (charIdx != null && charIdx > 0) {
+            targetCharIndex = charIdx;
+          } else if (saved.progress != null && saved.progress! > 0 && _totalCharacterCount > 0) {
+            targetCharIndex = (saved.progress! * (_totalCharacterCount - 1)).round().clamp(0, _totalCharacterCount - 1);
+          } else {
+            targetCharIndex = 0;
+          }
+        } else {
+          targetCharIndex = _currentCharacterIndex;
+        }
         _pendingWebViewCharIndex = math.max(0, targetCharIndex);
         setState(() {
           _isNavigating = true;
@@ -824,11 +852,10 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   void _scheduleWebViewProgressSave() {
-    _progressDebounce?.cancel();
-    _progressDebounce = Timer(const Duration(milliseconds: 400), () {
-      if (!mounted) return;
-      _saveWebViewProgress();
-    });
+    // Direct save – no timer. The guard in _saveWebViewProgress ensures we
+    // never overwrite good data during restoration. Calling this is a no-op
+    // while _isRestoringPosition is true.
+    unawaited(_saveWebViewProgress());
   }
 
   void _logLastVisibleWords(PageContent page) {
@@ -1056,6 +1083,11 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   Future<void> _saveWebViewProgress() async {
+    // Never persist progress while restoration is still in flight.
+    // At this point _currentCharacterIndex / _progress reflect the transient
+    // page-0 state set by _loadBook, not the user's real position.
+    if (_isRestoringPosition) return;
+
     try {
       // Save the displayed progress percentage (what user sees at bottom)
       // This is more reliable than character indices
@@ -1352,31 +1384,62 @@ class _ReaderScreenState extends State<ReaderScreen>
       if (savedCharIndex != null && savedCharIndex > 0) {
         if (savedCharIndex >= startChar && savedCharIndex <= endChar) {
           // Reached saved position (second update from updateLayout, or confirm after navigate).
-          _hasRestoredProgress = true;
           debugPrint('[WebView] RESTORE: Reached saved position (savedChar=$savedCharIndex, page $startChar–$endChar)');
+          _hasRestoredProgress = true;
+          _isRestoringPosition = false;
           setState(() {
             _isNavigating = false;
           });
         } else {
-          // Not at position – navigate once. Next page update will confirm.
-          debugPrint('[WebView] RESTORE: Navigating to character index $savedCharIndex (current page $startChar–$endChar, pageCount=${update.pageCount})');
-          setState(() {
-            _isNavigating = true;
-          });
-          unawaited(_webViewController.goToCharIndex(savedCharIndex));
-          return;
+          // Not at position yet. Retry with a limit to avoid infinite loops
+          // (e.g. when EPUB extraction changed and the saved index is out-of-range).
+          _restoreAttempts++;
+          if (_restoreAttempts <= 3) {
+            debugPrint('[WebView] RESTORE: Navigating to character index $savedCharIndex (attempt $_restoreAttempts, current page $startChar–$endChar, pageCount=${update.pageCount})');
+            setState(() {
+              _isNavigating = true;
+            });
+            unawaited(_webViewController.goToCharIndex(savedCharIndex));
+            return;
+          } else {
+            // char-index approach has not converged – fall through to percentage fallback below.
+            debugPrint('[WebView] RESTORE: char-index retry limit reached ($_restoreAttempts), trying percentage fallback');
+          }
         }
-      } else {
-        // No saved position – first open.
+      }
+
+      // Percentage fallback: covers (a) null/0 char index, (b) char-index retry exhaustion.
+      if (!_hasRestoredProgress) {
+        final savedPercentage = _savedProgress?.progress;
+        if (savedPercentage != null && savedPercentage > 0 && totalChars > 0) {
+          final fallbackCharIndex = (savedPercentage * (totalChars - 1)).round().clamp(0, totalChars - 1);
+          _restoreAttempts++;
+          if (_restoreAttempts <= 6) {
+            debugPrint('[WebView] RESTORE: Using percentage fallback ${(savedPercentage * 100).toStringAsFixed(1)}% -> char $fallbackCharIndex (attempt $_restoreAttempts)');
+            setState(() {
+              _isNavigating = true;
+            });
+            unawaited(_webViewController.goToCharIndex(fallbackCharIndex));
+            return;
+          } else {
+            // Percentage approach also did not converge – accept current position.
+            debugPrint('[WebView] RESTORE: All fallbacks exhausted, accepting current position (startChar=$startChar)');
+          }
+        } else {
+          debugPrint('[WebView] RESTORE: No saved position, showing from beginning');
+        }
         _hasRestoredProgress = true;
-        debugPrint('[WebView] RESTORE: No saved position, showing from beginning');
+        _isRestoringPosition = false;
         setState(() {
           _isNavigating = false;
         });
       }
     }
 
-    _scheduleWebViewProgressSave();
+    // Save current position now that we are either in normal reading mode or
+    // restoration just completed. _saveWebViewProgress is a no-op while
+    // _isRestoringPosition is true, so this is safe to call unconditionally.
+    unawaited(_saveWebViewProgress());
     _closeChapterDialog();
     
     // Trigger auto-show latest events after first page load
@@ -2314,31 +2377,30 @@ class _ReaderScreenState extends State<ReaderScreen>
   Future<void> _showRagQuestionDialog() async {
     if (!mounted) return;
 
-    // Check if book is indexed
-    final isIndexed = await _ragQueryService.isBookIndexed(widget.book.id);
-    if (!isIndexed) {
-      if (!mounted) return;
-      final l10n = AppLocalizations.of(context)!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.ragNotIndexed),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-      return;
+    // Load all books and their reading progress for the cross-book question screen
+    final allBooks = await _bookService.getAllBooks();
+    if (!mounted) return;
+
+    // Build read-positions map: current book uses live char index; others loaded from prefs
+    final positions = <String, int?>{};
+    for (final book in allBooks) {
+      if (book.id == widget.book.id) {
+        positions[book.id] = _currentCharacterIndex;
+      } else {
+        final progress = await _bookService.getReadingProgress(book.id);
+        positions[book.id] = progress?.currentCharacterIndex;
+      }
     }
 
-    // Show question dialog
     if (!mounted) return;
-    final l10n = AppLocalizations.of(context)!;
-    await showDialog<void>(
-      context: context,
-      builder: (context) => _RagQuestionDialog(
-        bookId: widget.book.id,
-        currentCharPosition: _currentCharacterIndex,
-        ragQueryService: _ragQueryService,
-        summaryService: _summaryService,
-        l10n: l10n,
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RagQuestionScreen(
+          books: allBooks,
+          currentBookId: widget.book.id,
+          bookReadPositions: positions,
+        ),
       ),
     );
   }
@@ -5411,217 +5473,6 @@ class _PulsatingChapterTileState extends State<_PulsatingChapterTile>
               : null,
         );
       },
-    );
-  }
-}
-
-/// Dialog for asking questions about the book using RAG
-class _RagQuestionDialog extends StatefulWidget {
-  const _RagQuestionDialog({
-    required this.bookId,
-    required this.currentCharPosition,
-    required this.ragQueryService,
-    required this.summaryService,
-    required this.l10n,
-  });
-
-  final String bookId;
-  final int currentCharPosition;
-  final RagQueryService ragQueryService;
-  final EnhancedSummaryService? summaryService;
-  final AppLocalizations l10n;
-
-  @override
-  State<_RagQuestionDialog> createState() => _RagQuestionDialogState();
-}
-
-class _RagQuestionDialogState extends State<_RagQuestionDialog> {
-  final TextEditingController _questionController = TextEditingController();
-  bool _onlyReadSoFar = true;
-  bool _isProcessing = false;
-  String? _answer;
-  String? _error;
-  bool _canSubmit = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _questionController.addListener(_handleQuestionChanged);
-    _handleQuestionChanged();
-  }
-
-  @override
-  void dispose() {
-    _questionController.removeListener(_handleQuestionChanged);
-    _questionController.dispose();
-    super.dispose();
-  }
-
-  void _handleQuestionChanged() {
-    final hasText = _questionController.text.trim().isNotEmpty;
-    if (hasText != _canSubmit && mounted) {
-      setState(() {
-        _canSubmit = hasText;
-      });
-    }
-  }
-
-  Future<void> _submitQuestion() async {
-    final question = _questionController.text.trim();
-    if (question.isEmpty) return;
-
-    setState(() {
-      _isProcessing = true;
-      _answer = null;
-      _error = null;
-    });
-
-    try {
-      final summaryService = widget.summaryService;
-      if (summaryService == null) {
-        throw Exception('Summary service not available');
-      }
-
-      // EnhancedSummaryService wraps a SummaryService, get the underlying service
-      final baseService = summaryService.baseService;
-      
-      // Get language from app locale
-      final language = widget.l10n.localeName.split('_')[0]; // 'fr' or 'en'
-      
-      final result = await widget.ragQueryService.query(
-        bookId: widget.bookId,
-        question: question,
-        onlyReadSoFar: _onlyReadSoFar,
-        maxCharPosition: widget.currentCharPosition,
-        summaryService: baseService,
-        language: language,
-      );
-
-      if (mounted) {
-        setState(() {
-          _answer = result.answer;
-          _isProcessing = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('[RAG] Question error: $e');
-      if (mounted) {
-        setState(() {
-          _error = e.toString();
-          _isProcessing = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final l10n = widget.l10n;
-
-    return AlertDialog(
-      title: Text(l10n.ragAskQuestion),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: _questionController,
-                decoration: InputDecoration(
-                  labelText: l10n.ragQuestionField,
-                  hintText: l10n.ragQuestionField,
-                  border: const OutlineInputBorder(),
-                ),
-                maxLines: 4,
-                enabled: !_isProcessing,
-              ),
-              const SizedBox(height: 16),
-              SwitchListTile(
-                title: Text(
-                  _onlyReadSoFar
-                      ? l10n.ragAskReadSoFar
-                      : l10n.ragAskWholeBook,
-                ),
-                value: _onlyReadSoFar,
-                onChanged: _isProcessing
-                    ? null
-                    : (value) {
-                        setState(() {
-                          _onlyReadSoFar = value;
-                        });
-                      },
-                contentPadding: EdgeInsets.zero,
-              ),
-              if (_isProcessing) ...[
-                const SizedBox(height: 16),
-                const Center(child: CircularProgressIndicator()),
-              ],
-              if (_error != null) ...[
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.errorContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.error_outline, color: theme.colorScheme.onErrorContainer),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          _error!,
-                          style: TextStyle(color: theme.colorScheme.onErrorContainer),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              if (_answer != null) ...[
-                const SizedBox(height: 16),
-                Text(
-                  l10n.ragAnswerLabel,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: SelectableText(
-                    _answer!,
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isProcessing
-              ? null
-              : () {
-                  Navigator.of(context).pop();
-                },
-          child: Text(l10n.cancel),
-        ),
-        ElevatedButton(
-          onPressed: _isProcessing || !_canSubmit
-              ? null
-              : _submitQuestion,
-          child: Text(l10n.ragSubmitQuestion),
-        ),
-      ],
     );
   }
 }

@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Google Sign-In OAuth Client ID for Google Drive sync (Release) -->
+    <!--
+        Google Sign-In server (Web) client ID – release variant.
+        See the debug strings.xml for full documentation.
+
+        TODO: Replace with your release Web client ID from GCP if needed,
+        or ensure your release Android OAuth client in GCP has the release
+        keystore SHA-1 fingerprint added.
+    -->
     <string name="google_drive_client_id">1071905253173-frdvkte64s4mg24gtt6qv572vn896f9n.apps.googleusercontent.com</string>
 </resources>

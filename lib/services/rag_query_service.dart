@@ -217,6 +217,158 @@ Please provide a helpful answer based ONLY on the provided excerpts. ${onlyReadS
     return dotProduct / (math.sqrt(normA) * math.sqrt(normB));
   }
 
+  /// Query multiple books using RAG
+  ///
+  /// [bookIds] - IDs of the books to query
+  /// [bookTitles] - Map of bookId to book title (for source attribution)
+  /// [bookReadPositions] - Map of bookId to max char position (null = no filter)
+  /// [onlyReadSoFar] - If true, filter each book's chunks to its read position
+  /// [question] - User's question
+  /// [summaryService] - LLM service for generating answers
+  /// [language] - Language code ('fr' or 'en')
+  /// [topK] - Number of top chunks to retrieve
+  Future<RagQueryResult> queryMultipleBooks({
+    required List<String> bookIds,
+    required Map<String, String> bookTitles,
+    required Map<String, int?> bookReadPositions,
+    bool onlyReadSoFar = false,
+    required String question,
+    SummaryService? summaryService,
+    required String language,
+    int? topK,
+  }) async {
+    final settingsService = SettingsService();
+    final resolvedTopK = topK ?? await settingsService.getRagTopK();
+
+    final prefs = await SharedPreferences.getInstance();
+    final embeddingService = await RagEmbeddingServiceFactory.create(prefs);
+
+    if (embeddingService == null) {
+      throw Exception('Embedding service not available. Please configure API key.');
+    }
+
+    // Filter to only fully indexed books
+    final indexedBookIds = <String>[];
+    for (final bookId in bookIds) {
+      final status = await _databaseService.getIndexStatus(bookId);
+      if (status != null && status.isComplete) {
+        // Check embedding dimension compatibility
+        if (status.embeddingDimension == embeddingService.embeddingDimensions) {
+          indexedBookIds.add(bookId);
+        }
+      }
+    }
+
+    if (indexedBookIds.isEmpty) {
+      throw Exception('None of the selected books are indexed. Please wait for indexing to complete.');
+    }
+
+    // Embed question
+    final questionEmbedding = await embeddingService.embedText(question);
+
+    // Load chunks for all indexed books
+    List<RagChunk> allCandidates;
+    if (onlyReadSoFar) {
+      // Load per-book chunks respecting read positions
+      allCandidates = [];
+      for (final bookId in indexedBookIds) {
+        final maxPos = bookReadPositions[bookId];
+        final chunks = maxPos != null
+            ? await _databaseService.getChunksUpToPosition(bookId, maxPos)
+            : await _databaseService.getChunks(bookId);
+        allCandidates.addAll(chunks);
+      }
+    } else {
+      allCandidates = await _databaseService.getChunksForBooks(indexedBookIds);
+    }
+
+    if (allCandidates.isEmpty) {
+      throw Exception('No chunks found for the selected books.');
+    }
+
+    debugPrint('[RAG] MultiQuery: ${allCandidates.length} candidate chunks from ${indexedBookIds.length} books');
+
+    // Score chunks
+    final scoredChunks = <({RagChunk chunk, double score})>[];
+    for (final chunk in allCandidates) {
+      if (chunk.embedding.length != questionEmbedding.length) continue;
+      final similarity = _cosineSimilarity(questionEmbedding, chunk.embedding);
+      scoredChunks.add((chunk: chunk, score: similarity));
+    }
+
+    scoredChunks.sort((a, b) => b.score.compareTo(a.score));
+    final effectiveTopK = resolvedTopK > 0 ? resolvedTopK : _defaultTopK;
+    final topChunks = scoredChunks.take(effectiveTopK).map((s) => s.chunk).toList();
+
+    if (topChunks.isEmpty) {
+      throw Exception('No relevant chunks found.');
+    }
+
+    String answer;
+    if (summaryService != null) {
+      answer = await _generateMultiBookAnswer(
+        question: question,
+        chunks: topChunks,
+        bookTitles: bookTitles,
+        onlyReadSoFar: onlyReadSoFar,
+        summaryService: summaryService,
+        language: language,
+      );
+    } else {
+      answer = topChunks.map((c) => '(${bookTitles[c.bookId] ?? c.bookId}): ${c.text}').join('\n\n---\n\n');
+    }
+
+    return RagQueryResult(
+      answer: answer,
+      sourceChunks: topChunks,
+      relevanceScore: scoredChunks.isNotEmpty ? scoredChunks.first.score : null,
+    );
+  }
+
+  /// Generate answer for multi-book queries with source attribution
+  Future<String> _generateMultiBookAnswer({
+    required String question,
+    required List<RagChunk> chunks,
+    required Map<String, String> bookTitles,
+    required bool onlyReadSoFar,
+    required SummaryService summaryService,
+    required String language,
+  }) async {
+    final excerptLabel = language == 'fr' ? 'Extrait' : 'Excerpt';
+    final context = chunks.asMap().entries.map((entry) {
+      final index = entry.key + 1;
+      final chunk = entry.value;
+      final title = bookTitles[chunk.bookId] ?? chunk.bookId;
+      return '$excerptLabel $index ($title):\n${chunk.text}\n';
+    }).join('\n---\n\n');
+
+    final prompt = language == 'fr'
+        ? '''Tu es un assistant utile qui répond aux questions sur des livres en utilisant UNIQUEMENT les extraits fournis.
+
+${onlyReadSoFar ? 'IMPORTANT : L\'utilisateur n\'a lu qu\'une partie des livres. NE RÉVÈLE PAS de spoilers au-delà de ce qu\'il a lu.' : ''}
+
+Voici des extraits de différents livres (le titre du livre est indiqué entre parenthèses) :
+
+$context
+
+Question : $question
+
+Fournis une réponse utile basée UNIQUEMENT sur les extraits fournis. Cite le(s) titre(s) de livre(s) concerné(s) dans ta réponse. ${onlyReadSoFar ? 'Ne révèle rien au-delà de ce qui est montré dans les extraits.' : 'Si les extraits ne contiennent pas assez d\'informations, dis-le.'}'''
+        : '''You are a helpful assistant that answers questions about books using ONLY the provided excerpts.
+
+${onlyReadSoFar ? 'IMPORTANT: The user has only read part of the books. DO NOT reveal spoilers beyond what they have read.' : ''}
+
+Here are excerpts from different books (the book title is shown in parentheses):
+
+$context
+
+Question: $question
+
+Please provide a helpful answer based ONLY on the provided excerpts. Cite the relevant book title(s) in your answer. ${onlyReadSoFar ? 'Do not reveal anything beyond what is shown in the excerpts.' : 'If the excerpts do not contain enough information to answer the question, say so.'}''';
+
+    return await summaryService.generateSummary(prompt, language);
+  }
+
   /// Check if a book is indexed
   Future<bool> isBookIndexed(String bookId) async {
     final status = await _databaseService.getIndexStatus(bookId);

@@ -58,6 +58,34 @@
   "@libraryEmptyInfo": {
     "description": "Additional info when library is empty (import formats)"
   },
+  "libraryOnboardingSyncPrefix": "Enable Google Sync to restore previous content or sync several devices, by going ",
+  "@libraryOnboardingSyncPrefix": {
+    "description": "Empty-library onboarding: Google Sync intro before the link"
+  },
+  "libraryOnboardingSyncHere": "here",
+  "@libraryOnboardingSyncHere": {
+    "description": "Tappable link to open Settings at Google Sync section"
+  },
+  "libraryOnboardingAiPrefix": "Summarize, ask for translations or even ask questions on the text of the books, with AI! To unlock those unique features from the app, you need to get an API key from ",
+  "@libraryOnboardingAiPrefix": {
+    "description": "Empty-library onboarding: AI paragraph before Mistral/OpenAI links"
+  },
+  "libraryOnboardingAiOrBetweenProviders": " or ",
+  "@libraryOnboardingAiOrBetweenProviders": {
+    "description": "Between Mistral and OpenAI link labels in onboarding"
+  },
+  "libraryOnboardingGetMistralKey": "Mistral",
+  "@libraryOnboardingGetMistralKey": {
+    "description": "Link label to Mistral API keys page"
+  },
+  "libraryOnboardingGetOpenAIKey": "OpenAI",
+  "@libraryOnboardingGetOpenAIKey": {
+    "description": "Link label to OpenAI API keys page"
+  },
+  "libraryOnboardingImportBody": "You can import your EPUB books, or TXT or PDF documents (text only) by using the \"+\" button at the bottom of the screen.",
+  "@libraryOnboardingImportBody": {
+    "description": "Empty-library onboarding: import via FAB"
+  },
   "deleteBook": "Delete Book",
   "@deleteBook": {
     "description": "Delete book dialog title"
@@ -856,5 +884,146 @@
   "debugRagChunks": "Debug RAG Chunks",
   "@debugRagChunks": {
     "description": "Button to open RAG debug screen"
+  },
+  "libraryAskQuestion": "Ask library",
+  "@libraryAskQuestion": {
+    "description": "Tooltip for the Ask library FAB on the library screen"
+  },
+  "ragQuestionScreenTitle": "Ask a question",
+  "@ragQuestionScreenTitle": {
+    "description": "AppBar title for the full-screen RAG question screen"
+  },
+  "ragAllBooks": "All library",
+  "@ragAllBooks": {
+    "description": "Label shown when all books are selected for a RAG query"
+  },
+  "ragBooksSelected": "{count} books selected",
+  "@ragBooksSelected": {
+    "description": "Label shown when a subset of books is selected",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ragSelectAll": "Select all",
+  "@ragSelectAll": {
+    "description": "Button to select all books in the book selector"
+  },
+  "ragDeselectAll": "Deselect all",
+  "@ragDeselectAll": {
+    "description": "Button to deselect all books in the book selector"
+  },
+  "ragBookNotIndexed": "Not indexed",
+  "@ragBookNotIndexed": {
+    "description": "Badge shown on books that are not yet indexed"
+  },
+  "ragNoBooksIndexed": "No books are indexed yet",
+  "@ragNoBooksIndexed": {
+    "description": "Message when no books are indexed and the question cannot be asked"
+  },
+  "ragAlreadyRead": "Already read",
+  "@ragAlreadyRead": {
+    "description": "Short toggle label to restrict RAG query to already-read content"
+  },
+  "driveEncryptApiKeysTitle": "Encrypt API keys on Google Drive",
+  "@driveEncryptApiKeysTitle": {
+    "description": "Toggle title for encrypting synced API keys"
+  },
+  "driveEncryptApiKeysSubtitleOn": "Keys are encrypted with your sync passphrase before upload.",
+  "@driveEncryptApiKeysSubtitleOn": {
+    "description": "Subtitle when Drive API key encryption is enabled"
+  },
+  "driveEncryptApiKeysSubtitleOff": "API keys are not uploaded to Google Drive.",
+  "@driveEncryptApiKeysSubtitleOff": {
+    "description": "Subtitle when Drive API key encryption is disabled"
+  },
+  "driveSyncPassphraseDescription": "Choose a passphrase that is not your Google password. Use the same one on each device. If you lose it, encrypted data on Drive cannot be recovered.",
+  "@driveSyncPassphraseDescription": {
+    "description": "Help text for Drive sync passphrase"
+  },
+  "driveSyncPassphraseSetButton": "Set or change passphrase",
+  "@driveSyncPassphraseSetButton": {
+    "description": "Button to open passphrase dialog"
+  },
+  "driveSyncPassphraseDialogTitle": "Drive sync passphrase",
+  "@driveSyncPassphraseDialogTitle": {
+    "description": "Title of passphrase dialog"
+  },
+  "driveSyncPassphraseField": "Passphrase",
+  "@driveSyncPassphraseField": {
+    "description": "Label for passphrase field"
+  },
+  "driveSyncPassphraseConfirmField": "Confirm passphrase",
+  "@driveSyncPassphraseConfirmField": {
+    "description": "Label for passphrase confirmation"
+  },
+  "driveSyncPassphraseSave": "Save",
+  "@driveSyncPassphraseSave": {
+    "description": "Save passphrase button"
+  },
+  "driveSyncPassphraseMismatch": "Passphrases do not match.",
+  "@driveSyncPassphraseMismatch": {
+    "description": "Error when passphrase and confirmation differ"
+  },
+  "driveSyncPassphraseTooShort": "Passphrase must be at least 8 characters.",
+  "@driveSyncPassphraseTooShort": {
+    "description": "Error when passphrase is too short"
+  },
+  "driveSyncPassphraseSaved": "Passphrase saved.",
+  "@driveSyncPassphraseSaved": {
+    "description": "Snackbar after saving passphrase"
+  },
+  "driveSyncPassphraseConfigured": "Sync passphrase is saved on this device.",
+  "@driveSyncPassphraseConfigured": {
+    "description": "Status when passphrase exists in secure storage"
+  },
+  "driveSyncPassphraseMissingWarning": "Turn on encryption and save a passphrase so your API keys can sync securely.",
+  "@driveSyncPassphraseMissingWarning": {
+    "description": "Warning when encryption is on but no passphrase yet"
+  },
+  "driveSyncIssueMissingPassphrase": "Set your Drive sync passphrase in Settings to restore API keys from Google Drive.",
+  "@driveSyncIssueMissingPassphrase": {
+    "description": "Error when encrypted keys on Drive but no local passphrase"
+  },
+  "driveSyncIssueDecryptFailed": "Could not decrypt API keys from Google Drive. Check your sync passphrase.",
+  "@driveSyncIssueDecryptFailed": {
+    "description": "Error when decryption fails"
+  },
+  "driveSyncIssueUnreadableRemote": "The API keys file on Google Drive could not be read.",
+  "@driveSyncIssueUnreadableRemote": {
+    "description": "Error when remote API keys JSON is invalid"
+  },
+  "driveSyncLegacyPlaintextHint": "Older versions may have stored API keys on Drive without encryption. After you save a passphrase and sync, keys are encrypted. Consider rotating your API keys if you are concerned.",
+  "@driveSyncLegacyPlaintextHint": {
+    "description": "One-time hint about legacy plaintext sync"
+  },
+  "driveSyncLegacyPlaintextDismiss": "Dismiss",
+  "@driveSyncLegacyPlaintextDismiss": {
+    "description": "Dismiss legacy plaintext hint"
+  },
+  "driveSyncConfirmDisableEncryptionTitle": "Stop uploading API keys?",
+  "@driveSyncConfirmDisableEncryptionTitle": {
+    "description": "Dialog title when turning off encryption"
+  },
+  "driveSyncConfirmDisableEncryptionBody": "API keys will no longer be stored on Google Drive. Your local keys are not removed. This also clears the sync passphrase from this device.",
+  "@driveSyncConfirmDisableEncryptionBody": {
+    "description": "Dialog body when turning off encryption"
+  },
+  "driveSyncStopEncrypting": "Turn off",
+  "@driveSyncStopEncrypting": {
+    "description": "Confirm disable encryption"
+  },
+  "driveBookFilesRemovedFromCloud": "Related files were removed from Google Drive.",
+  "@driveBookFilesRemovedFromCloud": {
+    "description": "Snackbar line after delete when Drive blob cleanup ran"
+  },
+  "driveBookFilesRemovalQueued": "Google Drive copies will be removed when you are signed in and sync runs.",
+  "@driveBookFilesRemovalQueued": {
+    "description": "Snackbar line when delete queued remote cleanup (not signed in)"
+  },
+  "driveResetSyncBlobQueueCleared": "Google Drive data removed. Pending book file removals were cleared.",
+  "@driveResetSyncBlobQueueCleared": {
+    "description": "Snackbar after Reset Sync, including blob delete queue"
   }
 }

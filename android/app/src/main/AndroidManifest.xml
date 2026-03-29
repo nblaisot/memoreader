@@ -55,7 +55,20 @@
             android:name="flutterEmbedding"
             android:value="2" />
         
-        <!-- Google Sign-In OAuth Client ID for Google Drive sync -->
+        <!--
+            Optional: passes a Web (server) client ID to the google_sign_in
+            plugin so it can return a server auth code / ID token.
+            For a Drive-only mobile app with no backend server this is not
+            required for sign-in to succeed.
+
+            For sign-in to work on Android you MUST have an Android-type OAuth
+            client registered in Google Cloud Console with:
+              • Package name: com.blaisotbalette.memoreader
+              • SHA-1 of your debug keystore (for debug builds) and/or
+                SHA-1 of your release keystore (for release builds)
+            The plugin auto-matches the Android client by package name + SHA-1;
+            no additional manifest entry is required for that matching.
+        -->
         <meta-data
             android:name="com.google.android.gms.auth.GOOGLE_SIGN_IN_CLIENT_ID"
             android:value="@string/google_drive_client_id" />
@@ -69,6 +82,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- url_launcher: open https (Mistral / OpenAI key pages from library onboarding) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
         </intent>
     </queries>
 </manifest>

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/summary_config_service.dart';
@@ -6,12 +9,16 @@ import '../services/settings_service.dart';
 import '../services/prompt_config_service.dart';
 import '../services/rag_database_service.dart';
 import '../services/google_drive_sync_service.dart';
+import '../services/drive_sync_secrets_service.dart';
 import 'rag_debug_screen.dart';
 import '../main.dart';
 
 /// Settings screen for configuring summary provider, API keys, and prompts
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.scrollToSync = false});
+
+  /// When true, scrolls to the Google Drive sync section after load.
+  final bool scrollToSync;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -73,6 +80,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _accountEmail;
   DateTime? _lastSyncTime;
   bool _isSyncing = false;
+  bool _isResettingDrive = false;
+  bool _driveEncryptApiKeys = true;
+  bool _drivePassphraseConfigured = false;
+  bool _driveLegacyHintVisible = false;
+
+  final GlobalKey _googleDriveSyncSectionKey = GlobalKey();
+  final ScrollController _settingsListScrollController = ScrollController();
 
   @override
   void initState() {
@@ -80,8 +94,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadSettings();
   }
 
+  /// Scroll to the Google Drive section using [ScrollController.animateTo] with
+  /// [RenderAbstractViewport.getOffsetToReveal]. [Scrollable.ensureVisible] alone
+  /// was unreliable here (timing / scroll position not attached).
+  void _scrollToGoogleDriveSyncIfRequested() {
+    if (!widget.scrollToSync || !mounted) return;
+
+    Future<void> runScroll() async {
+      for (var i = 0; i < 150; i++) {
+        if (!mounted) return;
+        if (i > 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 16));
+          if (!mounted) return;
+        }
+        // ignore: use_build_context_synchronously
+        // [mounted] checked; [GlobalKey.currentContext] is re-read each iteration.
+        final renderObject =
+            _googleDriveSyncSectionKey.currentContext?.findRenderObject();
+        final controller = _settingsListScrollController;
+        if (renderObject != null &&
+            renderObject.attached &&
+            controller.hasClients) {
+          final viewport = RenderAbstractViewport.maybeOf(renderObject);
+          if (viewport != null) {
+            final revealed =
+                viewport.getOffsetToReveal(renderObject, 0.0, axis: Axis.vertical);
+            final min = controller.position.minScrollExtent;
+            final max = controller.position.maxScrollExtent;
+            if (revealed.offset.isFinite) {
+              final target = revealed.offset.clamp(min, max);
+              await controller.animateTo(
+                target,
+                duration: const Duration(milliseconds: 450),
+                curve: Curves.easeInOut,
+              );
+              return;
+            }
+          }
+        }
+      }
+      debugPrint('[Settings] scrollToSync: gave up waiting for scroll target');
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(runScroll());
+    });
+  }
+
   @override
   void dispose() {
+    _settingsListScrollController.dispose();
     _openaiApiKeyController.dispose();
     _mistralApiKeyController.dispose();
     for (final controller in _promptControllers.values) {
@@ -132,6 +194,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _syncEnabled = await _driveSyncService.isSyncEnabled();
       _accountEmail = await _driveSyncService.getAccountEmail();
       _lastSyncTime = await _driveSyncService.getLastSyncTime();
+      _driveEncryptApiKeys =
+          await DriveSyncSecretsService.isCloudEncryptionEnabled();
+      _drivePassphraseConfigured =
+          await DriveSyncSecretsService.hasPassphraseConfigured();
+      _driveLegacyHintVisible = _syncEnabled &&
+          !await DriveSyncSecretsService.wasLegacyPlaintextHintDismissed();
       
       // Initialize prompt controllers and focus nodes
       _initializePromptControllers();
@@ -141,6 +209,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _isLoading = false;
       });
+      _scrollToGoogleDriveSyncIfRequested();
     }
   }
 
@@ -654,9 +723,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(
         title: Text(l10n.settings),
       ),
-      body: ListView(
+      body: SingleChildScrollView(
+        controller: _settingsListScrollController,
         padding: const EdgeInsets.all(16),
-        children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // Language Section
           Text(
             l10n.language,
@@ -1016,14 +1088,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildRagDatabaseSection(context),
           
           // Google Drive Sync Section
-          _buildGoogleDriveSyncSection(context),
+          KeyedSubtree(
+            key: _googleDriveSyncSectionKey,
+            child: _buildGoogleDriveSyncSection(context),
+          ),
         ],
+        ),
       ),
     );
   }
   
   Widget _buildGoogleDriveSyncSection(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     
     return Column(
@@ -1059,9 +1134,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (signedIn) {
                 await _driveSyncService.setSyncEnabled(true);
                 final email = await _driveSyncService.getAccountEmail();
+                final enc =
+                    await DriveSyncSecretsService.isCloudEncryptionEnabled();
+                final pass =
+                    await DriveSyncSecretsService.hasPassphraseConfigured();
+                final legacyHint = !await DriveSyncSecretsService
+                    .wasLegacyPlaintextHintDismissed();
                 setState(() {
                   _syncEnabled = true;
                   _accountEmail = email;
+                  _driveEncryptApiKeys = enc;
+                  _drivePassphraseConfigured = pass;
+                  _driveLegacyHintVisible = legacyHint;
+                });
+                // Run an initial sync immediately so data is pushed/pulled.
+                _driveSyncService.syncOnStartup().then((_) async {
+                  if (!mounted) return;
+                  final lastSync = await _driveSyncService.getLastSyncTime();
+                  setState(() {
+                    _lastSyncTime = lastSync;
+                  });
+                }).catchError((e) {
+                  debugPrint('[Settings] Initial sync after enable failed: $e');
                 });
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -1087,6 +1181,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               setState(() {
                 _syncEnabled = false;
                 _accountEmail = null;
+                _driveLegacyHintVisible = false;
               });
             }
           },
@@ -1102,7 +1197,160 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: const Text('Account'),
               subtitle: Text(_accountEmail!),
             ),
-          
+
+          SwitchListTile(
+            secondary: const Icon(Icons.vpn_key_outlined),
+            title: Text(
+              AppLocalizations.of(context)!.driveEncryptApiKeysTitle,
+            ),
+            subtitle: Text(
+              _driveEncryptApiKeys
+                  ? AppLocalizations.of(context)!.driveEncryptApiKeysSubtitleOn
+                  : AppLocalizations.of(context)!
+                      .driveEncryptApiKeysSubtitleOff,
+            ),
+            value: _driveEncryptApiKeys,
+            onChanged: (_isSyncing || _isResettingDrive)
+                ? null
+                : (v) => _onDriveEncryptToggled(context, v),
+          ),
+
+          if (_driveEncryptApiKeys) ...[
+            Padding(
+              padding:
+                  const EdgeInsets.only(left: 16, right: 16, bottom: 8, top: 4),
+              child: Text(
+                AppLocalizations.of(context)!.driveSyncPassphraseDescription,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: Colors.grey[600],
+                ),
+              ),
+            ),
+            if (!_drivePassphraseConfigured)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Text(
+                  AppLocalizations.of(context)!
+                      .driveSyncPassphraseMissingWarning,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: Colors.orange.shade800,
+                  ),
+                ),
+              )
+            else
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline,
+                      color: Colors.green.shade700,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        AppLocalizations.of(context)!
+                            .driveSyncPassphraseConfigured,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.green.shade800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: (_isSyncing || _isResettingDrive)
+                    ? null
+                    : () => _showDrivePassphraseDialog(context),
+                icon: const Icon(Icons.password),
+                label: Text(
+                  AppLocalizations.of(context)!
+                      .driveSyncPassphraseSetButton,
+                ),
+              ),
+            ),
+          ],
+
+          if (_driveLegacyHintVisible) ...[
+            Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      AppLocalizations.of(context)!
+                          .driveSyncLegacyPlaintextHint,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        await DriveSyncSecretsService
+                            .dismissLegacyPlaintextHint();
+                        if (mounted) {
+                          setState(() => _driveLegacyHintVisible = false);
+                        }
+                      },
+                      child: Text(
+                        AppLocalizations.of(context)!
+                            .driveSyncLegacyPlaintextDismiss,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          ValueListenableBuilder<DriveApiKeysSyncIssue?>(
+            valueListenable: _driveSyncService.apiKeysSyncIssue,
+            builder: (context, issue, _) {
+              if (issue == null) return const SizedBox.shrink();
+              final loc = AppLocalizations.of(context)!;
+              final msg = switch (issue) {
+                DriveApiKeysSyncIssue.missingPassphrase =>
+                  loc.driveSyncIssueMissingPassphrase,
+                DriveApiKeysSyncIssue.decryptFailed =>
+                  loc.driveSyncIssueDecryptFailed,
+                DriveApiKeysSyncIssue.unreadableRemote =>
+                  loc.driveSyncIssueUnreadableRemote,
+              };
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Material(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          color: Colors.red.shade800,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            msg,
+                            style: TextStyle(color: Colors.red.shade900),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+
           // Last Sync Time
           if (_lastSyncTime != null)
             ListTile(
@@ -1117,8 +1365,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           
           // Manual Sync Button
           ElevatedButton.icon(
-            onPressed: _isSyncing ? null : () => _manualSync(context),
-            icon: _isSyncing 
+            onPressed: (_isSyncing || _isResettingDrive)
+                ? null
+                : () => _manualSync(context),
+            icon: _isSyncing
                 ? const SizedBox(
                     width: 16,
                     height: 16,
@@ -1131,11 +1381,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           
+          const SizedBox(height: 24),
+          
+          Text(
+            'Reset Sync removes all MemoReader data stored in Google Drive '
+            'for this account (library metadata, uploaded book files, progress '
+            'and word backups). Books and reading state on this device are '
+            'not deleted. Other devices will no longer see this cloud data '
+            'until you sync or upload again. This cannot be undone.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 12),
+          
+          OutlinedButton.icon(
+            onPressed: (_isSyncing || _isResettingDrive)
+                ? null
+                : () => _confirmResetGoogleDrive(context),
+            icon: _isResettingDrive
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.delete_forever_outlined),
+            label: Text(_isResettingDrive ? 'Resetting…' : 'Reset Sync'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 48),
+              foregroundColor: Colors.red.shade700,
+              side: BorderSide(color: Colors.red.shade300),
+            ),
+          ),
+          
           const SizedBox(height: 8),
           
           // Sign Out Button
           OutlinedButton.icon(
-            onPressed: () => _signOut(context),
+            onPressed: (_isSyncing || _isResettingDrive) ? null : () => _signOut(context),
             icon: const Icon(Icons.logout),
             label: const Text('Sign Out'),
             style: OutlinedButton.styleFrom(
@@ -1146,7 +1429,209 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ],
     );
   }
-  
+
+  Future<void> _onDriveEncryptToggled(
+      BuildContext context, bool enabled) async {
+    final loc = AppLocalizations.of(context)!;
+    if (!enabled) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(loc.driveSyncConfirmDisableEncryptionTitle),
+          content: Text(loc.driveSyncConfirmDisableEncryptionBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(loc.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(loc.driveSyncStopEncrypting),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      await DriveSyncSecretsService.disableEncryptionAndClearPassphrase();
+      setState(() {
+        _driveEncryptApiKeys = false;
+        _drivePassphraseConfigured = false;
+      });
+      return;
+    }
+    await DriveSyncSecretsService.setCloudEncryptionEnabled(true);
+    if (!mounted) return;
+    setState(() => _driveEncryptApiKeys = true);
+  }
+
+  Future<void> _showDrivePassphraseDialog(BuildContext context) async {
+    final loc = AppLocalizations.of(context)!;
+    final c1 = TextEditingController();
+    final c2 = TextEditingController();
+    var obscure1 = true;
+    var obscure2 = true;
+    try {
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(loc.driveSyncPassphraseDialogTitle),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: c1,
+                      obscureText: obscure1,
+                      decoration: InputDecoration(
+                        labelText: loc.driveSyncPassphraseField,
+                        suffixIcon: IconButton(
+                          icon: Icon(obscure1
+                              ? Icons.visibility
+                              : Icons.visibility_off),
+                          onPressed: () =>
+                              setDialogState(() => obscure1 = !obscure1),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: c2,
+                      obscureText: obscure2,
+                      decoration: InputDecoration(
+                        labelText: loc.driveSyncPassphraseConfirmField,
+                        suffixIcon: IconButton(
+                          icon: Icon(obscure2
+                              ? Icons.visibility
+                              : Icons.visibility_off),
+                          onPressed: () =>
+                              setDialogState(() => obscure2 = !obscure2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(loc.cancel),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    final p1 = c1.text;
+                    final p2 = c2.text;
+                    if (p1.length < 8) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(loc.driveSyncPassphraseTooShort)),
+                      );
+                      return;
+                    }
+                    if (p1 != p2) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(loc.driveSyncPassphraseMismatch)),
+                      );
+                      return;
+                    }
+                    await DriveSyncSecretsService.setPassphrase(p1);
+                    await DriveSyncSecretsService.setCloudEncryptionEnabled(
+                        true);
+                    if (ctx.mounted) Navigator.pop(ctx, true);
+                  },
+                  child: Text(loc.driveSyncPassphraseSave),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+      if (saved == true && mounted) {
+        setState(() {
+          _drivePassphraseConfigured = true;
+          _driveEncryptApiKeys = true;
+        });
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(loc.driveSyncPassphraseSaved)),
+        );
+      }
+    } finally {
+      c1.dispose();
+      c2.dispose();
+    }
+  }
+
+  Future<void> _confirmResetGoogleDrive(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Google Drive data?'),
+        content: const Text(
+          'This will permanently delete all MemoReader files stored in '
+          'Google Drive for this account (hidden app data: synced library '
+          'metadata, EPUBs, covers, progress, and saved words).\n\n'
+          'Your library on this phone or tablet is not deleted.\n\n'
+          'Signing out is separate and does not erase cloud data by itself.\n\n'
+          'This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove from Drive'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    await _runResetGoogleDrive();
+  }
+
+  Future<void> _runResetGoogleDrive() async {
+    setState(() {
+      _isResettingDrive = true;
+    });
+    try {
+      await _driveSyncService.resetRemoteSyncData();
+      final lastSync = await _driveSyncService.getLastSyncTime();
+      if (!mounted) return;
+      setState(() {
+        _lastSyncTime = lastSync;
+      });
+      final loc = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(loc.driveResetSyncBlobQueueCleared),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Reset failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResettingDrive = false;
+        });
+      }
+    }
+  }
+
   Future<void> _manualSync(BuildContext context) async {
     setState(() {
       _isSyncing = true;

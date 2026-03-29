@@ -52,6 +52,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'Import .epub books, .txt documents, or .pdf files, in any language.';
 
   @override
+  String get libraryOnboardingSyncPrefix =>
+      'Enable Google Sync to restore previous content or sync several devices, by going ';
+
+  @override
+  String get libraryOnboardingSyncHere => 'here';
+
+  @override
+  String get libraryOnboardingAiPrefix =>
+      'Summarize, ask for translations or even ask questions on the text of the books, with AI! To unlock those unique features from the app, you need to get an API key from ';
+
+  @override
+  String get libraryOnboardingAiOrBetweenProviders => ' or ';
+
+  @override
+  String get libraryOnboardingGetMistralKey => 'Mistral';
+
+  @override
+  String get libraryOnboardingGetOpenAIKey => 'OpenAI';
+
+  @override
+  String get libraryOnboardingImportBody =>
+      'You can import your EPUB books, or TXT or PDF documents (text only) by using the \"+\" button at the bottom of the screen.';
+
+  @override
   String get deleteBook => 'Delete Book';
 
   @override
@@ -633,4 +657,123 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get debugRagChunks => 'Debug RAG Chunks';
+
+  @override
+  String get libraryAskQuestion => 'Ask library';
+
+  @override
+  String get ragQuestionScreenTitle => 'Ask a question';
+
+  @override
+  String get ragAllBooks => 'All library';
+
+  @override
+  String ragBooksSelected(int count) {
+    return '$count books selected';
+  }
+
+  @override
+  String get ragSelectAll => 'Select all';
+
+  @override
+  String get ragDeselectAll => 'Deselect all';
+
+  @override
+  String get ragBookNotIndexed => 'Not indexed';
+
+  @override
+  String get ragNoBooksIndexed => 'No books are indexed yet';
+
+  @override
+  String get ragAlreadyRead => 'Already read';
+
+  @override
+  String get driveEncryptApiKeysTitle => 'Encrypt API keys on Google Drive';
+
+  @override
+  String get driveEncryptApiKeysSubtitleOn =>
+      'Keys are encrypted with your sync passphrase before upload.';
+
+  @override
+  String get driveEncryptApiKeysSubtitleOff =>
+      'API keys are not uploaded to Google Drive.';
+
+  @override
+  String get driveSyncPassphraseDescription =>
+      'Choose a passphrase that is not your Google password. Use the same one on each device. If you lose it, encrypted data on Drive cannot be recovered.';
+
+  @override
+  String get driveSyncPassphraseSetButton => 'Set or change passphrase';
+
+  @override
+  String get driveSyncPassphraseDialogTitle => 'Drive sync passphrase';
+
+  @override
+  String get driveSyncPassphraseField => 'Passphrase';
+
+  @override
+  String get driveSyncPassphraseConfirmField => 'Confirm passphrase';
+
+  @override
+  String get driveSyncPassphraseSave => 'Save';
+
+  @override
+  String get driveSyncPassphraseMismatch => 'Passphrases do not match.';
+
+  @override
+  String get driveSyncPassphraseTooShort =>
+      'Passphrase must be at least 8 characters.';
+
+  @override
+  String get driveSyncPassphraseSaved => 'Passphrase saved.';
+
+  @override
+  String get driveSyncPassphraseConfigured =>
+      'Sync passphrase is saved on this device.';
+
+  @override
+  String get driveSyncPassphraseMissingWarning =>
+      'Turn on encryption and save a passphrase so your API keys can sync securely.';
+
+  @override
+  String get driveSyncIssueMissingPassphrase =>
+      'Set your Drive sync passphrase in Settings to restore API keys from Google Drive.';
+
+  @override
+  String get driveSyncIssueDecryptFailed =>
+      'Could not decrypt API keys from Google Drive. Check your sync passphrase.';
+
+  @override
+  String get driveSyncIssueUnreadableRemote =>
+      'The API keys file on Google Drive could not be read.';
+
+  @override
+  String get driveSyncLegacyPlaintextHint =>
+      'Older versions may have stored API keys on Drive without encryption. After you save a passphrase and sync, keys are encrypted. Consider rotating your API keys if you are concerned.';
+
+  @override
+  String get driveSyncLegacyPlaintextDismiss => 'Dismiss';
+
+  @override
+  String get driveSyncConfirmDisableEncryptionTitle =>
+      'Stop uploading API keys?';
+
+  @override
+  String get driveSyncConfirmDisableEncryptionBody =>
+      'API keys will no longer be stored on Google Drive. Your local keys are not removed. This also clears the sync passphrase from this device.';
+
+  @override
+  String get driveSyncStopEncrypting => 'Turn off';
+
+  @override
+  String get driveBookFilesRemovedFromCloud =>
+      'Related files were removed from Google Drive.';
+
+  @override
+  String get driveBookFilesRemovalQueued =>
+      'Google Drive copies will be removed when you are signed in and sync runs.';
+
+  @override
+  String get driveResetSyncBlobQueueCleared =>
+      'Google Drive data removed. Pending book file removals were cleared.';
 }

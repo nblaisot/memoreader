@@ -170,6 +170,48 @@ abstract class AppLocalizations {
   /// **'Import .epub books, .txt documents, or .pdf files, in any language.'**
   String get libraryEmptyInfo;
 
+  /// Empty-library onboarding: Google Sync intro before the link
+  ///
+  /// In en, this message translates to:
+  /// **'Enable Google Sync to restore previous content or sync several devices, by going '**
+  String get libraryOnboardingSyncPrefix;
+
+  /// Tappable link to open Settings at Google Sync section
+  ///
+  /// In en, this message translates to:
+  /// **'here'**
+  String get libraryOnboardingSyncHere;
+
+  /// Empty-library onboarding: AI paragraph before Mistral/OpenAI links
+  ///
+  /// In en, this message translates to:
+  /// **'Summarize, ask for translations or even ask questions on the text of the books, with AI! To unlock those unique features from the app, you need to get an API key from '**
+  String get libraryOnboardingAiPrefix;
+
+  /// Between Mistral and OpenAI link labels in onboarding
+  ///
+  /// In en, this message translates to:
+  /// **' or '**
+  String get libraryOnboardingAiOrBetweenProviders;
+
+  /// Link label to Mistral API keys page
+  ///
+  /// In en, this message translates to:
+  /// **'Mistral'**
+  String get libraryOnboardingGetMistralKey;
+
+  /// Link label to OpenAI API keys page
+  ///
+  /// In en, this message translates to:
+  /// **'OpenAI'**
+  String get libraryOnboardingGetOpenAIKey;
+
+  /// Empty-library onboarding: import via FAB
+  ///
+  /// In en, this message translates to:
+  /// **'You can import your EPUB books, or TXT or PDF documents (text only) by using the \"+\" button at the bottom of the screen.'**
+  String get libraryOnboardingImportBody;
+
   /// Delete book dialog title
   ///
   /// In en, this message translates to:
@@ -1195,6 +1237,210 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Debug RAG Chunks'**
   String get debugRagChunks;
+
+  /// Tooltip for the Ask library FAB on the library screen
+  ///
+  /// In en, this message translates to:
+  /// **'Ask library'**
+  String get libraryAskQuestion;
+
+  /// AppBar title for the full-screen RAG question screen
+  ///
+  /// In en, this message translates to:
+  /// **'Ask a question'**
+  String get ragQuestionScreenTitle;
+
+  /// Label shown when all books are selected for a RAG query
+  ///
+  /// In en, this message translates to:
+  /// **'All library'**
+  String get ragAllBooks;
+
+  /// Label shown when a subset of books is selected
+  ///
+  /// In en, this message translates to:
+  /// **'{count} books selected'**
+  String ragBooksSelected(int count);
+
+  /// Button to select all books in the book selector
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get ragSelectAll;
+
+  /// Button to deselect all books in the book selector
+  ///
+  /// In en, this message translates to:
+  /// **'Deselect all'**
+  String get ragDeselectAll;
+
+  /// Badge shown on books that are not yet indexed
+  ///
+  /// In en, this message translates to:
+  /// **'Not indexed'**
+  String get ragBookNotIndexed;
+
+  /// Message when no books are indexed and the question cannot be asked
+  ///
+  /// In en, this message translates to:
+  /// **'No books are indexed yet'**
+  String get ragNoBooksIndexed;
+
+  /// Short toggle label to restrict RAG query to already-read content
+  ///
+  /// In en, this message translates to:
+  /// **'Already read'**
+  String get ragAlreadyRead;
+
+  /// Toggle title for encrypting synced API keys
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypt API keys on Google Drive'**
+  String get driveEncryptApiKeysTitle;
+
+  /// Subtitle when Drive API key encryption is enabled
+  ///
+  /// In en, this message translates to:
+  /// **'Keys are encrypted with your sync passphrase before upload.'**
+  String get driveEncryptApiKeysSubtitleOn;
+
+  /// Subtitle when Drive API key encryption is disabled
+  ///
+  /// In en, this message translates to:
+  /// **'API keys are not uploaded to Google Drive.'**
+  String get driveEncryptApiKeysSubtitleOff;
+
+  /// Help text for Drive sync passphrase
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a passphrase that is not your Google password. Use the same one on each device. If you lose it, encrypted data on Drive cannot be recovered.'**
+  String get driveSyncPassphraseDescription;
+
+  /// Button to open passphrase dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Set or change passphrase'**
+  String get driveSyncPassphraseSetButton;
+
+  /// Title of passphrase dialog
+  ///
+  /// In en, this message translates to:
+  /// **'Drive sync passphrase'**
+  String get driveSyncPassphraseDialogTitle;
+
+  /// Label for passphrase field
+  ///
+  /// In en, this message translates to:
+  /// **'Passphrase'**
+  String get driveSyncPassphraseField;
+
+  /// Label for passphrase confirmation
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm passphrase'**
+  String get driveSyncPassphraseConfirmField;
+
+  /// Save passphrase button
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get driveSyncPassphraseSave;
+
+  /// Error when passphrase and confirmation differ
+  ///
+  /// In en, this message translates to:
+  /// **'Passphrases do not match.'**
+  String get driveSyncPassphraseMismatch;
+
+  /// Error when passphrase is too short
+  ///
+  /// In en, this message translates to:
+  /// **'Passphrase must be at least 8 characters.'**
+  String get driveSyncPassphraseTooShort;
+
+  /// Snackbar after saving passphrase
+  ///
+  /// In en, this message translates to:
+  /// **'Passphrase saved.'**
+  String get driveSyncPassphraseSaved;
+
+  /// Status when passphrase exists in secure storage
+  ///
+  /// In en, this message translates to:
+  /// **'Sync passphrase is saved on this device.'**
+  String get driveSyncPassphraseConfigured;
+
+  /// Warning when encryption is on but no passphrase yet
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on encryption and save a passphrase so your API keys can sync securely.'**
+  String get driveSyncPassphraseMissingWarning;
+
+  /// Error when encrypted keys on Drive but no local passphrase
+  ///
+  /// In en, this message translates to:
+  /// **'Set your Drive sync passphrase in Settings to restore API keys from Google Drive.'**
+  String get driveSyncIssueMissingPassphrase;
+
+  /// Error when decryption fails
+  ///
+  /// In en, this message translates to:
+  /// **'Could not decrypt API keys from Google Drive. Check your sync passphrase.'**
+  String get driveSyncIssueDecryptFailed;
+
+  /// Error when remote API keys JSON is invalid
+  ///
+  /// In en, this message translates to:
+  /// **'The API keys file on Google Drive could not be read.'**
+  String get driveSyncIssueUnreadableRemote;
+
+  /// One-time hint about legacy plaintext sync
+  ///
+  /// In en, this message translates to:
+  /// **'Older versions may have stored API keys on Drive without encryption. After you save a passphrase and sync, keys are encrypted. Consider rotating your API keys if you are concerned.'**
+  String get driveSyncLegacyPlaintextHint;
+
+  /// Dismiss legacy plaintext hint
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get driveSyncLegacyPlaintextDismiss;
+
+  /// Dialog title when turning off encryption
+  ///
+  /// In en, this message translates to:
+  /// **'Stop uploading API keys?'**
+  String get driveSyncConfirmDisableEncryptionTitle;
+
+  /// Dialog body when turning off encryption
+  ///
+  /// In en, this message translates to:
+  /// **'API keys will no longer be stored on Google Drive. Your local keys are not removed. This also clears the sync passphrase from this device.'**
+  String get driveSyncConfirmDisableEncryptionBody;
+
+  /// Confirm disable encryption
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off'**
+  String get driveSyncStopEncrypting;
+
+  /// Snackbar line after delete when Drive blob cleanup ran
+  ///
+  /// In en, this message translates to:
+  /// **'Related files were removed from Google Drive.'**
+  String get driveBookFilesRemovedFromCloud;
+
+  /// Snackbar line when delete queued remote cleanup (not signed in)
+  ///
+  /// In en, this message translates to:
+  /// **'Google Drive copies will be removed when you are signed in and sync runs.'**
+  String get driveBookFilesRemovalQueued;
+
+  /// Snackbar after Reset Sync, including blob delete queue
+  ///
+  /// In en, this message translates to:
+  /// **'Google Drive data removed. Pending book file removals were cleared.'**
+  String get driveResetSyncBlobQueueCleared;
 }
 
 class _AppLocalizationsDelegate

@@ -352,6 +352,33 @@ class RagDatabaseService {
     return results.first['indexedChunks'] as int;
   }
 
+  /// Get all chunks for a list of books (for multi-book queries)
+  Future<List<RagChunk>> getChunksForBooks(List<String> bookIds) async {
+    if (bookIds.isEmpty) return [];
+    final db = await database;
+    final placeholders = bookIds.map((_) => '?').join(', ');
+    final results = await db.rawQuery(
+      'SELECT * FROM rag_chunks WHERE bookId IN ($placeholders) ORDER BY bookId, charStart ASC',
+      bookIds,
+    );
+    return results.map((row) {
+      final embeddingBlob = row['embedding'] as Uint8List;
+      return RagChunk.fromJson(row, embeddingBlob);
+    }).toList();
+  }
+
+  /// Get all book IDs that have been fully indexed
+  Future<List<String>> getAllIndexedBookIds() async {
+    final db = await database;
+    final results = await db.query(
+      'rag_index_status',
+      columns: ['bookId'],
+      where: 'status = ?',
+      whereArgs: ['completed'],
+    );
+    return results.map((row) => row['bookId'] as String).toList();
+  }
+
   /// Get all books that need indexing (no status or status is pending/error)
   Future<List<String>> getBooksNeedingIndexing() async {
     final db = await database;

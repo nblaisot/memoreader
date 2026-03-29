@@ -11,11 +11,15 @@ import 'api_cache_service.dart';
 class MistralSummaryService implements SummaryService {
   final String apiKey;
   final ApiCacheService _cacheService = ApiCacheService();
-  
+  final http.Client _httpClient;
+
   static const String _apiUrl = 'https://api.mistral.ai/v1/chat/completions';
   static const String _provider = 'mistral';
-  
-  MistralSummaryService(this.apiKey);
+
+  MistralSummaryService(
+    this.apiKey, {
+    http.Client? httpClient,
+  }) : _httpClient = httpClient ?? http.Client();
 
   @override
   String get serviceName => 'Mistral AI';
@@ -88,7 +92,7 @@ class MistralSummaryService implements SummaryService {
         debugPrint('[LLM] Mistral prompt end <<<');
       }
 
-      final response = await http.post(
+      final response = await _httpClient.post(
         Uri.parse(_apiUrl),
         headers: {
           'Content-Type': 'application/json',

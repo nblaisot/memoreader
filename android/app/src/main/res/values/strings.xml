@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Google Sign-In OAuth Client ID for Google Drive sync (Debug/Default) -->
+    <!--
+        Google Sign-In server (Web) client ID – used only when you need the
+        sign-in flow to return a server auth code for backend verification.
+        For a Drive-only app with no backend this value is OPTIONAL.
+
+        IMPORTANT: For Google Sign-In to succeed on Android, an *Android-type*
+        OAuth client (package name com.blaisotbalette.memoreader + debug SHA-1)
+        must be registered in Google Cloud Console.  That is separate from this
+        Web client ID.
+
+        TODO: Replace with the Web client ID from your GCP project if you need
+        server-side token verification; otherwise you can leave this unchanged
+        or remove the meta-data entry from AndroidManifest.xml entirely.
+    -->
     <string name="google_drive_client_id">1071905253173-jgplkjie8sgnr47of9b3kr6ufkubbt3u.apps.googleusercontent.com</string>
 </resources>
