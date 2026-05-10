@@ -2,14 +2,14 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_pdf_text/flutter_pdf_text.dart';
-
-import 'pdf_macos_text.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 /// Service for converting PDF files to EPUB format
 ///
 /// Extracts text from PDF (preserving paragraphs and line breaks, not page breaks),
 /// then creates a minimal EPUB 3.0 structure like [TxtToEpubConverter].
+/// Uses [syncfusion_flutter_pdf] (pure Dart) so the Android app ships no native
+/// `libopenjpeg` / PDFBox stack that fails Google Play 16 KB page-size checks.
 class PdfToEpubConverter {
   static const String _defaultTitle = 'Unknown Title';
   static const String _defaultAuthor = 'Unknown Author';
@@ -30,30 +30,41 @@ class PdfToEpubConverter {
     required String outputEpubPath,
   }) async {
     try {
+      final inputBytes = await pdfFile.readAsBytes();
+      final doc = PdfDocument(inputBytes: inputBytes);
       late final String textContent;
       late final PdfToEpubMetadata metadata;
+      try {
+        final info = doc.documentInformation;
+        final docTitle = info.title.trim().isEmpty ? null : info.title.trim();
+        final docAuthor = info.author.trim().isEmpty ? null : info.author.trim();
 
-      if (Platform.isMacOS) {
-        final extracted = await PdfMacosText.extract(pdfFile);
-        textContent = extracted.text;
+        final extractor = PdfTextExtractor(doc);
+        final parts = <String>[];
+        for (var i = 0; i < doc.pages.count; i++) {
+          final pageText = extractor.extractText(
+            startPageIndex: i,
+            endPageIndex: i,
+            layoutText: true,
+          );
+          if (pageText.trim().isNotEmpty) {
+            parts.add(pageText);
+          }
+        }
+        textContent = parts.join(_pageSeparator);
         if (textContent.trim().isEmpty) {
           throw Exception('PDF contains no extractable text (may be image-only)');
         }
         metadata = _extractMetadata(
           pdfFile.path,
           textContent,
-          null,
-          titleOverride: extracted.title,
-          authorOverride: extracted.author,
+          titleFromDoc: docTitle,
+          authorFromDoc: docAuthor,
         );
-      } else {
-        final doc = await PDFDoc.fromFile(pdfFile);
-        textContent = await _extractTextFromPdf(doc);
-        if (textContent.trim().isEmpty) {
-          throw Exception('PDF contains no extractable text (may be image-only)');
-        }
-        metadata = _extractMetadata(pdfFile.path, textContent, doc.info);
+      } finally {
+        doc.dispose();
       }
+
       final processedContent = _processPdfText(textContent);
       final archive = _createEpubArchive(metadata, processedContent);
 
@@ -73,36 +84,19 @@ class PdfToEpubConverter {
     }
   }
 
-  /// Extract text from PDF preserving paragraph and line break structure.
-  /// Concatenates all pages with double newline between pages (no page break markers).
-  Future<String> _extractTextFromPdf(PDFDoc doc) async {
-    final parts = <String>[];
-    for (var i = 1; i <= doc.length; i++) {
-      final page = doc.pageAt(i);
-      final pageText = await page.text;
-      if (pageText.trim().isNotEmpty) {
-        parts.add(pageText);
-      }
-    }
-    return parts.join(_pageSeparator);
-  }
-
-  /// Extract metadata from file path, text content, and PDF document info
+  /// Extract metadata from file path, text content, and optional PDF document fields
   PdfToEpubMetadata _extractMetadata(
     String filePath,
-    String textContent,
-    PDFDocInfo? pdfInfo, {
+    String textContent, {
+    String? titleFromDoc,
+    String? authorFromDoc,
     String? titleOverride,
     String? authorOverride,
   }) {
     String? title = titleOverride?.trim();
     String? author = authorOverride?.trim();
-    title ??= pdfInfo?.title?.trim();
-    author ??= pdfInfo?.author?.trim();
-    final authors = pdfInfo?.authors;
-    if (authors != null && authors.isNotEmpty) {
-      author ??= authors.join(', ');
-    }
+    title ??= titleFromDoc?.trim();
+    author ??= authorFromDoc?.trim();
 
     final filenameWithoutExt = _filenameWithoutExtension(filePath);
     final titleFromFile = _titleCaseFromFilename(filenameWithoutExt);

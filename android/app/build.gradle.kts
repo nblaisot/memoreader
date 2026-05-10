@@ -20,9 +20,11 @@ android {
     // Use maxOf to ensure compileSdk is at least 35 for 16 KB page size support (Android 15+ requirement)
     // This respects Flutter's SDK management while ensuring compliance with Google Play requirements
     compileSdk = maxOf(flutter.compileSdkVersion, 35)
-    // Ensure NDK r26+ for 16 KB page size support
-    // Flutter will use the appropriate NDK version, but we can override if needed
-    ndkVersion = flutter.ndkVersion
+    // Google Play (Nov 2025+): 64-bit apps must support 16 KB memory pages. That requires
+    // NDK r28+ so packaged .so files use 16 KB ELF segment alignment. Flutter still defaults
+    // to NDK r27 — pin r29 so Gradle builds/native deps align correctly (install via SDK Manager
+    // if missing: sdkmanager "ndk;29.0.13846066").
+    ndkVersion = "29.0.13846066"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
