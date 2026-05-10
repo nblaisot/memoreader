@@ -3,14 +3,15 @@
 // This may be replaced with something auto-generated from metadata (e.g., pubspec.yaml) in the
 // future. If not, the values below would default to using the project name when this becomes a
 // 'flutter create' template.
-
-#include "../../Flutter/ephemeral/Flutter-Generated.xcconfig"
+//
+// Flutter-Generated.xcconfig is included by Flutter-Debug / Flutter-Release (via Debug.xcconfig,
+// Release.xcconfig, Profile.xcconfig). Do not include it here or settings are duplicated.
 
 // The application's name. By default this is also the title of the Flutter window.
 PRODUCT_NAME = memoreader
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.blaisotbalette.memoreader
+PRODUCT_BUNDLE_IDENTIFIER = com.memoreader.app
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2025 Nicolas Blaisot-Balette. All rights reserved.

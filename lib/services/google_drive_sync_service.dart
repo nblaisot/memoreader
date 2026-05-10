@@ -121,8 +121,22 @@ class GoogleDriveSyncService {
       await _setAccountEmail(account.email);
       debugPrint('[DriveSync] Signed in as ${account.email}');
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('[DriveSync] Sign-in error: $e');
+      debugPrint('[DriveSync] Sign-in stack trace: $stackTrace');
+      if (Platform.isIOS || Platform.isMacOS) {
+        debugPrint(
+          Platform.isIOS
+              ? '[DriveSync] iOS: An HTTP 400 on accounts.google.com usually means '
+                  'GIDClientID in ios/Runner/Info.plist is still a placeholder or does '
+                  'not match an iOS OAuth client whose bundle ID is com.memoreader.app. '
+                  'See GOOGLE_CLOUD_SETUP.md (iOS section).'
+              : '[DriveSync] macOS: An HTTP 400 on accounts.google.com usually means '
+                  'GIDClientID in macos/Runner/Info.plist is missing or wrong, keychain '
+                  'access groups are missing in entitlements, or the OAuth client bundle ID '
+                  'does not match com.memoreader.app. See GOOGLE_CLOUD_SETUP.md (macOS section).',
+        );
+      }
       _isAuthenticated = false;
       return false;
     }

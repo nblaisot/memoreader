@@ -1,0 +1,27 @@
+---
+description: Rules for deploying and installing the app on physical devices and emulators
+alwaysApply: true
+---
+
+# Device Deployment Safety
+
+## NEVER uninstall a previous version before installing
+
+When installing or deploying the app on any device (physical or emulator), **never uninstall the existing version first**. User data (books, reading progress, settings) lives on the device and is wiped by an uninstall.
+
+Always use commands that perform an **in-place update** (install over the existing APK):
+
+```bash
+# ✅ GOOD — updates in place, preserves user data
+flutter build apk --debug
+adb -s <device_id> install -r build/app/outputs/flutter-apk/app-debug.apk
+
+# ❌ BAD — flutter install uninstalls first, destroying user data
+flutter install -d <device_id> --debug
+```
+
+The `-r` flag in `adb install -r` means "replace existing application" and does **not** wipe data.
+
+## Only uninstall when explicitly instructed
+
+Only run `adb uninstall`, `flutter install` (which uninstalls first), or any command that removes the app if the user **explicitly asks** to wipe/delete the previous version.

@@ -4,7 +4,8 @@ import 'dart:math' as math;
 import 'package:epubx/epubx.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart' show PointerDownEvent, PointerUpEvent, PointerCancelEvent;
+import 'package:flutter/gestures.dart'
+    show PointerDownEvent, PointerUpEvent, PointerCancelEvent;
 import 'package:flutter/services.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
@@ -58,8 +59,10 @@ class ReaderScreen extends StatefulWidget {
 
 class _ReaderScreenState extends State<ReaderScreen>
     with WidgetsBindingObserver, RouteAware {
-  static const double _defaultHorizontalPadding = 30.0; // Default horizontal padding
-  static const double _defaultVerticalPadding = 50.0; // Default vertical padding
+  static const double _defaultHorizontalPadding =
+      30.0; // Default horizontal padding
+  static const double _defaultVerticalPadding =
+      50.0; // Default vertical padding
   static const double _paragraphSpacing = 18.0;
   static const double _headingSpacing = 28.0;
   static const double _defaultReaderFontSize = 18.0;
@@ -69,9 +72,11 @@ class _ReaderScreenState extends State<ReaderScreen>
   EnhancedSummaryService? _summaryService;
   final PageController _pageController = PageController(initialPage: 1);
   final AppStateService _appStateService = AppStateService();
-  
-  double _horizontalPadding = _defaultHorizontalPadding; // Will be loaded from settings
-  double _verticalPadding = _defaultVerticalPadding; // Will be loaded from settings
+
+  double _horizontalPadding =
+      _defaultHorizontalPadding; // Will be loaded from settings
+  double _verticalPadding =
+      _defaultVerticalPadding; // Will be loaded from settings
 
   Size? _lastActualSize;
 
@@ -86,10 +91,14 @@ class _ReaderScreenState extends State<ReaderScreen>
   int? _pendingWebViewCharIndex;
   double? _pendingRestorePercentage; // For non-WebView readers
   bool _hasRestoredProgress = false; // Track if we've already restored progress
-  bool _isRestoringPosition = false; // True while restoration is in flight – blocks progress saves to avoid overwriting good data with transient page-0 state
-  int _restoreAttempts = 0; // Number of goToCharIndex calls attempted during current restoration
-  bool _isWaitingForWebViewInit = false; // Track if we're waiting for WebView to fully initialize
-  bool _stylesAppliedForRestore = false; // True after we've sent our styles; we restore only after this so layout is stable
+  bool _isRestoringPosition =
+      false; // True while restoration is in flight – blocks progress saves to avoid overwriting good data with transient page-0 state
+  int _restoreAttempts =
+      0; // Number of goToCharIndex calls attempted during current restoration
+  bool _isWaitingForWebViewInit =
+      false; // Track if we're waiting for WebView to fully initialize
+  bool _stylesAppliedForRestore =
+      false; // True after we've sent our styles; we restore only after this so layout is stable
   String? _lastWebViewStyleKey;
   String? _lastWebViewLayoutKey;
   String? _lastWebViewActionLabel;
@@ -98,7 +107,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   LineMetricsPaginationEngine? _engine;
   final PaginationCacheManager _cacheManager = const PaginationCacheManager();
   final SummaryDatabaseService _summaryDatabase = SummaryDatabaseService();
-  final SavedTranslationDatabaseService _translationDatabase = 
+  final SavedTranslationDatabaseService _translationDatabase =
       SavedTranslationDatabaseService();
   final RagQueryService _ragQueryService = RagQueryService();
   final RagIndexingService _ragIndexingService = RagIndexingService();
@@ -116,26 +125,33 @@ class _ReaderScreenState extends State<ReaderScreen>
   String? _errorMessage;
 
   bool _showProgressBar = false;
-  bool _isNavigating = false; // Track when navigation/repagination is in progress
+  bool _isNavigating =
+      false; // Track when navigation/repagination is in progress
   int? _navigatingToChapterIndex; // Track which chapter is being navigated to
-  NavigatorState? _chapterDialogNavigator; // Reference to chapter dialog's Navigator for closing
-  VoidCallback? _chapterDialogRebuildCallback; // Callback to trigger dialog rebuild
+  NavigatorState?
+  _chapterDialogNavigator; // Reference to chapter dialog's Navigator for closing
+  VoidCallback?
+  _chapterDialogRebuildCallback; // Callback to trigger dialog rebuild
   double _fontScale = 1.0; // Font scale multiplier (1.0 = normal)
 
   ReadingProgress? _savedProgress;
   Timer? _progressDebounce;
-  _PageMetrics? _currentPageMetrics; // Store current layout metrics for progress saving
+  _PageMetrics?
+  _currentPageMetrics; // Store current layout metrics for progress saving
   // Text selection state management
   // When a selection is active, tap-up events clear the selection instead of triggering actions
   bool _hasActiveSelection = false;
   bool _isProcessingSelection = false;
-  VoidCallback? _clearSelectionCallback; // Callback to clear selection programmatically
-  DateTime? _lastSelectionChangeTimestamp; // Used to defer clearing selection (allow context menu)
+  VoidCallback?
+  _clearSelectionCallback; // Callback to clear selection programmatically
+  DateTime?
+  _lastSelectionChangeTimestamp; // Used to defer clearing selection (allow context menu)
   int? _selectionOwnerPointer; // Pointer that initiated the current selection
   String? _selectionActionLabel;
   String? _selectionActionPrompt;
   Locale? _lastLocale;
   WebViewSelection? _webViewSelection;
+
   /// Single GlobalKey on the Positioned.fill that wraps WebViewReader.
   /// Used for selection toolbar coordinate conversion (WebView and overlay share same bounds).
   final GlobalKey _webViewKey = GlobalKey();
@@ -187,21 +203,23 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   void _startListeningToRagIndexing() {
     // Listen to RAG indexing progress
-    _ragIndexingSubscription = _ragIndexingService.startIndexing(widget.book.id).listen(
-      (progress) {
-        if (mounted) {
-          setState(() {
-            _ragIndexProgress = progress;
-          });
-        }
-      },
-      onError: (error) {
-        debugPrint('[RAG] Error listening to indexing progress: $error');
-      },
-      onDone: () {
-        debugPrint('[RAG] Indexing progress stream completed');
-      },
-    );
+    _ragIndexingSubscription = _ragIndexingService
+        .startIndexing(widget.book.id)
+        .listen(
+          (progress) {
+            if (mounted) {
+              setState(() {
+                _ragIndexProgress = progress;
+              });
+            }
+          },
+          onError: (error) {
+            debugPrint('[RAG] Error listening to indexing progress: $error');
+          },
+          onDone: () {
+            debugPrint('[RAG] Indexing progress stream completed');
+          },
+        );
   }
 
   @override
@@ -224,16 +242,17 @@ class _ReaderScreenState extends State<ReaderScreen>
       _initializeSelectionControls();
     }
   }
-  
+
   void _initializeSelectionControls() {
     // Force instantiation of selection controls to load all code paths
     // This ensures JIT compilation happens upfront, not on first selection
     final l10n = AppLocalizations.of(context);
     final defaultActionLabel = l10n?.textSelectionDefaultLabel ?? 'Traduire';
-    final actionLabel = (_selectionActionLabel ?? defaultActionLabel).trim().isEmpty
+    final actionLabel =
+        (_selectionActionLabel ?? defaultActionLabel).trim().isEmpty
         ? defaultActionLabel
         : (_selectionActionLabel ?? defaultActionLabel);
-    
+
     _sharedSelectionControls = ImmediateTextSelectionControls(
       onSelectionAction: _handleSelectionAction,
       actionLabel: actionLabel,
@@ -241,7 +260,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       isProcessingAction: false,
       getSelectedText: () => '', // Will be set per page via callbacks
     );
-    
+
     debugPrint('[ReaderScreen] Selection controls pre-instantiated');
   }
 
@@ -298,16 +317,16 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (_routeObserverSubscribed) {
       appRouteObserver.unsubscribe(this);
     }
-    
+
     // Disable wake lock when leaving reader screen
     WakelockPlus.disable();
-    
+
     // Always update reading stop when leaving reader (all interruptions are tracked)
     // Only if the book was actually loaded
     if (_epubBook != null) {
       _updateLastReadingStopOnExit();
     }
-    
+
     super.dispose();
   }
 
@@ -316,13 +335,13 @@ class _ReaderScreenState extends State<ReaderScreen>
     debugPrint('[ReaderScreen] _goBackToLibrary called');
     debugPrint('[ReaderScreen] mounted: $mounted');
     debugPrint('[ReaderScreen] canPop: ${Navigator.of(context).canPop()}');
-    
+
     // Disable wake lock before leaving
     WakelockPlus.disable();
-    
+
     // Clear the last opened book since we're going back due to an error
     unawaited(_appStateService.clearLastOpenedBook());
-    
+
     // Navigate back - try different approaches
     if (mounted) {
       final navigator = Navigator.of(context, rootNavigator: true);
@@ -343,14 +362,14 @@ class _ReaderScreenState extends State<ReaderScreen>
   @override
   void didChangeMetrics() {
     super.didChangeMetrics();
-    
+
     // Only schedule repagination if the screen size actually changed significantly.
     // This prevents unnecessary expensive repagination when the keyboard opens/closes
     // (which changes viewInsets but often not the available window size for our reader)
     if (!_isLoading && mounted && _lastActualSize != null) {
       final newSize = MediaQuery.of(context).size;
       // Check if width or height changed by more than a small threshold
-      if ((newSize.width - _lastActualSize!.width).abs() > 1.0 || 
+      if ((newSize.width - _lastActualSize!.width).abs() > 1.0 ||
           (newSize.height - _lastActualSize!.height).abs() > 1.0) {
         _scheduleRepagination(retainCurrentPage: true);
       }
@@ -360,7 +379,8 @@ class _ReaderScreenState extends State<ReaderScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    final shouldPersistProgress = state == AppLifecycleState.paused ||
+    final shouldPersistProgress =
+        state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.hidden;
 
@@ -411,8 +431,9 @@ class _ReaderScreenState extends State<ReaderScreen>
       final epub = await _bookService.loadEpubBook(widget.book.filePath);
       final progress = await _bookService.getReadingProgress(widget.book.id);
       final extraction = await _extractDocument(epub);
-      final webViewDocument =
-          _useWebViewReader ? _buildWebViewDocument(epub) : null;
+      final webViewDocument = _useWebViewReader
+          ? _buildWebViewDocument(epub)
+          : null;
 
       setState(() {
         _epubBook = epub;
@@ -428,7 +449,8 @@ class _ReaderScreenState extends State<ReaderScreen>
         _progress = 0.0;
         _savedProgress = progress;
         _lastVisibleCharacterIndex =
-            progress?.lastVisibleCharacterIndex ?? progress?.currentCharacterIndex;
+            progress?.lastVisibleCharacterIndex ??
+            progress?.currentCharacterIndex;
         _currentChapterIndex = null;
         _lastWebViewStyleKey = null;
         _lastWebViewLayoutKey = null;
@@ -440,17 +462,21 @@ class _ReaderScreenState extends State<ReaderScreen>
       });
 
       // Use character index for restoration (prefer start of page over end)
-      final savedCharIndex = progress?.currentCharacterIndex ??
-                             progress?.lastVisibleCharacterIndex;
-      
+      final savedCharIndex =
+          progress?.currentCharacterIndex ??
+          progress?.lastVisibleCharacterIndex;
+
       if (kDebugMode) {
-        debugPrint('[ReaderScreen] Restoring progress: savedCharIndex=$savedCharIndex, progress=${progress?.progress}');
+        debugPrint(
+          '[ReaderScreen] Restoring progress: savedCharIndex=$savedCharIndex, progress=${progress?.progress}',
+        );
       }
 
       // Determine whether there is a meaningful position to restore.
       // Either a char index > 0, or a percentage > 0 (for Drive-sync cases where
       // char indices are null but percentage survived).
-      final hasPositionToRestore = (savedCharIndex != null && savedCharIndex > 0) ||
+      final hasPositionToRestore =
+          (savedCharIndex != null && savedCharIndex > 0) ||
           (progress?.progress != null && progress!.progress! > 0);
 
       _hasRestoredProgress = false; // Reset flag for new book load
@@ -462,9 +488,13 @@ class _ReaderScreenState extends State<ReaderScreen>
 
       if (kDebugMode) {
         if (hasPositionToRestore) {
-          debugPrint('[ReaderScreen] Will restore to: charIndex=$savedCharIndex, progress=${progress?.progress}');
+          debugPrint(
+            '[ReaderScreen] Will restore to: charIndex=$savedCharIndex, progress=${progress?.progress}',
+          );
         } else {
-          debugPrint('[ReaderScreen] No saved position, starting from beginning');
+          debugPrint(
+            '[ReaderScreen] No saved position, starting from beginning',
+          );
         }
       }
 
@@ -484,7 +514,11 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
   }
 
-  void _scheduleRepagination({int? initialCharIndex, bool retainCurrentPage = false, Size? actualSize}) {
+  void _scheduleRepagination({
+    int? initialCharIndex,
+    bool retainCurrentPage = false,
+    Size? actualSize,
+  }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_useWebViewReader) {
         if (!mounted) return;
@@ -496,11 +530,16 @@ class _ReaderScreenState extends State<ReaderScreen>
           // Use the saved position so that a layout change (e.g. fold/unfold) re-lays
           // out to the correct page rather than snapping back to the beginning.
           final saved = _savedProgress!;
-          final charIdx = saved.currentCharacterIndex ?? saved.lastVisibleCharacterIndex;
+          final charIdx =
+              saved.currentCharacterIndex ?? saved.lastVisibleCharacterIndex;
           if (charIdx != null && charIdx > 0) {
             targetCharIndex = charIdx;
-          } else if (saved.progress != null && saved.progress! > 0 && _totalCharacterCount > 0) {
-            targetCharIndex = (saved.progress! * (_totalCharacterCount - 1)).round().clamp(0, _totalCharacterCount - 1);
+          } else if (saved.progress != null &&
+              saved.progress! > 0 &&
+              _totalCharacterCount > 0) {
+            targetCharIndex = (saved.progress! * (_totalCharacterCount - 1))
+                .round()
+                .clamp(0, _totalCharacterCount - 1);
           } else {
             targetCharIndex = 0;
           }
@@ -520,24 +559,29 @@ class _ReaderScreenState extends State<ReaderScreen>
         final currentPage = _engine?.getPage(_currentPageIndex);
         // Prioritize lastVisibleCharacterIndex (where user was reading) over currentCharacterIndex
         targetCharIndex =
-            currentPage?.startCharIndex ?? 
-            _savedProgress?.lastVisibleCharacterIndex ?? 
+            currentPage?.startCharIndex ??
+            _savedProgress?.lastVisibleCharacterIndex ??
             _savedProgress?.currentCharacterIndex;
       } else if (initialCharIndex != null) {
         targetCharIndex = initialCharIndex;
       }
 
       // Prioritize lastVisibleCharacterIndex (where user was reading) over currentCharacterIndex
-      targetCharIndex ??= _savedProgress?.lastVisibleCharacterIndex ?? 
-                          _savedProgress?.currentCharacterIndex ?? 
-                          0;
+      targetCharIndex ??=
+          _savedProgress?.lastVisibleCharacterIndex ??
+          _savedProgress?.currentCharacterIndex ??
+          0;
       targetCharIndex = math.max(0, targetCharIndex);
 
       unawaited(_rebuildPagination(targetCharIndex, actualSize: actualSize));
     });
   }
 
-  Future<void> _rebuildPagination(int startCharIndex, {Size? actualSize, bool fastMode = false}) async {
+  Future<void> _rebuildPagination(
+    int startCharIndex, {
+    Size? actualSize,
+    bool fastMode = false,
+  }) async {
     if (!mounted || _docBlocks.isEmpty) return;
 
     // Navigation state should already be set when chapter was selected
@@ -562,10 +606,10 @@ class _ReaderScreenState extends State<ReaderScreen>
       sizeForMetrics ??= MediaQuery.of(context).size;
       final baseMetrics = _computePageMetrics(context, sizeForMetrics);
       final metrics = _adjustForUserPadding(baseMetrics);
-      
+
       // Store current metrics for progress saving
       _currentPageMetrics = metrics;
-      
+
       // Check if layout matches saved progress (for cache reuse)
       // If layout doesn't match, use fast mode for progressive pagination
       if (!fastMode && _savedProgress != null) {
@@ -595,13 +639,15 @@ class _ReaderScreenState extends State<ReaderScreen>
         _clearNavigatingState();
         return;
       }
-      
+
       // Use smaller window radius for fast mode to display content immediately
       final windowRadius = fastMode ? 1 : 3;
-      final targetPageIndex =
-          await engine.ensurePageForCharacter(startCharIndex, windowRadius: windowRadius);
+      final targetPageIndex = await engine.ensurePageForCharacter(
+        startCharIndex,
+        windowRadius: windowRadius,
+      );
       engine.addListener(_handleEngineUpdate);
-      
+
       // In fast mode, compute minimal window then continue in background
       // In normal mode, compute larger window before continuing
       if (fastMode) {
@@ -620,7 +666,10 @@ class _ReaderScreenState extends State<ReaderScreen>
         return;
       }
       final initialPage = engine.getPage(targetPageIndex);
-      final updatedTotalChars = math.max(_totalCharacterCount, engine.totalCharacters);
+      final updatedTotalChars = math.max(
+        _totalCharacterCount,
+        engine.totalCharacters,
+      );
 
       // Use SchedulerBinding to ensure we're not in a build phase
       if (mounted) {
@@ -633,8 +682,10 @@ class _ReaderScreenState extends State<ReaderScreen>
             _totalCharacterCount = updatedTotalChars;
             if (initialPage != null) {
               _currentCharacterIndex = initialPage.startCharIndex;
-              _progress =
-                  _calculateProgressForPage(initialPage, totalChars: updatedTotalChars);
+              _progress = _calculateProgressForPage(
+                initialPage,
+                totalChars: updatedTotalChars,
+              );
               _lastVisibleCharacterIndex = initialPage.endCharIndex;
               _logLastVisibleWords(initialPage);
             } else {
@@ -651,53 +702,74 @@ class _ReaderScreenState extends State<ReaderScreen>
             _resetPagerToCurrent();
             _scheduleProgressSave();
             // Close chapter dialog after navigation completes
-            
+
             // Restore saved page index or percentage
             // CRITICAL: Check if layout matches (screen size, font, etc.) before using page index
             final savedPageIndex = _savedProgress?.currentPageIndex;
             final pendingRestore = _pendingRestorePercentage;
-            
+
             // Check if layout matches - if screen size changed, page index won't be accurate
             bool layoutMatches = false;
             if (_savedProgress != null && metrics != null) {
               layoutMatches = _layoutsMatch(_savedProgress, metrics);
             }
-            
-            if (savedPageIndex != null && savedPageIndex >= 0 && savedPageIndex < engine.estimatedTotalPages && layoutMatches) {
+
+            if (savedPageIndex != null &&
+                savedPageIndex >= 0 &&
+                savedPageIndex < engine.estimatedTotalPages &&
+                layoutMatches) {
               // BEST: Use saved page index directly - layout matches, so page index is accurate!
               _pendingRestorePercentage = null;
               final targetPage = engine.getPage(savedPageIndex);
-              if (targetPage != null && targetPage.startCharIndex != initialPage?.startCharIndex) {
-                debugPrint('[ReaderScreen] Layout matches - restoring to saved page index: $savedPageIndex');
-                _scheduleRepagination(initialCharIndex: targetPage.startCharIndex);
+              if (targetPage != null &&
+                  targetPage.startCharIndex != initialPage?.startCharIndex) {
+                debugPrint(
+                  '[ReaderScreen] Layout matches - restoring to saved page index: $savedPageIndex',
+                );
+                _scheduleRepagination(
+                  initialCharIndex: targetPage.startCharIndex,
+                );
               } else {
-                debugPrint('[ReaderScreen] Already at correct page index: $savedPageIndex');
+                debugPrint(
+                  '[ReaderScreen] Already at correct page index: $savedPageIndex',
+                );
               }
             } else if (pendingRestore != null && updatedTotalChars > 0) {
               // FALLBACK: Use percentage if layout changed or page index not available
               // Percentage works across different screen sizes (foldable phone support)
               _pendingRestorePercentage = null;
-              
+
               if (savedPageIndex != null && !layoutMatches) {
-                debugPrint('[ReaderScreen] Layout changed (screen size/font different) - using percentage instead of page index');
+                debugPrint(
+                  '[ReaderScreen] Layout changed (screen size/font different) - using percentage instead of page index',
+                );
               }
               // FALLBACK: Use percentage if page index not available
               _pendingRestorePercentage = null;
-              final savedPercentage = pendingRestore * 100.0; // Convert to 0-100 range
+              final savedPercentage =
+                  pendingRestore * 100.0; // Convert to 0-100 range
               final currentPercentage = initialPage != null
-                  ? _calculateProgressForPage(initialPage, totalChars: updatedTotalChars) * 100.0
+                  ? _calculateProgressForPage(
+                          initialPage,
+                          totalChars: updatedTotalChars,
+                        ) *
+                        100.0
                   : 0.0;
-              
+
               // Only navigate if we're significantly off (more than 0.5%)
               if ((savedPercentage - currentPercentage).abs() > 0.5) {
-                debugPrint('[ReaderScreen] Restoring to saved progress: ${savedPercentage.toStringAsFixed(1)}% (current: ${currentPercentage.toStringAsFixed(1)}%)');
+                debugPrint(
+                  '[ReaderScreen] Restoring to saved progress: ${savedPercentage.toStringAsFixed(1)}% (current: ${currentPercentage.toStringAsFixed(1)}%)',
+                );
                 // Use the same jumpToPercentage method that the menu uses
                 _jumpToPercentage(savedPercentage);
               } else {
-                debugPrint('[ReaderScreen] Already at correct position: ${currentPercentage.toStringAsFixed(1)}%');
+                debugPrint(
+                  '[ReaderScreen] Already at correct position: ${currentPercentage.toStringAsFixed(1)}%',
+                );
               }
             }
-            
+
             _closeChapterDialog();
           }
         });
@@ -729,7 +801,6 @@ class _ReaderScreenState extends State<ReaderScreen>
     _navigatingToChapterIndex = null;
   }
 
-
   _PageMetrics _computePageMetrics(BuildContext context, Size? actualSize) {
     final mediaQuery = MediaQuery.of(context);
     // Use actualSize if provided (from LayoutBuilder), otherwise fall back to MediaQuery
@@ -740,8 +811,10 @@ class _ReaderScreenState extends State<ReaderScreen>
     // Calculate available height: screen height minus only system padding
     final systemVerticalPadding =
         mediaQuery.padding.top + mediaQuery.padding.bottom;
-    final bottomSafeInset =
-        math.max(mediaQuery.padding.bottom, mediaQuery.viewPadding.bottom);
+    final bottomSafeInset = math.max(
+      mediaQuery.padding.bottom,
+      mediaQuery.viewPadding.bottom,
+    );
     final keyboardInset = mediaQuery.viewInsets.bottom;
     final viewportInsetBottom = math.max(bottomSafeInset, keyboardInset);
     final maxWidth = math.max(120.0, size.width - systemHorizontalPadding);
@@ -751,18 +824,16 @@ class _ReaderScreenState extends State<ReaderScreen>
     final baseColor = theme.colorScheme.onSurface;
     // Use maybeOf to avoid error if DefaultTextHeightBehavior is not in widget tree
     // Provide default TextHeightBehavior if none is found
-    final textHeightBehavior = DefaultTextHeightBehavior.maybeOf(context) ??
+    final textHeightBehavior =
+        DefaultTextHeightBehavior.maybeOf(context) ??
         const TextHeightBehavior();
-    final baseStyle = theme.textTheme.bodyMedium?.copyWith(
+    final baseStyle =
+        theme.textTheme.bodyMedium?.copyWith(
           fontSize: _effectiveFontSize,
           height: 1.6,
           color: baseColor,
         ) ??
-        TextStyle(
-          fontSize: _effectiveFontSize,
-          height: 1.6,
-          color: baseColor,
-        );
+        TextStyle(fontSize: _effectiveFontSize, height: 1.6, color: baseColor);
 
     return _PageMetrics(
       maxWidth: maxWidth,
@@ -775,12 +846,18 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   _PageMetrics _adjustForUserPadding(_PageMetrics metrics) {
-    final adjustedWidth =
-        math.max(120.0, metrics.maxWidth - _horizontalPadding * 2);
-    final adjustedHeight =
-        math.max(160.0, metrics.maxHeight - _verticalPadding * 2);
-    final adjustedInset =
-        math.max(0.0, metrics.viewportBottomInset - _verticalPadding);
+    final adjustedWidth = math.max(
+      120.0,
+      metrics.maxWidth - _horizontalPadding * 2,
+    );
+    final adjustedHeight = math.max(
+      160.0,
+      metrics.maxHeight - _verticalPadding * 2,
+    );
+    final adjustedInset = math.max(
+      0.0,
+      metrics.viewportBottomInset - _verticalPadding,
+    );
     return _PageMetrics(
       maxWidth: adjustedWidth,
       maxHeight: adjustedHeight,
@@ -827,17 +904,18 @@ class _ReaderScreenState extends State<ReaderScreen>
   bool _isWebViewReadyForRestoration(WebViewPageUpdate update) {
     // WebView must report it's ready
     if (!_webViewController.isReady) return false;
-    
+
     // Must have calculated total characters (not just 0)
     if (update.totalChars <= 0) return false;
-    
+
     // Must have at least one page
     // (pageCount = 0 means still calculating, pageCount >= 1 is valid)
     if (update.pageCount <= 0) return false;
-    
+
     // Character indices must be valid
-    if (update.startCharIndex == null || update.endCharIndex == null) return false;
-    
+    if (update.startCharIndex == null || update.endCharIndex == null)
+      return false;
+
     return true;
   }
 
@@ -885,8 +963,6 @@ class _ReaderScreenState extends State<ReaderScreen>
     final start = math.max(0, wordList.length - count);
     return wordList.sublist(start).join(' ');
   }
-
-
 
   void _handlePointerDown(PointerDownEvent event) {
     // Only track if we don't already have an active pointer
@@ -1038,7 +1114,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       // Save the displayed progress percentage (what user sees at bottom)
       // This is more reliable than character indices
       final progressPercentage = _progress;
-      
+
       // Capture current layout metrics if available
       String? layoutKey;
       double? maxWidth;
@@ -1046,7 +1122,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       double? fontSize;
       double? horizontalPadding;
       double? verticalPadding;
-      
+
       if (_currentPageMetrics != null) {
         final metrics = _currentPageMetrics!;
         layoutKey = _computeLayoutKey(metrics);
@@ -1056,7 +1132,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         horizontalPadding = _horizontalPadding;
         verticalPadding = _verticalPadding;
       }
-      
+
       final progress = ReadingProgress(
         bookId: widget.book.id,
         currentCharacterIndex: page.startCharIndex,
@@ -1073,9 +1149,11 @@ class _ReaderScreenState extends State<ReaderScreen>
       );
       await _bookService.saveReadingProgress(progress);
       _savedProgress = progress;
-      
+
       if (kDebugMode) {
-        debugPrint('[ReaderScreen] Saved progress: ${(progressPercentage * 100).toStringAsFixed(1)}%');
+        debugPrint(
+          '[ReaderScreen] Saved progress: ${(progressPercentage * 100).toStringAsFixed(1)}%',
+        );
       }
     } catch (_) {
       // Saving progress is best-effort; ignore failures.
@@ -1092,7 +1170,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       // Save the displayed progress percentage (what user sees at bottom)
       // This is more reliable than character indices
       final progressPercentage = _progress;
-      
+
       // Capture current layout metrics if available
       String? layoutKey;
       double? maxWidth;
@@ -1112,14 +1190,17 @@ class _ReaderScreenState extends State<ReaderScreen>
       }
 
       if (kDebugMode) {
-        debugPrint('[ReaderScreen] Saved WebView progress: ${(progressPercentage * 100).toStringAsFixed(1)}% (exact: ${progressPercentage})');
+        debugPrint(
+          '[ReaderScreen] Saved WebView progress: ${(progressPercentage * 100).toStringAsFixed(1)}% (exact: ${progressPercentage})',
+        );
       }
 
       final progress = ReadingProgress(
         bookId: widget.book.id,
         currentCharacterIndex: _currentCharacterIndex,
         lastVisibleCharacterIndex: _lastVisibleCharacterIndex,
-        currentPageIndex: _currentPageIndex, // Save the actual page index - most reliable!
+        currentPageIndex:
+            _currentPageIndex, // Save the actual page index - most reliable!
         progress: progressPercentage, // Save the displayed progress percentage
         lastRead: DateTime.now(),
         maxWidth: maxWidth,
@@ -1147,27 +1228,32 @@ class _ReaderScreenState extends State<ReaderScreen>
       if (startCharIndex == null) return;
       final chunkIndex = _summaryService != null
           ? _summaryService!.estimateChunkIndexForCharacter(startCharIndex)
-          : EnhancedSummaryService.computeChunkIndexForCharacterStatic(startCharIndex);
-      
-      unawaited(_summaryDatabase.updateLastReadingStop(
-        widget.book.id,
-        chunkIndex: chunkIndex,
-        characterIndex: startCharIndex,
-      ));
-      if (_summaryService != null) {
-        unawaited(_summaryService!.updateLastReadingStop(
+          : EnhancedSummaryService.computeChunkIndexForCharacterStatic(
+              startCharIndex,
+            );
+
+      unawaited(
+        _summaryDatabase.updateLastReadingStop(
           widget.book.id,
           chunkIndex: chunkIndex,
           characterIndex: startCharIndex,
-        ));
+        ),
+      );
+      if (_summaryService != null) {
+        unawaited(
+          _summaryService!.updateLastReadingStop(
+            widget.book.id,
+            chunkIndex: chunkIndex,
+            characterIndex: startCharIndex,
+          ),
+        );
       }
     } catch (_) {
       // Updating reading stop is best-effort; ignore failures.
     }
   }
 
-  double get _effectiveFontSize =>
-      _defaultReaderFontSize * _fontScale;
+  double get _effectiveFontSize => _defaultReaderFontSize * _fontScale;
 
   Future<void> _loadFontScale() async {
     final storedScale = await _settingsService.getReaderFontScale();
@@ -1180,8 +1266,6 @@ class _ReaderScreenState extends State<ReaderScreen>
       }
     }
   }
-
-
 
   Future<bool> _goToNextPage({bool resetPager = true}) async {
     if (_useWebViewReader) {
@@ -1289,7 +1373,9 @@ class _ReaderScreenState extends State<ReaderScreen>
         : 0.0;
 
     if (kDebugMode) {
-      debugPrint('[WebView] PAGE_CHANGED: page=${update.pageIndex}/${update.pageCount}, chars=$startChar-$endChar/$totalChars, waiting=$_isWaitingForWebViewInit, restored=$_hasRestoredProgress, loading=$_isLoading');
+      debugPrint(
+        '[WebView] PAGE_CHANGED: page=${update.pageIndex}/${update.pageCount}, chars=$startChar-$endChar/$totalChars, waiting=$_isWaitingForWebViewInit, restored=$_hasRestoredProgress, loading=$_isLoading',
+      );
     }
 
     // Update state first so _totalCharacterCount is available
@@ -1298,9 +1384,13 @@ class _ReaderScreenState extends State<ReaderScreen>
       if (previousEnd != null) {
         final gap = startChar - previousEnd - 1;
         if (gap > 1) {
-          debugPrint('[WebView] Page gap detected: +$gap chars (prevEnd=$previousEnd start=$startChar page=${update.pageIndex})');
+          debugPrint(
+            '[WebView] Page gap detected: +$gap chars (prevEnd=$previousEnd start=$startChar page=${update.pageIndex})',
+          );
         } else if (gap < -1) {
-          debugPrint('[WebView] Page overlap detected: ${gap.abs()} chars (prevEnd=$previousEnd start=$startChar page=${update.pageIndex})');
+          debugPrint(
+            '[WebView] Page overlap detected: ${gap.abs()} chars (prevEnd=$previousEnd start=$startChar page=${update.pageIndex})',
+          );
         }
       }
     }
@@ -1314,19 +1404,21 @@ class _ReaderScreenState extends State<ReaderScreen>
       _progress = progress;
       _currentChapterIndex = _resolveChapterIndexForChar(startChar);
       _showProgressBar = false;
-      
+
       // Clear navigation flag only when restoration is complete (or not applicable)
       // During restoration we keep overlay visible until we've reached the saved position
       if (_hasRestoredProgress) {
         _isNavigating = false;
       }
-      
+
       _navigatingToChapterIndex = null;
     });
 
     // Handle pending character index navigation (for chapter navigation, or from restoration when WebView wasn't ready)
     final pendingCharIndex = _pendingWebViewCharIndex;
-    if (pendingCharIndex != null && totalChars > 0 && _webViewController.isReady) {
+    if (pendingCharIndex != null &&
+        totalChars > 0 &&
+        _webViewController.isReady) {
       _pendingWebViewCharIndex = null;
       if (pendingCharIndex > 0) {
         // Clamp to valid range based on WebView's reported total
@@ -1334,7 +1426,9 @@ class _ReaderScreenState extends State<ReaderScreen>
         final currentStartChar = startChar;
         // Only navigate if we're significantly off from current position
         if ((clamped - currentStartChar).abs() > 1) {
-          debugPrint('[WebView] Navigating to char index: $clamped (current: $currentStartChar, total: $totalChars)');
+          debugPrint(
+            '[WebView] Navigating to char index: $clamped (current: $currentStartChar, total: $totalChars)',
+          );
           setState(() {
             _isNavigating = true;
           });
@@ -1351,16 +1445,21 @@ class _ReaderScreenState extends State<ReaderScreen>
     // page update. We restore only after that, so layout is stable (no re-pagination glitches).
     if (_isWaitingForWebViewInit) {
       if (!_isWebViewReadyForRestoration(update)) {
-        debugPrint('[WebView] INIT: Not ready yet - totalChars=${update.totalChars}, pageCount=${update.pageCount}, ready=${_webViewController.isReady}');
+        debugPrint(
+          '[WebView] INIT: Not ready yet - totalChars=${update.totalChars}, pageCount=${update.pageCount}, ready=${_webViewController.isReady}',
+        );
         return;
       }
-      debugPrint('[WebView] INIT: WebView ready (first update) - totalChars=${update.totalChars}, pageCount=${update.pageCount}. Waiting for styles then restore.');
+      debugPrint(
+        '[WebView] INIT: WebView ready (first update) - totalChars=${update.totalChars}, pageCount=${update.pageCount}. Waiting for styles then restore.',
+      );
       if (_currentPageMetrics != null) {
         _lastWebViewLayoutKey = _computeLayoutKey(_currentPageMetrics!);
       }
       setState(() {
         _isWaitingForWebViewInit = false;
-        _isNavigating = true; // Keep overlay until we've restored on next update
+        _isNavigating =
+            true; // Keep overlay until we've restored on next update
       });
       return; // Skip Phase 2; next update will be after our updateStyles → updateLayout
     }
@@ -1369,7 +1468,9 @@ class _ReaderScreenState extends State<ReaderScreen>
     // Run restore logic only while we have not yet restored (_hasRestoredProgress false).
     // Once restored, skip this block on subsequent page flips – we must not navigate back
     // to saved position when the user flips forward (e.g. past a chapter boundary).
-    if (!_stylesAppliedForRestore || !_webViewController.isReady || update.pageCount <= 0) {
+    if (!_stylesAppliedForRestore ||
+        !_webViewController.isReady ||
+        update.pageCount <= 0) {
       return;
     }
 
@@ -1378,13 +1479,16 @@ class _ReaderScreenState extends State<ReaderScreen>
       // Restoring to start avoids layout-induced jump: when we use end, the page
       // containing it can extend further after layout change, so displayed % jumps
       // forward (e.g. 38.6% -> 38.9%). Start is a more stable anchor.
-      final savedCharIndex = _savedProgress?.currentCharacterIndex ??
-                             _savedProgress?.lastVisibleCharacterIndex;
+      final savedCharIndex =
+          _savedProgress?.currentCharacterIndex ??
+          _savedProgress?.lastVisibleCharacterIndex;
 
       if (savedCharIndex != null && savedCharIndex > 0) {
         if (savedCharIndex >= startChar && savedCharIndex <= endChar) {
           // Reached saved position (second update from updateLayout, or confirm after navigate).
-          debugPrint('[WebView] RESTORE: Reached saved position (savedChar=$savedCharIndex, page $startChar–$endChar)');
+          debugPrint(
+            '[WebView] RESTORE: Reached saved position (savedChar=$savedCharIndex, page $startChar–$endChar)',
+          );
           _hasRestoredProgress = true;
           _isRestoringPosition = false;
           setState(() {
@@ -1395,7 +1499,9 @@ class _ReaderScreenState extends State<ReaderScreen>
           // (e.g. when EPUB extraction changed and the saved index is out-of-range).
           _restoreAttempts++;
           if (_restoreAttempts <= 3) {
-            debugPrint('[WebView] RESTORE: Navigating to character index $savedCharIndex (attempt $_restoreAttempts, current page $startChar–$endChar, pageCount=${update.pageCount})');
+            debugPrint(
+              '[WebView] RESTORE: Navigating to character index $savedCharIndex (attempt $_restoreAttempts, current page $startChar–$endChar, pageCount=${update.pageCount})',
+            );
             setState(() {
               _isNavigating = true;
             });
@@ -1403,7 +1509,9 @@ class _ReaderScreenState extends State<ReaderScreen>
             return;
           } else {
             // char-index approach has not converged – fall through to percentage fallback below.
-            debugPrint('[WebView] RESTORE: char-index retry limit reached ($_restoreAttempts), trying percentage fallback');
+            debugPrint(
+              '[WebView] RESTORE: char-index retry limit reached ($_restoreAttempts), trying percentage fallback',
+            );
           }
         }
       }
@@ -1412,10 +1520,14 @@ class _ReaderScreenState extends State<ReaderScreen>
       if (!_hasRestoredProgress) {
         final savedPercentage = _savedProgress?.progress;
         if (savedPercentage != null && savedPercentage > 0 && totalChars > 0) {
-          final fallbackCharIndex = (savedPercentage * (totalChars - 1)).round().clamp(0, totalChars - 1);
+          final fallbackCharIndex = (savedPercentage * (totalChars - 1))
+              .round()
+              .clamp(0, totalChars - 1);
           _restoreAttempts++;
           if (_restoreAttempts <= 6) {
-            debugPrint('[WebView] RESTORE: Using percentage fallback ${(savedPercentage * 100).toStringAsFixed(1)}% -> char $fallbackCharIndex (attempt $_restoreAttempts)');
+            debugPrint(
+              '[WebView] RESTORE: Using percentage fallback ${(savedPercentage * 100).toStringAsFixed(1)}% -> char $fallbackCharIndex (attempt $_restoreAttempts)',
+            );
             setState(() {
               _isNavigating = true;
             });
@@ -1423,10 +1535,14 @@ class _ReaderScreenState extends State<ReaderScreen>
             return;
           } else {
             // Percentage approach also did not converge – accept current position.
-            debugPrint('[WebView] RESTORE: All fallbacks exhausted, accepting current position (startChar=$startChar)');
+            debugPrint(
+              '[WebView] RESTORE: All fallbacks exhausted, accepting current position (startChar=$startChar)',
+            );
           }
         } else {
-          debugPrint('[WebView] RESTORE: No saved position, showing from beginning');
+          debugPrint(
+            '[WebView] RESTORE: No saved position, showing from beginning',
+          );
         }
         _hasRestoredProgress = true;
         _isRestoringPosition = false;
@@ -1441,7 +1557,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     // _isRestoringPosition is true, so this is safe to call unconditionally.
     unawaited(_saveWebViewProgress());
     _closeChapterDialog();
-    
+
     // Trigger auto-show latest events after first page load
     if (!_hasTriggeredAutoShowLatestEvents && mounted) {
       _hasTriggeredAutoShowLatestEvents = true;
@@ -1452,7 +1568,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         }
       });
     }
-    
+
     if (kDebugMode) {
       unawaited(_logWebViewPageText(update));
     }
@@ -1466,12 +1582,10 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     final start = update.startCharIndex ?? 0;
     final end = update.endCharIndex ?? start;
-    final expectedCurrent =
-        _sliceExpectedTextForLog(fullText, start, end);
+    final expectedCurrent = _sliceExpectedTextForLog(fullText, start, end);
 
     WebViewPageRange? nextInfo;
-    if (_webViewController.isReady &&
-        update.pageIndex + 1 < update.pageCount) {
+    if (_webViewController.isReady && update.pageIndex + 1 < update.pageCount) {
       nextInfo = await _webViewController.getPageInfo(update.pageIndex + 1);
     }
     final expectedNext = nextInfo == null
@@ -1526,9 +1640,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   String _sanitizeLogText(String text) {
-    return text
-        .replaceAll('\uFFFC', '[img]')
-        .replaceAll('\n', '\\n');
+    return text.replaceAll('\uFFFC', '[img]').replaceAll('\n', '\\n');
   }
 
   String _formatLogText(String text) {
@@ -1630,8 +1742,9 @@ class _ReaderScreenState extends State<ReaderScreen>
                 controller: controller,
                 focusNode: focusNode,
                 autofocus: true,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
                   labelText: 'Pourcentage',
                   suffixText: '%',
@@ -1644,10 +1757,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                   onPressed: () => Navigator.of(context).pop(),
                   child: const Text('Annuler'),
                 ),
-                TextButton(
-                  onPressed: submit,
-                  child: const Text('Aller'),
-                ),
+                TextButton(onPressed: submit, child: const Text('Aller')),
               ],
             );
           },
@@ -1671,7 +1781,7 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   void _jumpToPercentage(double percentage) {
     if (!mounted) return;
-    
+
     try {
       if (_useWebViewReader) {
         final totalChars = _totalCharacterCount;
@@ -1682,7 +1792,9 @@ class _ReaderScreenState extends State<ReaderScreen>
         final target = (normalized / 100.0) * (totalChars - 1);
         final rounded = target.round();
         final clamped = rounded.clamp(0, totalChars - 1);
-        debugPrint('[ReaderScreen] Jumping to $normalized% -> char index $clamped');
+        debugPrint(
+          '[ReaderScreen] Jumping to $normalized% -> char index $clamped',
+        );
         setState(() {
           _isNavigating = true;
         });
@@ -1696,7 +1808,9 @@ class _ReaderScreenState extends State<ReaderScreen>
       }
       // Safety check: ensure engine and book data are loaded
       if (_engine == null || _totalCharacterCount <= 0) {
-        debugPrint('[ReaderScreen] Cannot jump to percentage: engine not ready');
+        debugPrint(
+          '[ReaderScreen] Cannot jump to percentage: engine not ready',
+        );
         return;
       }
 
@@ -1715,8 +1829,10 @@ class _ReaderScreenState extends State<ReaderScreen>
       final target = (normalized / 100.0) * (totalChars - 1);
       final rounded = target.round();
       final clamped = rounded.clamp(0, totalChars - 1);
-      
-      debugPrint('[ReaderScreen] Jumping to $normalized% -> char index $clamped');
+
+      debugPrint(
+        '[ReaderScreen] Jumping to $normalized% -> char index $clamped',
+      );
       _scheduleRepagination(initialCharIndex: clamped);
     } catch (e, stack) {
       debugPrint('[ReaderScreen] Error during jump to percentage: $e');
@@ -1747,7 +1863,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     // Handle loading state - return early before LayoutBuilder
     if (_isLoading) {
       return Scaffold(
@@ -1779,7 +1895,11 @@ class _ReaderScreenState extends State<ReaderScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.error_outline, size: 64, color: theme.colorScheme.error),
+                  Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: theme.colorScheme.error,
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     _errorMessage!,
@@ -1811,7 +1931,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         ),
       );
     }
-    
+
     return LayoutBuilder(
       builder: (context, constraints) {
         // Use LayoutBuilder to get actual widget size, especially important for foldable devices
@@ -1820,7 +1940,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         final baseMetrics = _computePageMetrics(context, actualSize);
         final metrics = _adjustForUserPadding(baseMetrics);
         _currentPageMetrics = metrics;
-        
+
         // Trigger repagination if size changed significantly
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -1839,7 +1959,10 @@ class _ReaderScreenState extends State<ReaderScreen>
                 textHeightBehavior: currentMetrics.textHeightBehavior,
                 textScaler: currentMetrics.textScaler,
               )) {
-            _scheduleRepagination(retainCurrentPage: true, actualSize: actualSize);
+            _scheduleRepagination(
+              retainCurrentPage: true,
+              actualSize: actualSize,
+            );
           }
         });
 
@@ -1868,7 +1991,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     final progressLabel = totalChunks == 0
         ? (l10n?.ragIndexingInitializing ?? 'Indexing in progress (...)')
         : (l10n?.ragIndexingProgress(progress.toInt()) ??
-            'Indexing in progress (${progress.toInt()}%)');
+              'Indexing in progress (${progress.toInt()}%)');
 
     return Container(
       width: double.infinity,
@@ -1881,7 +2004,9 @@ class _ReaderScreenState extends State<ReaderScreen>
             height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.onPrimaryContainer),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                theme.colorScheme.onPrimaryContainer,
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -1898,7 +2023,11 @@ class _ReaderScreenState extends State<ReaderScreen>
     );
   }
 
-  Widget _buildReaderContent(BuildContext context, Size actualSize, _PageMetrics metrics) {
+  Widget _buildReaderContent(
+    BuildContext context,
+    Size actualSize,
+    _PageMetrics metrics,
+  ) {
     final theme = Theme.of(context);
 
     // Note: Loading and error states are now handled in build() before LayoutBuilder
@@ -1918,7 +2047,8 @@ class _ReaderScreenState extends State<ReaderScreen>
     // This reduces JIT compilation delay on first selection in debug mode
     return SelectionWarmup(
       child: Scaffold(
-        resizeToAvoidBottomInset: false, // Prevent repagination when keyboard opens (e.g. for dialogs)
+        resizeToAvoidBottomInset:
+            false, // Prevent repagination when keyboard opens (e.g. for dialogs)
         body: Column(
           children: [
             _buildRagIndexingBanner(context),
@@ -1973,7 +2103,8 @@ class _ReaderScreenState extends State<ReaderScreen>
                                 const CircularProgressIndicator(),
                                 const SizedBox(height: 16),
                                 Text(
-                                  AppLocalizations.of(context)?.repaginating ?? 'Repaginating...',
+                                  AppLocalizations.of(context)?.repaginating ??
+                                      'Repaginating...',
                                   style: theme.textTheme.bodyMedium,
                                 ),
                               ],
@@ -2006,11 +2137,13 @@ class _ReaderScreenState extends State<ReaderScreen>
   ) {
     final theme = Theme.of(context);
     final html = _webViewHtml;
-    
+
     if (kDebugMode) {
-      debugPrint('[WebView] _buildWebViewReaderContent: html=${html != null ? "present (${html.length} chars)" : "NULL"}, waiting=$_isWaitingForWebViewInit, loading=$_isLoading, ready=${_webViewController.isReady}');
+      debugPrint(
+        '[WebView] _buildWebViewReaderContent: html=${html != null ? "present (${html.length} chars)" : "NULL"}, waiting=$_isWaitingForWebViewInit, loading=$_isLoading, ready=${_webViewController.isReady}',
+      );
     }
-    
+
     if (html == null) {
       debugPrint('[WebView] HTML is NULL, returning empty widget');
       return const SizedBox.shrink();
@@ -2018,7 +2151,8 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     final l10n = AppLocalizations.of(context);
     final defaultActionLabel = l10n?.textSelectionDefaultLabel ?? 'Translate';
-    final actionLabel = (_selectionActionLabel ?? defaultActionLabel).trim().isEmpty
+    final actionLabel =
+        (_selectionActionLabel ?? defaultActionLabel).trim().isEmpty
         ? defaultActionLabel
         : _selectionActionLabel!;
 
@@ -2028,12 +2162,16 @@ class _ReaderScreenState extends State<ReaderScreen>
       final layoutKey = _computeLayoutKey(metrics);
       if (_webViewController.isReady && _lastWebViewLayoutKey != layoutKey) {
         if (kDebugMode) {
-          debugPrint('[WebView] Layout key changed: old=$_lastWebViewLayoutKey, new=$layoutKey - triggering updateLayout()');
+          debugPrint(
+            '[WebView] Layout key changed: old=$_lastWebViewLayoutKey, new=$layoutKey - triggering updateLayout()',
+          );
         }
         _lastWebViewLayoutKey = layoutKey;
         unawaited(_webViewController.updateLayout());
       } else if (kDebugMode && _webViewController.isReady) {
-        debugPrint('[WebView] Layout key unchanged: $layoutKey - skipping updateLayout()');
+        debugPrint(
+          '[WebView] Layout key unchanged: $layoutKey - skipping updateLayout()',
+        );
       }
     });
 
@@ -2093,7 +2231,9 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (!_webViewController.isAttached || !_webViewController.isReady) {
       return;
     }
-    final fontSize = metrics.baseTextStyle.fontSize ?? _defaultReaderFontSize;
+    final rawFontSize =
+        metrics.baseTextStyle.fontSize ?? _defaultReaderFontSize;
+    final fontSize = metrics.textScaler.scale(rawFontSize);
     final lineHeight = metrics.baseTextStyle.height ?? 1.6;
     final styleKey = [
       fontSize.toStringAsFixed(2),
@@ -2105,15 +2245,18 @@ class _ReaderScreenState extends State<ReaderScreen>
     ].join('|');
     if (_lastWebViewStyleKey != styleKey) {
       _lastWebViewStyleKey = styleKey;
-      _stylesAppliedForRestore = true; // Layout will reflect our styles; safe to restore after next page update
-      unawaited(_webViewController.updateStyles(
-        fontSize: fontSize,
-        lineHeight: lineHeight,
-        textColor: theme.colorScheme.onSurface,
-        backgroundColor: theme.scaffoldBackgroundColor,
-        paddingX: _horizontalPadding,
-        paddingY: _verticalPadding,
-      ));
+      _stylesAppliedForRestore =
+          true; // Layout will reflect our styles; safe to restore after next page update
+      unawaited(
+        _webViewController.updateStyles(
+          fontSize: fontSize,
+          lineHeight: lineHeight,
+          textColor: theme.colorScheme.onSurface,
+          backgroundColor: theme.scaffoldBackgroundColor,
+          paddingX: _horizontalPadding,
+          paddingY: _verticalPadding,
+        ),
+      );
     }
 
     if (_lastWebViewActionLabel != actionLabel) {
@@ -2152,7 +2295,9 @@ class _ReaderScreenState extends State<ReaderScreen>
                 children: [
                   Text(
                     _currentChapterTitle ?? widget.book.title,
-                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -2178,7 +2323,8 @@ class _ReaderScreenState extends State<ReaderScreen>
       return const SizedBox.shrink();
     }
 
-    final webViewBox = _webViewKey.currentContext?.findRenderObject() as RenderBox?;
+    final webViewBox =
+        _webViewKey.currentContext?.findRenderObject() as RenderBox?;
     if (webViewBox == null) {
       return const SizedBox.shrink();
     }
@@ -2199,7 +2345,8 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     final l10n = AppLocalizations.of(context);
     final defaultActionLabel = l10n?.textSelectionDefaultLabel ?? 'Translate';
-    final actionLabel = (_selectionActionLabel ?? defaultActionLabel).trim().isEmpty
+    final actionLabel =
+        (_selectionActionLabel ?? defaultActionLabel).trim().isEmpty
         ? defaultActionLabel
         : (_selectionActionLabel ?? defaultActionLabel);
     final materialL10n = MaterialLocalizations.of(context);
@@ -2234,7 +2381,9 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     return Positioned.fill(
       child: AdaptiveTextSelectionToolbar.buttonItems(
-        anchors: TextSelectionToolbarAnchors(primaryAnchor: localRect.topCenter),
+        anchors: TextSelectionToolbarAnchors(
+          primaryAnchor: localRect.topCenter,
+        ),
         buttonItems: items,
       ),
     );
@@ -2244,7 +2393,8 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (_useWebViewReader) {
       final chapterIndex = _currentChapterIndex;
       if (chapterIndex == null) return null;
-      if (chapterIndex < 0 || chapterIndex >= _chapterEntries.length) return null;
+      if (chapterIndex < 0 || chapterIndex >= _chapterEntries.length)
+        return null;
       return _chapterEntries[chapterIndex].title;
     }
     if (_engine == null) return null;
@@ -2283,7 +2433,8 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     final l10n = AppLocalizations.of(context);
     final defaultActionLabel = l10n?.textSelectionDefaultLabel ?? 'Translate';
-    final actionLabel = (_selectionActionLabel ?? defaultActionLabel).trim().isEmpty
+    final actionLabel =
+        (_selectionActionLabel ?? defaultActionLabel).trim().isEmpty
         ? defaultActionLabel
         : _selectionActionLabel!;
 
@@ -2296,25 +2447,26 @@ class _ReaderScreenState extends State<ReaderScreen>
         ),
         child: Align(
           alignment: Alignment.center,
-            child: PageContentView(
-              content: page,
-              maxWidth: metrics.maxWidth,
-              maxHeight: metrics.maxHeight,
-              textHeightBehavior: metrics.textHeightBehavior,
-              textScaler: metrics.textScaler,
-              actionLabel: actionLabel,
-              onSelectionAction: _handleSelectionAction,
-              onSelectionChanged: _handleSelectionChanged,
-              isProcessingAction: _isProcessingSelection,
-            ),
+          child: PageContentView(
+            content: page,
+            maxWidth: metrics.maxWidth,
+            maxHeight: metrics.maxHeight,
+            textHeightBehavior: metrics.textHeightBehavior,
+            textScaler: metrics.textScaler,
+            actionLabel: actionLabel,
+            onSelectionAction: _handleSelectionAction,
+            onSelectionChanged: _handleSelectionChanged,
+            isProcessingAction: _isProcessingSelection,
+          ),
         ),
       ),
     );
   }
 
   Future<void> _openReadingMenu() async {
-    final count =
-        await _translationDatabase.getTranslationsCount(widget.book.id);
+    final count = await _translationDatabase.getTranslationsCount(
+      widget.book.id,
+    );
     if (!mounted) return;
 
     final action = await showReaderMenu(
@@ -2441,7 +2593,9 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (!mounted) return;
 
     // Check if auto-show is enabled for this book
-    final shouldShow = await _settingsService.getAutoShowLatestEvents(widget.book.id);
+    final shouldShow = await _settingsService.getAutoShowLatestEvents(
+      widget.book.id,
+    );
     if (!shouldShow) return;
 
     // Check if book is indexed
@@ -2455,7 +2609,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       currentCharPosition: _currentCharacterIndex,
       minChunks: 1,
     );
-    
+
     if (!hasEnough) return;
 
     // Show the dialog automatically
@@ -2498,31 +2652,27 @@ class _ReaderScreenState extends State<ReaderScreen>
     try {
       await _summaryService!.deleteBookSummaries(widget.book.id);
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.summaryDeleted)),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l10n.summaryDeleted)));
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text(l10n.resetSummariesError)),
-      );
+      messenger.showSnackBar(SnackBar(content: Text(l10n.resetSummariesError)));
     }
   }
 
   Future<void> _returnToLibrary() {
     return returnToLibrary(
       context,
-      openLibrary: () => Navigator.of(context, rootNavigator: true)
-          .pushNamedAndRemoveUntil(libraryRoute, (_) => false),
+      openLibrary: () => Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pushNamedAndRemoveUntil(libraryRoute, (_) => false),
     );
   }
 
   Future<void> _openSettings() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const SettingsScreen(),
-      ),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const SettingsScreen()));
     if (!mounted) return;
     await _initializeSummaryService();
     await _loadSelectionActionConfig();
@@ -2532,7 +2682,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   void _showChapterSelector() {
     final navigator = Navigator.of(context);
     _chapterDialogNavigator = navigator;
-    
+
     showModalBottomSheet<void>(
       context: context,
       builder: (dialogContext) {
@@ -2653,9 +2803,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (shouldGoToSettings == true && mounted) {
       await Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (context) => const SettingsScreen(),
-        ),
+        MaterialPageRoute(builder: (context) => const SettingsScreen()),
       );
       await _initializeSummaryService();
       await _loadVerticalPadding();
@@ -2672,7 +2820,10 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (!mounted || _engine == null) return;
     final engine = _engine!;
     final estimated = engine.estimatedTotalPages;
-    final updatedTotalChars = math.max(_totalCharacterCount, engine.totalCharacters);
+    final updatedTotalChars = math.max(
+      _totalCharacterCount,
+      engine.totalCharacters,
+    );
     final currentPage = engine.getPage(_currentPageIndex);
 
     setState(() {
@@ -2680,8 +2831,10 @@ class _ReaderScreenState extends State<ReaderScreen>
       _totalCharacterCount = updatedTotalChars;
       if (currentPage != null) {
         _currentCharacterIndex = currentPage.startCharIndex;
-        _progress =
-            _calculateProgressForPage(currentPage, totalChars: updatedTotalChars);
+        _progress = _calculateProgressForPage(
+          currentPage,
+          totalChars: updatedTotalChars,
+        );
         _lastVisibleCharacterIndex = currentPage.endCharIndex;
         // Don't log here, this is called frequently during background pagination
       } else {
@@ -2746,8 +2899,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       return;
     }
 
-    final visibleIndex =
-        _lastVisibleCharacterIndex ?? currentPage.endCharIndex;
+    final visibleIndex = _lastVisibleCharacterIndex ?? currentPage.endCharIndex;
 
     final progress = ReadingProgress(
       bookId: widget.book.id,
@@ -2775,7 +2927,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     if (page != null) {
       unawaited(_updateLastReadingStopOnExit());
     }
-    
+
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -2834,13 +2986,16 @@ class _ReaderScreenState extends State<ReaderScreen>
       final promptService = PromptConfigService(prefs);
       final languageName = l10n.appLanguageName;
 
-      final label = (_selectionActionLabel ??
-              promptService.getTextActionLabel(languageCode))
-          .trim()
-          .isEmpty
+      final label =
+          (_selectionActionLabel ??
+                  promptService.getTextActionLabel(languageCode))
+              .trim()
+              .isEmpty
           ? promptService.getTextActionLabel(languageCode)
-          : (_selectionActionLabel ?? promptService.getTextActionLabel(languageCode));
-      final promptTemplate = _selectionActionPrompt ??
+          : (_selectionActionLabel ??
+                promptService.getTextActionLabel(languageCode));
+      final promptTemplate =
+          _selectionActionPrompt ??
           promptService.getTextActionPrompt(languageCode);
 
       if (mounted) {
@@ -2888,9 +3043,9 @@ class _ReaderScreenState extends State<ReaderScreen>
       debugPrint('Error executing selection action: $e');
       debugPrint('$stack');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.textSelectionActionError)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.textSelectionActionError)));
       }
     } finally {
       if (progressVisible && mounted) {
@@ -2916,7 +3071,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       translation: translation,
       createdAt: DateTime.now(),
     );
-    
+
     await _translationDatabase.saveTranslation(savedTranslation);
   }
 
@@ -2935,7 +3090,7 @@ class _ReaderScreenState extends State<ReaderScreen>
       builder: (context) {
         final screenHeight = MediaQuery.of(context).size.height;
         final maxDialogHeight = screenHeight * 0.75; // Use 75% of screen height
-        
+
         return Dialog(
           child: ConstrainedBox(
             constraints: BoxConstraints(
@@ -2953,9 +3108,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                       Expanded(
                         child: Text(
                           actionLabel,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleLarge
+                          style: Theme.of(context).textTheme.titleLarge
                               ?.copyWith(fontWeight: FontWeight.bold),
                         ),
                       ),
@@ -2968,10 +3121,9 @@ class _ReaderScreenState extends State<ReaderScreen>
                   const SizedBox(height: 16),
                   Text(
                     l10n.textSelectionSelectedTextLabel,
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelMedium
-                        ?.copyWith(fontWeight: FontWeight.bold),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Flexible(
@@ -2980,7 +3132,9 @@ class _ReaderScreenState extends State<ReaderScreen>
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: SingleChildScrollView(
@@ -3055,14 +3209,11 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     for (final line in lines) {
       if (line.startsWith('Original:')) {
-        originalFromResponse =
-            line.substring('Original:'.length).trim();
+        originalFromResponse = line.substring('Original:'.length).trim();
       } else if (line.startsWith('Pronunciation:')) {
-        pronunciation =
-            line.substring('Pronunciation:'.length).trim();
+        pronunciation = line.substring('Pronunciation:'.length).trim();
       } else if (line.startsWith('Translation:')) {
-        translation =
-            line.substring('Translation:'.length).trim();
+        translation = line.substring('Translation:'.length).trim();
       }
     }
 
@@ -3074,15 +3225,15 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     // For original, prefer the model's echo if present, otherwise the
     // user's selected text.
-    originalFromResponse ??=
-        originalText.trim().isNotEmpty ? originalText.trim() : null;
+    originalFromResponse ??= originalText.trim().isNotEmpty
+        ? originalText.trim()
+        : null;
 
     return _ParsedSelectionActionResult(
       originalFromResponse: originalFromResponse,
-      pronunciation:
-          pronunciation != null && pronunciation.isNotEmpty
-              ? pronunciation
-              : null,
+      pronunciation: pronunciation != null && pronunciation.isNotEmpty
+          ? pronunciation
+          : null,
       translation: translation != null && translation.isNotEmpty
           ? translation
           : null,
@@ -3117,15 +3268,14 @@ class _ReaderScreenState extends State<ReaderScreen>
     final children = <Widget>[];
 
     // Don't display the "Original:" section - it's already shown above
-    
+
     if (pronunciation != null) {
       children.add(
         Text(
           l10n.pronunciation,
-          style: Theme.of(context)
-              .textTheme
-              .labelMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
       );
       children.add(const SizedBox(height: 8));
@@ -3147,10 +3297,9 @@ class _ReaderScreenState extends State<ReaderScreen>
       children.add(
         Text(
           l10n.translation,
-          style: Theme.of(context)
-              .textTheme
-              .labelMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
+          style: Theme.of(
+            context,
+          ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.bold),
         ),
       );
       children.add(const SizedBox(height: 8));
@@ -3318,10 +3467,7 @@ class _ReaderScreenState extends State<ReaderScreen>
 
       final normalizedText = HtmlTextExtractor.extract(html);
       chapterOffsets.add(
-        _ChapterOffset(
-          chapterIndex: i,
-          startChar: totalCharacters,
-        ),
+        _ChapterOffset(chapterIndex: i, startChar: totalCharacters),
       );
       totalCharacters += normalizedText.length;
       fullTextBuffer.write(normalizedText);
@@ -3346,11 +3492,15 @@ class _ReaderScreenState extends State<ReaderScreen>
       ..writeln('<style>')
       ..writeln(_webViewBaseCss)
       ..writeln(cssBuffer.toString())
+      ..writeln(_webViewOverrideCss)
       ..writeln('</style>')
       ..writeln('</head>')
       ..writeln('<body>')
+      ..writeln('<div id="stage">')
+      ..writeln('<span id="line-probe" aria-hidden="true">M</span>')
       ..writeln('<div id="reader">')
       ..writeln(contentBuffer.toString())
+      ..writeln('</div>')
       ..writeln('</div>')
       ..writeln(_webViewSelectionMenuHtml)
       ..writeln('<script>')
@@ -3431,7 +3581,8 @@ class _ReaderScreenState extends State<ReaderScreen>
         if (data == null || data.isEmpty) {
           return null;
         }
-        final mime = entry.value.ContentMimeType ??
+        final mime =
+            entry.value.ContentMimeType ??
             _guessMimeType(entry.key) ??
             _guessMimeType(normalized) ??
             'application/octet-stream';
@@ -3492,21 +3643,32 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-}
-body {
   font-size: var(--reader-font-size);
   line-height: var(--reader-line-height);
   color: var(--reader-text-color);
   background: var(--reader-bg-color);
-  padding: var(--reader-padding-y) var(--reader-padding-x);
-  box-sizing: border-box;
   -webkit-text-size-adjust: none;
   -webkit-touch-callout: none;
   -webkit-user-select: text;
   user-select: text;
 }
+#stage {
+  position: absolute;
+  inset: var(--reader-padding-y) var(--reader-padding-x);
+  box-sizing: border-box;
+}
+#line-probe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  font: inherit;
+  line-height: var(--reader-line-height);
+}
 #reader {
-  width: var(--page-width);
+  width: 100%;
   height: var(--page-height);
   column-width: var(--page-width);
   column-gap: 0;
@@ -3566,6 +3728,68 @@ body {
 }
 ''';
 
+  /// After EPUB CSS so publisher `body`/paragraph rules cannot undo reader chrome.
+  static const String _webViewOverrideCss = '''
+html {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  font-size: var(--reader-font-size) !important;
+  line-height: var(--reader-line-height) !important;
+  color: var(--reader-text-color) !important;
+  background: var(--reader-bg-color) !important;
+  -webkit-text-size-adjust: none !important;
+}
+#stage {
+  position: absolute !important;
+  inset: var(--reader-padding-y) var(--reader-padding-x) !important;
+  box-sizing: border-box !important;
+}
+#reader {
+  font-size: var(--reader-font-size) !important;
+  line-height: var(--reader-line-height) !important;
+  color: var(--reader-text-color) !important;
+  width: 100% !important;
+  height: var(--page-height) !important;
+  box-sizing: border-box !important;
+  column-width: var(--page-width) !important;
+  column-gap: 0 !important;
+  column-fill: auto !important;
+  overflow-x: hidden !important;
+  overflow-y: hidden !important;
+}
+#reader p,
+#reader li,
+#reader dd,
+#reader figcaption,
+#reader td,
+#reader th {
+  font-size: inherit !important;
+  line-height: var(--reader-line-height) !important;
+}
+#reader h1,
+#reader h2,
+#reader h3,
+#reader h4,
+#reader h5,
+#reader h6 {
+  line-height: var(--reader-line-height) !important;
+}
+#reader > :first-child,
+#reader .chapter > :first-child {
+  margin-top: 0 !important;
+}
+#reader img,
+#reader svg {
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+''';
+
   static const String _webViewSelectionMenuHtml = '''
 <div id="selection-menu">
   <button id="selection-action" type="button">Translate</button>
@@ -3590,8 +3814,6 @@ body {
   let pageHeight = 0;
   let contentLeft = 0;
   let contentTop = 0;
-  let paddingX = 0;
-  let paddingY = 0;
   let pageStride = 0;
   let pageCount = 1;
   let currentPage = 0;
@@ -3607,6 +3829,105 @@ body {
   let selectionActive = false;
   let pageChangeQueue = Promise.resolve();
   let pageChangeToken = 0;
+
+  let suppressNextClickUntil = 0;
+  let trackPointerId = null;
+  let trackStartX = 0;
+  let trackStartY = 0;
+  let trackDragged = false;
+
+  function beginPointerTrack(event) {
+    if (event.pointerType === 'mouse' && event.button !== 0) {
+      return;
+    }
+    trackPointerId = event.pointerId;
+    trackStartX = event.clientX;
+    trackStartY = event.clientY;
+    trackDragged = false;
+  }
+
+  function updatePointerTrack(event) {
+    if (trackPointerId !== event.pointerId) {
+      return;
+    }
+    const dx = Math.abs(event.clientX - trackStartX);
+    const dy = Math.abs(event.clientY - trackStartY);
+    if (dx > 6 || dy > 6) {
+      trackDragged = true;
+    }
+  }
+
+  function endPointerTrack(event) {
+    if (trackPointerId !== event.pointerId) {
+      return;
+    }
+    trackPointerId = null;
+    if (trackDragged) {
+      const sel = window.getSelection();
+      if (sel && sel.toString().trim().length > 0) {
+        suppressNextClickUntil = Date.now() + 450;
+      }
+    }
+    trackDragged = false;
+  }
+
+  function cancelPointerTrack(event) {
+    if (trackPointerId === event.pointerId) {
+      trackPointerId = null;
+      trackDragged = false;
+    }
+  }
+
+  function attachMouseSelectionFallback() {
+    let mouseTracking = false;
+    let mouseStartX = 0;
+    let mouseStartY = 0;
+    let mouseDragged = false;
+    document.addEventListener(
+      'mousedown',
+      function(event) {
+        if (event.button !== 0) {
+          return;
+        }
+        mouseTracking = true;
+        mouseStartX = event.clientX;
+        mouseStartY = event.clientY;
+        mouseDragged = false;
+      },
+      { passive: true },
+    );
+    document.addEventListener(
+      'mousemove',
+      function(event) {
+        if (!mouseTracking) {
+          return;
+        }
+        const dx = Math.abs(event.clientX - mouseStartX);
+        const dy = Math.abs(event.clientY - mouseStartY);
+        if (dx > 6 || dy > 6) {
+          mouseDragged = true;
+        }
+      },
+      { passive: true },
+    );
+    document.addEventListener(
+      'mouseup',
+      function() {
+        if (!mouseTracking) {
+          return;
+        }
+        mouseTracking = false;
+        if (mouseDragged) {
+          const sel = window.getSelection();
+          if (sel && sel.toString().trim().length > 0) {
+            suppressNextClickUntil = Date.now() + 450;
+          }
+        }
+        mouseDragged = false;
+      },
+      { passive: true },
+    );
+  }
 
   function getScrollContainer() {
     return reader || document.scrollingElement || document.documentElement;
@@ -3665,16 +3986,60 @@ body {
     return false;
   }
 
+  function measureLineHeightPx() {
+    const probe = document.getElementById('line-probe');
+    if (probe) {
+      const h = probe.getBoundingClientRect().height;
+      if (h > 0) {
+        return h;
+      }
+    }
+    if (reader) {
+      const cs = window.getComputedStyle(reader);
+      const lh = parseFloat(cs.lineHeight);
+      if (Number.isFinite(lh)) {
+        return lh;
+      }
+      const fs = parseFloat(cs.fontSize);
+      if (Number.isFinite(fs)) {
+        return fs * 1.6;
+      }
+    }
+    return 16;
+  }
+
   function updateLayoutMetrics() {
     viewportWidth = window.innerWidth || document.documentElement.clientWidth;
     viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-    const rootStyle = window.getComputedStyle(document.documentElement);
-    paddingX = parseFloat(rootStyle.getPropertyValue('--reader-padding-x')) || 0;
-    paddingY = parseFloat(rootStyle.getPropertyValue('--reader-padding-y')) || 0;
-    contentLeft = paddingX;
-    contentTop = paddingY;
-    pageWidth = Math.max(0, viewportWidth - paddingX * 2);
-    pageHeight = Math.max(0, viewportHeight - paddingY * 2);
+    const stage = document.getElementById('stage');
+    if (!stage || !reader) {
+      pageWidth = Math.max(0, viewportWidth);
+      pageHeight = Math.max(0, viewportHeight);
+      contentLeft = 0;
+      contentTop = 0;
+      document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
+      document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
+      pageStride = getPageStride();
+      const scrollElement = getScrollContainer();
+      if (scrollElement) {
+        pageCount = Math.max(1, Math.ceil(scrollElement.scrollWidth / pageStride));
+      } else {
+        pageCount = 1;
+      }
+      return;
+    }
+    const stageRect = stage.getBoundingClientRect();
+    const innerWidth = Math.max(0, stageRect.width);
+    const innerHeight = Math.max(0, stageRect.height);
+    const lineHeightPx = Math.max(1, measureLineHeightPx());
+    const snappedHeight = Math.max(
+      lineHeightPx,
+      Math.floor(innerHeight / lineHeightPx) * lineHeightPx
+    );
+    pageWidth = innerWidth;
+    pageHeight = snappedHeight;
+    contentLeft = stageRect.left;
+    contentTop = stageRect.top;
     document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
     document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
     pageStride = getPageStride();
@@ -4555,10 +4920,19 @@ body {
   }
 
   function handleClick(event) {
-    if (!event || !event.clientX || !event.clientY) {
+    if (
+      !event ||
+      typeof event.clientX !== 'number' ||
+      typeof event.clientY !== 'number'
+    ) {
       return;
     }
     if (Date.now() - lastTouchTime < 500) {
+      return;
+    }
+    const nowClick = Date.now();
+    if (nowClick < suppressNextClickUntil) {
+      suppressNextClickUntil = 0;
       return;
     }
     if (event.target && event.target.closest) {
@@ -4619,7 +4993,17 @@ body {
       }
     });
   }
-  const tapTarget = reader || document;
+  if (window.PointerEvent) {
+    document.addEventListener('pointerdown', beginPointerTrack, { passive: true });
+    document.addEventListener('pointermove', updatePointerTrack, { passive: true });
+    document.addEventListener('pointerup', endPointerTrack, { passive: true });
+    document.addEventListener('pointercancel', cancelPointerTrack, { passive: true });
+  } else {
+    attachMouseSelectionFallback();
+  }
+
+  // Listen on document so taps in margins (#stage inset / slack below #reader) still reach zones.
+  const tapTarget = document;
   tapTarget.addEventListener('touchstart', handleTouchStart, { passive: true });
   tapTarget.addEventListener('touchmove', handleTouchMove, { passive: false });
   tapTarget.addEventListener('touchend', handleTouchEnd, { passive: true });
@@ -4724,8 +5108,9 @@ body {
 
     bool isResultEmpty(_InlineContentResult result) {
       final cleaned = result.text.replaceAll('\uFFFC', '').trim();
-      final hasPlaceholders =
-          result.nodes.any((node) => node is InlinePlaceholderNode);
+      final hasPlaceholders = result.nodes.any(
+        (node) => node is InlinePlaceholderNode,
+      );
       return cleaned.isEmpty && !hasPlaceholders;
     }
 
@@ -4739,7 +5124,7 @@ body {
       if (result == null || isResultEmpty(result)) {
         return;
       }
-      
+
       // If we have an active collector and we're supposed to append, do that
       if (appendToCollector && activeCollector != null) {
         // Add paragraph break (double newline) before new content
@@ -4748,9 +5133,11 @@ body {
         activeCollector!.appendResult(result);
         return;
       }
-      
+
       // Otherwise, create a new block
-      final before = spacingBefore ?? (isFirstBlock ? 0 : 0.0); // No spacing between blocks
+      final before =
+          spacingBefore ??
+          (isFirstBlock ? 0 : 0.0); // No spacing between blocks
       final after = spacingAfter ?? 0.0; // No spacing after
       blocks.add(
         TextDocumentBlock(
@@ -4786,9 +5173,7 @@ body {
       }
     }
 
-    _InlineContentResult? buildBlockFromElement(
-      dom.Element element,
-    ) {
+    _InlineContentResult? buildBlockFromElement(dom.Element element) {
       final elementStyle = cssResolver.resolveStyles(element);
       final collector = _InlineCollector(
         resolveImage: imageResolver,
@@ -4838,7 +5223,8 @@ body {
           case 'h6':
             // Headings should flush and create new blocks
             flushActiveCollector();
-            final hAlign = cssResolver.resolveTextAlign(node) ?? TextAlign.center;
+            final hAlign =
+                cssResolver.resolveTextAlign(node) ?? TextAlign.center;
             addBlock(
               buildBlockFromElement(node),
               textAlign: hAlign,
@@ -4859,9 +5245,13 @@ body {
             }
             final ordered = name == 'ol';
             int counter = 1;
-            for (final child in node.children.where((e) => e.localName == 'li')) {
+            for (final child in node.children.where(
+              (e) => e.localName == 'li',
+            )) {
               final childStyle = cssResolver.resolveStyles(child);
-              final mergedStyle = activeCollector!._currentStyle.merge(childStyle);
+              final mergedStyle = activeCollector!._currentStyle.merge(
+                childStyle,
+              );
               activeCollector!.pushStyle(mergedStyle, () {
                 final bullet = ordered ? '$counter. ' : '• ';
                 activeCollector!.appendLiteral(bullet);
@@ -4972,10 +5362,13 @@ body {
     }
 
     final style = element.attributes['style']?.toLowerCase() ?? '';
-    if (style.contains('page-break') || style.contains('break-before') || style.contains('break-after')) {
+    if (style.contains('page-break') ||
+        style.contains('break-before') ||
+        style.contains('break-after')) {
       return true;
     }
-    if (style.contains('position:absolute') || style.contains('position: fixed')) {
+    if (style.contains('position:absolute') ||
+        style.contains('position: fixed')) {
       return true;
     }
     if (style.contains(RegExp(r'(width|height)\s*:\s*\d+px'))) {
@@ -4988,7 +5381,10 @@ body {
     return false;
   }
 
-  Uint8List? _resolveImageBytes(String src, Map<String, EpubByteContentFile>? images) {
+  Uint8List? _resolveImageBytes(
+    String src,
+    Map<String, EpubByteContentFile>? images,
+  ) {
     if (images == null || images.isEmpty) return null;
     var normalized = src.replaceAll('\\', '/');
     normalized = normalized.replaceAll('../', '');
@@ -5005,14 +5401,10 @@ body {
     }
     return null;
   }
-
 }
 
 class _InlineContentResult {
-  const _InlineContentResult({
-    required this.text,
-    required this.nodes,
-  });
+  const _InlineContentResult({required this.text, required this.nodes});
 
   final String text;
   final List<InlineNode> nodes;
@@ -5027,9 +5419,9 @@ class _InlineCollector {
     required _ImageResolver resolveImage,
     required InlineTextStyle baseStyle,
     required CssResolver cssResolver,
-  })  : _resolveImage = resolveImage,
-        _styleStack = [baseStyle],
-        _cssResolver = cssResolver;
+  }) : _resolveImage = resolveImage,
+       _styleStack = [baseStyle],
+       _cssResolver = cssResolver;
 
   final _InlineContentBuilder _builder = _InlineContentBuilder();
   final List<InlineTextStyle> _styleStack;
@@ -5060,9 +5452,9 @@ class _InlineCollector {
       case 'strong':
       case 'b':
         final elementStyle = _cssResolver.resolveStyles(node);
-        final mergedStyle = _currentStyle.merge(elementStyle).merge(
-          const InlineTextStyle(fontWeight: FontWeight.bold),
-        );
+        final mergedStyle = _currentStyle
+            .merge(elementStyle)
+            .merge(const InlineTextStyle(fontWeight: FontWeight.bold));
         pushStyle(mergedStyle, () {
           for (final child in node.nodes) {
             collect(child);
@@ -5072,9 +5464,9 @@ class _InlineCollector {
       case 'em':
       case 'i':
         final elementStyle = _cssResolver.resolveStyles(node);
-        final mergedStyle = _currentStyle.merge(elementStyle).merge(
-          const InlineTextStyle(fontStyle: FontStyle.italic),
-        );
+        final mergedStyle = _currentStyle
+            .merge(elementStyle)
+            .merge(const InlineTextStyle(fontStyle: FontStyle.italic));
         pushStyle(mergedStyle, () {
           for (final child in node.nodes) {
             collect(child);
@@ -5125,7 +5517,7 @@ class _InlineCollector {
     _builder.appendText(value, _currentStyle);
     _needsSpaceBeforeText = false;
   }
-  
+
   void appendResult(_InlineContentResult result) {
     // Append all nodes from another result to this collector
     for (final node in result.nodes) {
@@ -5193,20 +5585,10 @@ class _InlineContentBuilder {
         _nodes.last.end == start) {
       final last = _nodes.removeLast() as InlineTextNode;
       _nodes.add(
-        InlineTextNode(
-          start: last.start,
-          end: end,
-          style: last.style,
-        ),
+        InlineTextNode(start: last.start, end: end, style: last.style),
       );
     } else {
-      _nodes.add(
-        InlineTextNode(
-          start: start,
-          end: end,
-          style: style,
-        ),
-      );
+      _nodes.add(InlineTextNode(start: start, end: end, style: style));
     }
   }
 
@@ -5258,10 +5640,7 @@ class _WebViewDocument {
 }
 
 class _ChapterOffset {
-  const _ChapterOffset({
-    required this.chapterIndex,
-    required this.startChar,
-  });
+  const _ChapterOffset({required this.chapterIndex, required this.startChar});
 
   final int chapterIndex;
   final int startChar;
@@ -5307,7 +5686,8 @@ bool shouldKeepSelectionOnPointerUp({
   if (isSelectionOwnerPointer) return true;
   if (slopExceeded) return true;
   if (pressDuration != null && pressDuration >= longPressThreshold) return true;
-  final withinDeferWindow = lastSelectionChangeTimestamp != null &&
+  final withinDeferWindow =
+      lastSelectionChangeTimestamp != null &&
       now.difference(lastSelectionChangeTimestamp) < deferWindow;
   if (withinDeferWindow) return true;
   return false;
@@ -5349,7 +5729,7 @@ class _ChapterSelectorDialogState extends State<_ChapterSelectorDialog> {
   Widget build(BuildContext context) {
     final isNavigating = widget.getNavigationState();
     final navigatingToIndex = widget.getNavigatingToChapterIndex();
-    
+
     return SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -5367,7 +5747,8 @@ class _ChapterSelectorDialogState extends State<_ChapterSelectorDialog> {
               itemCount: widget.chapters.length,
               itemBuilder: (context, index) {
                 final chapter = widget.chapters[index];
-                final isNavigatingTo = isNavigating && navigatingToIndex == chapter.index;
+                final isNavigatingTo =
+                    isNavigating && navigatingToIndex == chapter.index;
                 return _PulsatingChapterTile(
                   chapterTitle: chapter.title,
                   isNavigating: isNavigatingTo,
@@ -5427,11 +5808,8 @@ class _PulsatingChapterTileState extends State<_PulsatingChapterTile>
     _animation = Tween<double>(
       begin: 0.3,
       end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    ));
-    
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
     if (widget.isNavigating) {
       _controller.repeat(reverse: true);
     }
@@ -5457,7 +5835,7 @@ class _PulsatingChapterTileState extends State<_PulsatingChapterTile>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return AnimatedBuilder(
       animation: _animation,
       builder: (context, child) {
@@ -5512,7 +5890,9 @@ class _LatestEventsDialogState extends State<_LatestEventsDialog> {
   }
 
   Future<void> _loadPreference() async {
-    final autoShow = await _settingsService.getAutoShowLatestEvents(widget.bookId);
+    final autoShow = await _settingsService.getAutoShowLatestEvents(
+      widget.bookId,
+    );
     if (mounted) {
       setState(() {
         _autoShow = autoShow;
@@ -5599,7 +5979,7 @@ class _LatestEventsDialogState extends State<_LatestEventsDialog> {
               ),
               const Divider(),
               const SizedBox(height: 16),
-              
+
               // Loading state
               if (_isLoading) ...[
                 const Center(child: CircularProgressIndicator()),
@@ -5613,7 +5993,7 @@ class _LatestEventsDialogState extends State<_LatestEventsDialog> {
                   ),
                 ),
               ],
-              
+
               // Error state
               if (_error != null) ...[
                 Container(
@@ -5624,19 +6004,24 @@ class _LatestEventsDialogState extends State<_LatestEventsDialog> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.error_outline, color: theme.colorScheme.onErrorContainer),
+                      Icon(
+                        Icons.error_outline,
+                        color: theme.colorScheme.onErrorContainer,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _error!,
-                          style: TextStyle(color: theme.colorScheme.onErrorContainer),
+                          style: TextStyle(
+                            color: theme.colorScheme.onErrorContainer,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
               ],
-              
+
               // Summary display
               if (_summary != null) ...[
                 Text(
@@ -5673,4 +6058,3 @@ class _LatestEventsDialogState extends State<_LatestEventsDialog> {
     );
   }
 }
-
