@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 5.0.0+13
+version: 5.0.1+16
 
 environment:
   sdk: ^3.9.2
@@ -54,9 +54,9 @@ dependencies:
   # File picker for importing EPUB files
   file_picker: ^8.1.2
 
-  # PDF text extraction for PDF import
-  flutter_pdf_text: ^0.9.0
-  
+  # PDF text extraction for PDF import (pure Dart — avoids native libs / Play 16 KB checks)
+  syncfusion_flutter_pdf: ^30.1.40
+
   # Local storage for files and preferences
   path_provider: ^2.1.2
   shared_preferences: ^2.5.4
@@ -96,7 +96,7 @@ dependencies:
   google_sign_in: ^6.2.1
   googleapis: ^13.0.0
   googleapis_auth: ^1.5.0
-  
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
