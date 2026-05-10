@@ -93,7 +93,7 @@
 	     Steps:
 	       1. Open https://console.cloud.google.com → APIs & Services → Credentials
 	       2. Create an OAuth 2.0 Client ID → Application type: iOS
-	          Bundle ID: com.blaisotbalette.memoreader
+	          Bundle ID: com.memoreader.app (must match Xcode Runner target)
 	       3. Copy the generated client ID  (looks like 123456-abc.apps.googleusercontent.com)
 	       4. Replace YOUR_IOS_CLIENT_ID below with that value
 	       5. The REVERSED_CLIENT_ID is the client ID written backwards:
@@ -104,7 +104,7 @@
 
 	<!-- The iOS OAuth client ID from Google Cloud Console. -->
 	<key>GIDClientID</key>
-	<string>YOUR_IOS_CLIENT_ID.apps.googleusercontent.com</string>
+	<string>1071905253173-lhadjbje9pp0g14989mhirl65jhl2ht6.apps.googleusercontent.com</string>
 
 	<!-- URL scheme required so the OS can return control to the app after the
 	     Google OAuth redirect.  Must be the reversed client ID. -->
@@ -115,7 +115,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.YOUR_IOS_CLIENT_ID</string>
+				<string>com.googleusercontent.apps.1071905253173-lhadjbje9pp0g14989mhirl65jhl2ht6</string>
 			</array>
 		</dict>
 	</array>

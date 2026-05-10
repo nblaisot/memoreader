@@ -1466,101 +1466,111 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _showDrivePassphraseDialog(BuildContext context) async {
     final loc = AppLocalizations.of(context)!;
+    final messenger = ScaffoldMessenger.of(context);
     final c1 = TextEditingController();
     final c2 = TextEditingController();
     var obscure1 = true;
     var obscure2 = true;
-    try {
-      final saved = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(loc.driveSyncPassphraseDialogTitle),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: c1,
-                      obscureText: obscure1,
-                      decoration: InputDecoration(
-                        labelText: loc.driveSyncPassphraseField,
-                        suffixIcon: IconButton(
-                          icon: Icon(obscure1
-                              ? Icons.visibility
-                              : Icons.visibility_off),
-                          onPressed: () =>
-                              setDialogState(() => obscure1 = !obscure1),
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text(loc.driveSyncPassphraseDialogTitle),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: c1,
+                    obscureText: obscure1,
+                    decoration: InputDecoration(
+                      labelText: loc.driveSyncPassphraseField,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscure1 ? Icons.visibility : Icons.visibility_off,
                         ),
+                        onPressed: () =>
+                            setDialogState(() => obscure1 = !obscure1),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: c2,
-                      obscureText: obscure2,
-                      decoration: InputDecoration(
-                        labelText: loc.driveSyncPassphraseConfirmField,
-                        suffixIcon: IconButton(
-                          icon: Icon(obscure2
-                              ? Icons.visibility
-                              : Icons.visibility_off),
-                          onPressed: () =>
-                              setDialogState(() => obscure2 = !obscure2),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: c2,
+                    obscureText: obscure2,
+                    decoration: InputDecoration(
+                      labelText: loc.driveSyncPassphraseConfirmField,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscure2 ? Icons.visibility : Icons.visibility_off,
                         ),
+                        onPressed: () =>
+                            setDialogState(() => obscure2 = !obscure2),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(loc.cancel),
-                ),
-                FilledButton(
-                  onPressed: () async {
-                    final p1 = c1.text;
-                    final p2 = c2.text;
-                    if (p1.length < 8) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(loc.driveSyncPassphraseTooShort)),
-                      );
-                      return;
-                    }
-                    if (p1 != p2) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(loc.driveSyncPassphraseMismatch)),
-                      );
-                      return;
-                    }
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(loc.cancel),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final p1 = c1.text;
+                  final p2 = c2.text;
+                  if (p1.length < 8) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(loc.driveSyncPassphraseTooShort)),
+                    );
+                    return;
+                  }
+                  if (p1 != p2) {
+                    messenger.showSnackBar(
+                      SnackBar(content: Text(loc.driveSyncPassphraseMismatch)),
+                    );
+                    return;
+                  }
+                  try {
                     await DriveSyncSecretsService.setPassphrase(p1);
                     await DriveSyncSecretsService.setCloudEncryptionEnabled(
-                        true);
+                      true,
+                    );
                     if (ctx.mounted) Navigator.pop(ctx, true);
-                  },
-                  child: Text(loc.driveSyncPassphraseSave),
-                ),
-              ],
-            );
-          },
-        ),
+                  } catch (e, stackTrace) {
+                    debugPrint(
+                      '[DriveSync] Failed to save sync passphrase: $e',
+                    );
+                    debugPrint(
+                      '[DriveSync] Passphrase save stack trace: $stackTrace',
+                    );
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Could not save the sync passphrase on this device.',
+                        ),
+                      ),
+                    );
+                  }
+                },
+                child: Text(loc.driveSyncPassphraseSave),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (saved == true && mounted) {
+      setState(() {
+        _drivePassphraseConfigured = true;
+        _driveEncryptApiKeys = true;
+      });
+      messenger.showSnackBar(
+        SnackBar(content: Text(loc.driveSyncPassphraseSaved)),
       );
-      if (saved == true && mounted) {
-        setState(() {
-          _drivePassphraseConfigured = true;
-          _driveEncryptApiKeys = true;
-        });
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(loc.driveSyncPassphraseSaved)),
-        );
-      }
-    } finally {
-      c1.dispose();
-      c2.dispose();
     }
   }
 

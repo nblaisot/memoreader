@@ -1,6 +1,7 @@
 // ignore_for_file: unused_element
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
 import '../../services/rag_database_service.dart';
@@ -54,10 +55,7 @@ Future<ReaderMenuAction?> showReaderMenu({
         begin: const Offset(0, -1),
         end: Offset.zero,
       ).animate(curvedAnimation);
-      return SlideTransition(
-        position: offsetAnimation,
-        child: child,
-      );
+      return SlideTransition(position: offsetAnimation, child: child);
     },
   );
 }
@@ -88,7 +86,7 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
   RagIndexProgress? _ragIndexProgress;
   StreamSubscription<RagIndexProgress>? _ragIndexingSubscription;
   bool _toastShownForCompletion = false;
-  
+
   // Base font size used in reader_screen.dart
   static const double _baseFontSize = 18.0;
 
@@ -117,30 +115,34 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
 
   void _startListeningToRagIndexing() {
     // Listen to RAG indexing progress updates in real-time
-    _ragIndexingSubscription = _ragIndexingService.startIndexing(widget.bookId).listen(
-      (progress) {
-        if (mounted) {
-          setState(() {
-            _ragIndexProgress = progress;
-          });
-          _maybeShowCompletionToast(progress);
-        }
-      },
-      onError: (error) {
-        debugPrint('[RAG Menu] Error listening to indexing progress: $error');
-        // Reload status from database to preserve error state
-        if (mounted) {
-          _loadRagIndexStatus();
-        }
-      },
-      onDone: () {
-        debugPrint('[RAG Menu] Indexing progress stream completed');
-        // Reload status from database when stream completes to ensure we have latest state
-        if (mounted) {
-          _loadRagIndexStatus();
-        }
-      },
-    );
+    _ragIndexingSubscription = _ragIndexingService
+        .startIndexing(widget.bookId)
+        .listen(
+          (progress) {
+            if (mounted) {
+              setState(() {
+                _ragIndexProgress = progress;
+              });
+              _maybeShowCompletionToast(progress);
+            }
+          },
+          onError: (error) {
+            debugPrint(
+              '[RAG Menu] Error listening to indexing progress: $error',
+            );
+            // Reload status from database to preserve error state
+            if (mounted) {
+              _loadRagIndexStatus();
+            }
+          },
+          onDone: () {
+            debugPrint('[RAG Menu] Indexing progress stream completed');
+            // Reload status from database when stream completes to ensure we have latest state
+            if (mounted) {
+              _loadRagIndexStatus();
+            }
+          },
+        );
   }
 
   void _maybeShowCompletionToast(RagIndexProgress progress) {
@@ -151,7 +153,10 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
     final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(l10n?.ragIndexingCompleted(chunks, apiCalls) ?? 'Indexation terminée: $chunks chunks indexés, $apiCalls appels API'),
+        content: Text(
+          l10n?.ragIndexingCompleted(chunks, apiCalls) ??
+              'Indexation terminée: $chunks chunks indexés, $apiCalls appels API',
+        ),
         duration: const Duration(seconds: 3),
       ),
     );
@@ -185,128 +190,183 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final summariesTitle = l10n?.summariesSectionTitle ?? 'Summaries';
-    final fromBeginningLabel = l10n?.summaryFromBeginning ?? 'From the Beginning';
+    final fromBeginningLabel =
+        l10n?.summaryFromBeginning ?? 'From the Beginning';
     final charactersLabel = l10n?.summaryCharacters ?? 'Characters';
+
+    final mediaQuery = MediaQuery.of(context);
+    const outerTopPadding = 12.0;
+    const sheetBottomMargin = 16.0;
 
     return SafeArea(
       child: Align(
         alignment: Alignment.topCenter,
         child: Padding(
-          padding: const EdgeInsets.only(top: 12, left: 16, right: 16),
-          child: Material(
-            color: theme.colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(20),
-              bottom: Radius.circular(20),
-            ),
-            elevation: 12,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            l10n?.readerMenuTitle ?? 'Options de lecture',
+          padding: const EdgeInsets.only(
+            top: outerTopPadding,
+            left: 16,
+            right: 16,
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final fallbackMax =
+                  mediaQuery.size.height -
+                  mediaQuery.padding.vertical -
+                  outerTopPadding -
+                  sheetBottomMargin;
+              final available = constraints.maxHeight.isFinite
+                  ? constraints.maxHeight - sheetBottomMargin
+                  : fallbackMax;
+              final maxSheetHeight = math.max(160.0, available);
+
+              return Material(
+                color: theme.colorScheme.surface,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                  bottom: Radius.circular(20),
+                ),
+                elevation: 12,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: 420,
+                    maxHeight: maxSheetHeight,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 16,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  l10n?.readerMenuTitle ?? 'Options de lecture',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.settings),
+                                onPressed: () => _selectAction(
+                                  ReaderMenuAction.openSettings,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                tooltip: MaterialLocalizations.of(
+                                  context,
+                                ).closeButtonTooltip,
+                                onPressed: () => Navigator.of(context).pop(),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(l10n?.textSize ?? 'Taille du texte'),
+                          const SizedBox(height: 8),
+                          _FontScaleSelector(
+                            fontScale: _currentFontScale,
+                            baseFontSize: _baseFontSize,
+                            onIncrement: _incrementFont,
+                            onDecrement: _decrementFont,
+                          ),
+                          const SizedBox(height: 8),
+                          if (widget.hasChapters)
+                            ListTile(
+                              leading: const Icon(Icons.list),
+                              title: Text(
+                                l10n?.goToChapter ?? 'Aller au chapitre',
+                              ),
+                              onTap: () =>
+                                  _selectAction(ReaderMenuAction.goToChapter),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                          ListTile(
+                            leading: const Icon(Icons.percent),
+                            title: Text(
+                              l10n?.goToPercentage ?? 'Aller à un pourcentage',
+                            ),
+                            onTap: () =>
+                                _selectAction(ReaderMenuAction.goToPercentage),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.bookmark),
+                            title: Text(l10n?.savedWords ?? 'Mots sauvegardés'),
+                            onTap: widget.hasSavedWords
+                                ? () => _selectAction(
+                                    ReaderMenuAction.showSavedWords,
+                                  )
+                                : null,
+                            enabled: widget.hasSavedWords,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            summariesTitle,
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.settings),
-                          onPressed: () => _selectAction(ReaderMenuAction.openSettings),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(l10n?.textSize ?? 'Taille du texte'),
-                    const SizedBox(height: 8),
-                    _FontScaleSelector(
-                      fontScale: _currentFontScale,
-                      baseFontSize: _baseFontSize,
-                      onIncrement: _incrementFont,
-                      onDecrement: _decrementFont,
-                    ),
-                    const SizedBox(height: 8),
-                    if (widget.hasChapters)
-                      ListTile(
-                        leading: const Icon(Icons.list),
-                        title: Text(l10n?.goToChapter ?? 'Aller au chapitre'),
-                        onTap: () => _selectAction(ReaderMenuAction.goToChapter),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ListTile(
-                      leading: const Icon(Icons.percent),
-                      title: Text(l10n?.goToPercentage ?? 'Aller à un pourcentage'),
-                      onTap: () => _selectAction(ReaderMenuAction.goToPercentage),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.bookmark),
-                      title: Text(l10n?.savedWords ?? 'Mots sauvegardés'),
-                      onTap: widget.hasSavedWords
-                          ? () => _selectAction(ReaderMenuAction.showSavedWords)
-                          : null,
-                      enabled: widget.hasSavedWords,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      summariesTitle,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.auto_stories),
-                      title: Text(fromBeginningLabel),
-                      onTap: () =>
-                          _selectAction(ReaderMenuAction.showSummaryFromBeginning),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.people_outline),
-                      title: Text(charactersLabel),
-                      onTap: () =>
-                          _selectAction(ReaderMenuAction.showCharactersSummary),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    ListTile(
-                      leading: const Icon(Icons.delete_outline),
-                      title: Text(l10n?.summariesDeleteAction ?? 'Supprimer les résumés'),
-                      onTap: () => _selectAction(ReaderMenuAction.deleteSummaries),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      l10n?.questionsSectionTitle ?? 'Questions',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                          ListTile(
+                            leading: const Icon(Icons.auto_stories),
+                            title: Text(fromBeginningLabel),
+                            onTap: () => _selectAction(
+                              ReaderMenuAction.showSummaryFromBeginning,
+                            ),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.people_outline),
+                            title: Text(charactersLabel),
+                            onTap: () => _selectAction(
+                              ReaderMenuAction.showCharactersSummary,
+                            ),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.delete_outline),
+                            title: Text(
+                              l10n?.summariesDeleteAction ??
+                                  'Supprimer les résumés',
+                            ),
+                            onTap: () =>
+                                _selectAction(ReaderMenuAction.deleteSummaries),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            l10n?.questionsSectionTitle ?? 'Questions',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          _buildRagQuestionMenuItem(theme),
+                          _buildLatestEventsMenuItem(
+                            theme,
+                            _ragIndexProgress?.isComplete ?? false,
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.arrow_back),
+                            title: Text(
+                              l10n?.backToLibrary ?? 'Retour à la librairie',
+                            ),
+                            onTap: () =>
+                                _selectAction(ReaderMenuAction.returnToLibrary),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ],
                       ),
                     ),
-                    _buildRagQuestionMenuItem(theme),
-                    _buildLatestEventsMenuItem(theme, _ragIndexProgress?.isComplete ?? false),
-                    ListTile(
-                      leading: const Icon(Icons.arrow_back),
-                      title: Text(l10n?.backToLibrary ?? 'Retour à la librairie'),
-                      onTap: () => _selectAction(ReaderMenuAction.returnToLibrary),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -347,7 +407,7 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
       final progressLabel = totalChunks == 0
           ? (l10n?.ragIndexingInitializing ?? 'Indexation en cours (...)')
           : (l10n?.ragIndexingProgress(progress.toInt()) ??
-              'Indexation en cours (${progress.toStringAsFixed(0)}%)');
+                'Indexation en cours (${progress.toStringAsFixed(0)}%)');
       return ListTile(
         leading: const SizedBox(
           width: 24,
@@ -371,7 +431,7 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
       final skippedChunks = _ragIndexProgress?.skippedChunks ?? 0;
       final indexedChunks = _ragIndexProgress?.indexedChunks ?? 0;
       final totalChunks = _ragIndexProgress?.totalChunks ?? 0;
-      
+
       String shortError;
       if (errorMessage?.contains('API key') == true) {
         shortError = 'Clé API manquante';
@@ -380,7 +440,7 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
       } else {
         shortError = errorMessage ?? 'Erreur d\'indexation';
       }
-      
+
       // Build subtitle with progress and skipped chunks info
       final subtitleParts = <String>[];
       if (totalChunks > 0) {
@@ -391,9 +451,11 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
         }
       }
       if (skippedChunks > 0) {
-        subtitleParts.add('$skippedChunks ignoré${skippedChunks > 1 ? 's' : ''}');
+        subtitleParts.add(
+          '$skippedChunks ignoré${skippedChunks > 1 ? 's' : ''}',
+        );
       }
-      
+
       return ListTile(
         leading: Icon(
           Icons.error_outline,
@@ -449,11 +511,15 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
 
   Widget _buildLatestEventsMenuItem(ThemeData theme, bool isComplete) {
     final l10n = AppLocalizations.of(context);
-    
+
     return ListTile(
       leading: const Icon(Icons.history),
-      title: Text(l10n?.ragLatestEvents ?? 'Quels sont les derniers événements?'),
-      onTap: isComplete ? () => _selectAction(ReaderMenuAction.showLatestEvents) : null,
+      title: Text(
+        l10n?.ragLatestEvents ?? 'Quels sont les derniers événements?',
+      ),
+      onTap: isComplete
+          ? () => _selectAction(ReaderMenuAction.showLatestEvents)
+          : null,
       enabled: isComplete,
       contentPadding: EdgeInsets.zero,
     );
@@ -477,12 +543,12 @@ class _FontScaleSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     // Determine limits based on logic in _updateFontScale (clamp 0.5 to 3.0)
-    final isAtMin = fontScale <= 0.5 + 0.01; 
+    final isAtMin = fontScale <= 0.5 + 0.01;
     final isAtMax = fontScale >= 3.0 - 0.01;
-    
+
     // Calculate accurate effective font size
     final effectiveSize = (baseFontSize * fontScale).round();
-    
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -492,7 +558,7 @@ class _FontScaleSelector extends StatelessWidget {
           tooltip: 'Réduire la taille',
           style: IconButton.styleFrom(
             backgroundColor: theme.colorScheme.surfaceContainerHighest,
-            foregroundColor: isAtMin 
+            foregroundColor: isAtMin
                 ? theme.colorScheme.onSurface.withValues(alpha: 0.38)
                 : theme.colorScheme.onSurface,
           ),
@@ -517,7 +583,7 @@ class _FontScaleSelector extends StatelessWidget {
           tooltip: 'Augmenter la taille',
           style: IconButton.styleFrom(
             backgroundColor: theme.colorScheme.surfaceContainerHighest,
-            foregroundColor: isAtMax 
+            foregroundColor: isAtMax
                 ? theme.colorScheme.onSurface.withValues(alpha: 0.38)
                 : theme.colorScheme.onSurface,
           ),

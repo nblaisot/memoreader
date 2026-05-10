@@ -122,9 +122,9 @@ You'll need to create separate OAuth client IDs for each platform (iOS, Android,
 2. Select **"iOS"** as the application type
 3. Enter:
    - **Name**: `Memoreader iOS`
-   - **Bundle ID**: Check your `ios/Runner.xcodeproj` or `ios/Runner/Info.plist` for `CFBundleIdentifier` (usually `com.example.memoreader` or similar)
+   - **Bundle ID**: **`com.memoreader.app`** (this must match `PRODUCT_BUNDLE_IDENTIFIER` for the Runner target in Xcode — it is **not** the same as the Android `applicationId`)
 4. Click **"Create"**
-5. **Copy the Client ID** - you'll need this for iOS configuration
+5. **Copy the Client ID** (ends with `.apps.googleusercontent.com`) — you need it for `Info.plist` below
 
 ### For Web (optional, for Flutter web support):
 
@@ -178,12 +178,55 @@ You'll need to create separate OAuth client IDs for each platform (iOS, Android,
 
 ### For iOS:
 
+The `google_sign_in` plugin reads **`GIDClientID`** from `Info.plist` (see [Google Sign-In iOS](https://developers.google.com/identity/sign-in/ios/start-integrating)). Until both values below are real IDs from the **iOS** OAuth client you created, sign-in will fail (often **HTTP 400** on `accounts.google.com`).
+
 1. Open `ios/Runner/Info.plist`
-2. Add your iOS Client ID:
-```xml
-<key>GOOGLE_SIGN_IN_CLIENT_ID</key>
-<string>YOUR_IOS_CLIENT_ID_HERE</string>
-```
+2. Set **`GIDClientID`** to your full iOS client ID, for example:
+   ```xml
+   <key>GIDClientID</key>
+   <string>123456789-abcdefg.apps.googleusercontent.com</string>
+   ```
+3. Set **`CFBundleURLTypes` → CFBundleURLSchemes** to the **reversed** client ID (not the full string with `.apps.googleusercontent.com`):
+   - If the client ID is `123456789-abc.apps.googleusercontent.com`, the URL scheme is:
+   - `com.googleusercontent.apps.123456789-abc`
+   ```xml
+   <key>CFBundleURLTypes</key>
+   <array>
+     <dict>
+       <key>CFBundleTypeRole</key>
+       <string>Editor</string>
+       <key>CFBundleURLSchemes</key>
+       <array>
+         <string>com.googleusercontent.apps.123456789-abc</string>
+       </array>
+     </dict>
+   </array>
+   ```
+
+Do **not** use the Android or Web client ID here — Google Cloud must list a separate credential of type **iOS** whose bundle ID is **`com.memoreader.app`**.
+
+### For macOS:
+
+The same **`google_sign_in`** implementation as iOS is used on macOS (`google_sign_in_ios` / Google Sign-In SDK). You must mirror the iOS **Info.plist** entries and add a **keychain** entitlement; otherwise sign-in fails with a keychain-related `PlatformException` or HTTP 400.
+
+1. **Bundle ID**: The macOS app uses **`com.memoreader.app`** (`macos/Runner/Configs/AppInfo.xcconfig`). It should match the **iOS** OAuth client bundle ID in Google Cloud (same as mobile).
+
+2. Open **`macos/Runner/Info.plist`** and set:
+   - **`GIDClientID`** — the same full client ID string as in `ios/Runner/Info.plist`.
+   - **`CFBundleURLTypes`** → **`CFBundleURLSchemes`** — the same **reversed** client ID as on iOS (see iOS section above).
+
+3. **Keychain sharing** (required on macOS): In **`macos/Runner/DebugProfile.entitlements`** and **`macos/Runner/Release.entitlements`**, include:
+   ```xml
+   <key>keychain-access-groups</key>
+   <array>
+     <string>$(AppIdentifierPrefix)com.google.GIDSignIn</string>
+   </array>
+   ```
+   See [google_sign_in_ios: macOS setup](https://pub.dev/packages/google_sign_in_ios).
+
+4. After changing native dependencies, run **`cd macos && pod install`**.
+
+5. **Code signing for local builds**: Sandbox + keychain entitlements require a **development certificate**. Open **`macos/Runner.xcworkspace`** in Xcode → Runner target → **Signing & Capabilities** → enable **Automatically manage signing** and select your **Team**. Ensure the Mac app id **`com.memoreader.app`** is registered for that team if Xcode prompts you. For command-line **`flutter build macos`**, the first run may need Xcode to refresh provisioning (building once in Xcode, or passing **`-allowProvisioningUpdates`** to `xcodebuild`, resolves “No profiles for com.memoreader.app” errors).
 
 ### For Web (if supporting web):
 
@@ -226,6 +269,16 @@ final GoogleSignIn _googleSignIn = GoogleSignIn(
 - Verify Bundle ID matches exactly
 - Check that OAuth consent screen is configured
 - Ensure you're added as a test user (if app is in testing mode)
+
+### HTTP **400** on `accounts.google.com` (“format incorrect”) (iOS)
+- Almost always means **`GIDClientID` in `ios/Runner/Info.plist` is wrong**: still a **placeholder** (`YOUR_IOS_CLIENT_ID...`), or not the **iOS**-type client from Google Cloud Console.
+- Fix: Create an **OAuth client ID → iOS** with bundle ID **`com.memoreader.app`**, then paste the real client ID into `GIDClientID` and set **`CFBundleURLSchemes`** to the **reversed** client ID (see Step 5 iOS above).
+- Android working does **not** imply iOS is configured — iOS needs its own credential row in the same GCP project.
+
+### HTTP **400** or keychain errors (macOS)
+- Ensure **`GIDClientID`** and reversed **`CFBundleURLSchemes`** are set in **`macos/Runner/Info.plist`** (same values as iOS).
+- Ensure **`keychain-access-groups`** is present in both macOS entitlements files (see Step 5 macOS above).
+- Ensure **`PRODUCT_BUNDLE_IDENTIFIER`** is **`com.memoreader.app`** so it matches the iOS OAuth client in Google Cloud.
 
 ### "Access blocked" or "App not verified" (Error 403: access_denied)
 - **This is the most common issue during development!**

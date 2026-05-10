@@ -4,6 +4,8 @@ import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_pdf_text/flutter_pdf_text.dart';
 
+import 'pdf_macos_text.dart';
+
 /// Service for converting PDF files to EPUB format
 ///
 /// Extracts text from PDF (preserving paragraphs and line breaks, not page breaks),
@@ -28,14 +30,30 @@ class PdfToEpubConverter {
     required String outputEpubPath,
   }) async {
     try {
-      final doc = await PDFDoc.fromFile(pdfFile);
+      late final String textContent;
+      late final PdfToEpubMetadata metadata;
 
-      final textContent = await _extractTextFromPdf(doc);
-      if (textContent.trim().isEmpty) {
-        throw Exception('PDF contains no extractable text (may be image-only)');
+      if (Platform.isMacOS) {
+        final extracted = await PdfMacosText.extract(pdfFile);
+        textContent = extracted.text;
+        if (textContent.trim().isEmpty) {
+          throw Exception('PDF contains no extractable text (may be image-only)');
+        }
+        metadata = _extractMetadata(
+          pdfFile.path,
+          textContent,
+          null,
+          titleOverride: extracted.title,
+          authorOverride: extracted.author,
+        );
+      } else {
+        final doc = await PDFDoc.fromFile(pdfFile);
+        textContent = await _extractTextFromPdf(doc);
+        if (textContent.trim().isEmpty) {
+          throw Exception('PDF contains no extractable text (may be image-only)');
+        }
+        metadata = _extractMetadata(pdfFile.path, textContent, doc.info);
       }
-
-      final metadata = _extractMetadata(pdfFile.path, textContent, doc.info);
       final processedContent = _processPdfText(textContent);
       final archive = _createEpubArchive(metadata, processedContent);
 
@@ -71,9 +89,16 @@ class PdfToEpubConverter {
 
   /// Extract metadata from file path, text content, and PDF document info
   PdfToEpubMetadata _extractMetadata(
-      String filePath, String textContent, PDFDocInfo? pdfInfo) {
-    String? title = pdfInfo?.title?.trim();
-    String? author = pdfInfo?.author?.trim();
+    String filePath,
+    String textContent,
+    PDFDocInfo? pdfInfo, {
+    String? titleOverride,
+    String? authorOverride,
+  }) {
+    String? title = titleOverride?.trim();
+    String? author = authorOverride?.trim();
+    title ??= pdfInfo?.title?.trim();
+    author ??= pdfInfo?.author?.trim();
     final authors = pdfInfo?.authors;
     if (authors != null && authors.isNotEmpty) {
       author ??= authors.join(', ');
