@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/summary_config_service.dart';
+import '../services/codex_auth_service.dart';
 import '../services/settings_service.dart';
 import '../services/prompt_config_service.dart';
 import '../services/rag_database_service.dart';
@@ -57,6 +59,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isLoading = true;
   bool _isOpenAIConfigured = false;
   bool _isMistralConfigured = false;
+  bool _isCodexConfigured = false;
+  String? _codexAccountEmail;
+  bool _codexLoginInProgress = false;
   final TextEditingController _openaiApiKeyController = TextEditingController();
   final TextEditingController _mistralApiKeyController = TextEditingController();
   bool _showOpenaiApiKey = false;
@@ -168,6 +173,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _selectedProvider = _configService.getProvider();
       _isOpenAIConfigured = _configService.isOpenAIConfigured();
       _isMistralConfigured = _configService.isMistralConfigured();
+      _isCodexConfigured = await _configService.isCodexConfigured();
+      final codexCreds = _isCodexConfigured
+          ? await _configService.codexAuth.readCredentials()
+          : null;
+      _codexAccountEmail = codexCreds?.email;
       
       // Load masked API keys for display
       final maskedOpenAIKey = _configService.getOpenAIApiKey();
@@ -536,6 +546,80 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _signInCodex() async {
+    if (_codexLoginInProgress) return;
+    final l10n = AppLocalizations.of(context)!;
+    final auth = _configService.codexAuth;
+
+    setState(() => _codexLoginInProgress = true);
+
+    try {
+      final session = await auth.startDeviceCodeLogin();
+      if (!mounted) return;
+
+      final completed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return _CodexSignInDialog(
+            session: session,
+            auth: auth,
+            l10n: l10n,
+          );
+        },
+      );
+
+      if (completed == true && mounted) {
+        await _configService.setProvider(SummaryConfigService.providerCodex);
+        await _loadSettings();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.codexSignInSuccess)),
+        );
+      }
+    } on CodexAuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${l10n.codexSignInFailed}: ${e.message}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Codex sign-in error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.codexSignInFailed),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _codexLoginInProgress = false);
+      }
+    }
+  }
+
+  Future<void> _signOutCodex() async {
+    await _configService.codexAuth.logout();
+    if (_selectedProvider == SummaryConfigService.providerCodex) {
+      if (_isOpenAIConfigured) {
+        await _configService.setProvider(SummaryConfigService.providerOpenAI);
+      } else if (_isMistralConfigured) {
+        await _configService.setProvider(SummaryConfigService.providerMistral);
+      }
+    }
+    await _loadSettings();
+    if (mounted) {
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.settingsSaved)),
+      );
     }
   }
 
@@ -943,8 +1027,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ? (value) => _saveProvider(value!)
                 : null,
           ),
+
+          RadioListTile<String>(
+            title: Text(l10n.codexModel),
+            subtitle: Text(
+              _isCodexConfigured
+                  ? l10n.codexModelConfigured
+                  : l10n.codexModelNotConfigured,
+            ),
+            value: SummaryConfigService.providerCodex,
+            groupValue: _selectedProvider,
+            onChanged: _isCodexConfigured
+                ? (value) => _saveProvider(value!)
+                : null,
+          ),
+
+          if (_selectedProvider == SummaryConfigService.providerCodex &&
+              !_isCodexConfigured &&
+              !_isOpenAIConfigured &&
+              !_isMistralConfigured)
+            Padding(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+              child: Text(
+                l10n.codexRagEmbeddingHint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Colors.orange[800],
+                ),
+              ),
+            ),
           
           const Divider(height: 32),
+
+          Text(
+            l10n.codexSettings,
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            l10n.codexSettingsDescription,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_isCodexConfigured) ...[
+            Text(
+              l10n.codexSignedInAs(
+                _codexAccountEmail != null ? ' (${_codexAccountEmail!})' : '',
+              ),
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: _codexLoginInProgress ? null : _signOutCodex,
+              child: Text(l10n.codexSignOut),
+            ),
+          ] else
+            ElevatedButton(
+              onPressed: _codexLoginInProgress ? null : _signInCodex,
+              child: Text(l10n.codexSignIn),
+            ),
+          const SizedBox(height: 32),
           
           // OpenAI API Key Section
           Text(
@@ -1875,5 +2018,132 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       }
     }
+  }
+}
+
+class _CodexSignInDialog extends StatefulWidget {
+  const _CodexSignInDialog({
+    required this.session,
+    required this.auth,
+    required this.l10n,
+  });
+
+  final CodexDeviceCodeSession session;
+  final CodexAuthService auth;
+  final AppLocalizations l10n;
+
+  @override
+  State<_CodexSignInDialog> createState() => _CodexSignInDialogState();
+}
+
+class _CodexSignInDialogState extends State<_CodexSignInDialog> {
+  String? _error;
+  bool _polling = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _openBrowser();
+  }
+
+  Future<void> _openBrowser() async {
+    final uri = Uri.parse(widget.session.verificationUrl);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      setState(() {
+        _error = 'Could not open browser.';
+      });
+    }
+  }
+
+  Future<void> _completeLogin() async {
+    setState(() {
+      _polling = true;
+      _error = null;
+    });
+    try {
+      await widget.auth.completeDeviceCodeLogin(widget.session);
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } on CodexAuthException catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.message;
+          _polling = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _polling = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = widget.l10n;
+    return AlertDialog(
+      title: Text(l10n.codexSignIn),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(l10n.codexSignInInstructions),
+            const SizedBox(height: 12),
+            SelectableText(
+              widget.session.userCode,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              widget.session.verificationUrl,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            if (_polling) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(l10n.codexWaitingForSignIn)),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _polling ? null : () => Navigator.of(context).pop(false),
+          child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+        ),
+        TextButton(
+          onPressed: _openBrowser,
+          child: Text(l10n.codexOpenBrowser),
+        ),
+        FilledButton(
+          onPressed: _polling ? null : _completeLogin,
+          child: Text(l10n.codexSignIn),
+        ),
+      ],
+    );
   }
 }

@@ -390,6 +390,58 @@ class AppLocalizationsFr extends AppLocalizations {
   String get openAIModelNotConfigured => 'Non configuré - Clé API requise';
 
   @override
+  String get codexModel => 'ChatGPT / Codex (abonnement)';
+
+  @override
+  String get codexModelConfigured =>
+      'Connecté à ChatGPT — utilise votre abonnement Plus/Pro';
+
+  @override
+  String get codexModelNotConfigured =>
+      'Non connecté — abonnement ChatGPT Plus ou Pro requis';
+
+  @override
+  String get codexSettings => 'ChatGPT / Codex';
+
+  @override
+  String get codexSettingsDescription =>
+      'Connectez-vous avec votre compte ChatGPT pour utiliser Codex via votre abonnement pour les résumés et les embeddings RAG. Les clés API OpenAI ou Mistral ci-dessous sont des options de secours.';
+
+  @override
+  String get codexSignIn => 'Se connecter avec ChatGPT';
+
+  @override
+  String get codexSignOut => 'Se déconnecter';
+
+  @override
+  String get codexSignInInstructions =>
+      'Ouvrez le lien ci-dessous, connectez-vous à ChatGPT, puis saisissez ce code à usage unique :';
+
+  @override
+  String get codexUserCode => 'Code à usage unique';
+
+  @override
+  String get codexOpenBrowser => 'Ouvrir dans le navigateur';
+
+  @override
+  String get codexWaitingForSignIn => 'En attente de connexion…';
+
+  @override
+  String get codexSignInSuccess => 'Connecté à ChatGPT';
+
+  @override
+  String get codexSignInFailed => 'Échec de la connexion ChatGPT';
+
+  @override
+  String codexSignedInAs(String emailSuffix) {
+    return 'Connecté$emailSuffix';
+  }
+
+  @override
+  String get codexRagEmbeddingHint =>
+      'Connectez-vous à ChatGPT/Codex pour les embeddings RAG, ou ajoutez une clé API OpenAI ou Mistral en secours.';
+
+  @override
   String get openAISettings => 'Paramètres OpenAI';
 
   @override

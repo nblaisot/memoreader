@@ -36,7 +36,7 @@ class EmbeddingProviderConfig {
   static EmbeddingProviderConfig forService(EmbeddingService service) {
     final providerName = service.providerName.toLowerCase();
     
-    if (providerName.contains('openai')) {
+    if (providerName.contains('openai') || providerName.contains('codex')) {
       return openai;
     } else if (providerName.contains('mistral')) {
       return mistral;

@@ -14,6 +14,7 @@ class OpenAISummaryService implements SummaryService {
 
   static const String _apiUrl = 'https://api.openai.com/v1/chat/completions';
   static const String _provider = 'openai';
+  static const String _model = 'gpt-4.1';
 
   OpenAISummaryService(
     this.apiKey, {
@@ -53,7 +54,7 @@ class OpenAISummaryService implements SummaryService {
 
       // Build the request payload
       final requestPayload = {
-        'model': 'gpt-4o',
+        'model': _model,
         'messages': [
           {
             'role': 'system',
@@ -85,7 +86,7 @@ class OpenAISummaryService implements SummaryService {
       }
 
       if (kDebugMode) {
-        debugPrint('[LLM] OpenAI request: model=gpt-3.5-turbo, promptLength=${safePrompt.length}');
+        debugPrint('[LLM] OpenAI request: model=$_model, promptLength=${safePrompt.length}');
         debugPrint('[LLM] OpenAI prompt begin >>>');
         debugPrint(safePrompt);
         debugPrint('[LLM] OpenAI prompt end <<<');

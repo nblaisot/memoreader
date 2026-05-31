@@ -382,6 +382,58 @@ class AppLocalizationsEn extends AppLocalizations {
   String get openAIModelNotConfigured => 'Not configured - API key required';
 
   @override
+  String get codexModel => 'ChatGPT / Codex (subscription)';
+
+  @override
+  String get codexModelConfigured =>
+      'Signed in with ChatGPT — uses your Plus/Pro subscription';
+
+  @override
+  String get codexModelNotConfigured =>
+      'Not signed in — ChatGPT Plus or Pro required';
+
+  @override
+  String get codexSettings => 'ChatGPT / Codex';
+
+  @override
+  String get codexSettingsDescription =>
+      'Sign in with your ChatGPT account to use Codex with your subscription for summaries and RAG embeddings. OpenAI or Mistral API keys below are optional fallbacks.';
+
+  @override
+  String get codexSignIn => 'Sign in with ChatGPT';
+
+  @override
+  String get codexSignOut => 'Sign out';
+
+  @override
+  String get codexSignInInstructions =>
+      'Open the link below, sign in to ChatGPT, then enter this one-time code:';
+
+  @override
+  String get codexUserCode => 'One-time code';
+
+  @override
+  String get codexOpenBrowser => 'Open in browser';
+
+  @override
+  String get codexWaitingForSignIn => 'Waiting for sign-in…';
+
+  @override
+  String get codexSignInSuccess => 'Signed in with ChatGPT';
+
+  @override
+  String get codexSignInFailed => 'ChatGPT sign-in failed';
+
+  @override
+  String codexSignedInAs(String emailSuffix) {
+    return 'Signed in$emailSuffix';
+  }
+
+  @override
+  String get codexRagEmbeddingHint =>
+      'Sign in with ChatGPT/Codex for RAG embeddings, or add an OpenAI or Mistral API key as fallback.';
+
+  @override
   String get openAISettings => 'OpenAI Settings';
 
   @override

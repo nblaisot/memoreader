@@ -56,7 +56,7 @@ class RagQueryService {
     final embeddingService = await RagEmbeddingServiceFactory.create(prefs);
 
     if (embeddingService == null) {
-      throw Exception('Embedding service not available. Please configure API key.');
+      throw Exception(await RagEmbeddingServiceFactory.unavailableMessage(prefs));
     }
 
     // Check if book is indexed
@@ -244,7 +244,7 @@ Please provide a helpful answer based ONLY on the provided excerpts. ${onlyReadS
     final embeddingService = await RagEmbeddingServiceFactory.create(prefs);
 
     if (embeddingService == null) {
-      throw Exception('Embedding service not available. Please configure API key.');
+      throw Exception(await RagEmbeddingServiceFactory.unavailableMessage(prefs));
     }
 
     // Filter to only fully indexed books

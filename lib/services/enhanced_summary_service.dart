@@ -18,6 +18,7 @@ import 'summary_database_service.dart';
 import 'book_service.dart';
 import 'summary_service.dart';
 import 'openai_summary_service.dart';
+import 'codex_summary_service.dart';
 import 'prompt_config_service.dart';
 import 'api_cache_service.dart';
 import '../utils/html_text_extractor.dart';
@@ -110,7 +111,8 @@ class ChunkingConfig {
 
   /// Resolve appropriate configuration based on the summary service
   static ChunkingConfig resolve(SummaryService summaryService) {
-    if (summaryService is OpenAISummaryService) {
+    if (summaryService is CodexSummaryService ||
+        summaryService is OpenAISummaryService) {
       // OpenAI: Reduced chunk size to ensure detailed "scene-by-scene" summaries
       // effectively fit within the output limit without aggressive compression.
       return const ChunkingConfig(

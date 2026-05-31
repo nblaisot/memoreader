@@ -3197,31 +3197,49 @@ class _ReaderScreenState extends State<ReaderScreen>
     required String originalText,
     required String generatedText,
   }) {
-    final lines = generatedText
-        .split('\n')
-        .map((line) => line.trim())
-        .where((line) => line.isNotEmpty)
-        .toList();
+    final fields = <String, StringBuffer>{};
+    String? currentField;
+    var sawKnownField = false;
+    final labelPattern = RegExp(
+      r'^(Original|Pronunciation|Translation)\s*:\s*(.*)$',
+      caseSensitive: false,
+    );
 
-    String? originalFromResponse;
-    String? pronunciation;
-    String? translation;
+    for (final rawLine in generatedText.split('\n')) {
+      final line = rawLine.trimRight();
+      final match = labelPattern.firstMatch(line.trimLeft());
+      if (match != null) {
+        sawKnownField = true;
+        currentField = match.group(1)!.toLowerCase();
+        final value = match.group(2)!.trim();
+        fields.putIfAbsent(currentField, StringBuffer.new);
+        if (value.isNotEmpty) {
+          fields[currentField]!.writeln(value);
+        }
+        continue;
+      }
 
-    for (final line in lines) {
-      if (line.startsWith('Original:')) {
-        originalFromResponse = line.substring('Original:'.length).trim();
-      } else if (line.startsWith('Pronunciation:')) {
-        pronunciation = line.substring('Pronunciation:'.length).trim();
-      } else if (line.startsWith('Translation:')) {
-        translation = line.substring('Translation:'.length).trim();
+      if (currentField != null) {
+        fields[currentField]!.writeln(line.trim());
       }
     }
 
-    // If translation is missing but we have some content, treat the whole
-    // response as the translation to avoid losing information.
-    translation ??= generatedText.trim().isNotEmpty
-        ? generatedText.trim()
-        : null;
+    String? fieldValue(String name) {
+      final value = fields[name]?.toString().trim();
+      return value == null || value.isEmpty ? null : value;
+    }
+
+    String? originalFromResponse = fieldValue('original');
+    String? pronunciation = fieldValue('pronunciation');
+    String? translation = fieldValue('translation');
+
+    // If no labels were found, treat the response as the translation. If the
+    // model only echoed an Original field, do not show that as a translation.
+    if (!sawKnownField) {
+      translation = generatedText.trim().isNotEmpty
+          ? generatedText.trim()
+          : null;
+    }
 
     // For original, prefer the model's echo if present, otherwise the
     // user's selected text.
