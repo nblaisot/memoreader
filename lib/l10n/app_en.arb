@@ -388,6 +388,31 @@
   "@textSelectionActionError": {
     "description": "Error message when the selection action fails"
   },
+  "codexUsageLimitError": "ChatGPT/Codex usage limit reached. Try again in about {hours} h {minutes} min, or choose another provider in Settings.",
+  "@codexUsageLimitError": {
+    "description": "Error when ChatGPT/Codex subscription usage cap is hit",
+    "placeholders": {
+      "hours": {
+        "type": "int"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "codexUsageLimitErrorSoon": "ChatGPT/Codex usage limit reached. Try again in about {minutes} min, or choose another provider in Settings.",
+  "@codexUsageLimitErrorSoon": {
+    "description": "Error when ChatGPT/Codex usage cap resets in under one hour",
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "codexUsageLimitErrorGeneric": "ChatGPT/Codex usage limit reached. Try again later or choose another provider in Settings.",
+  "@codexUsageLimitErrorGeneric": {
+    "description": "Error when ChatGPT/Codex usage cap is hit but reset time is unknown"
+  },
   "textSelectionSelectedTextLabel": "Selected text",
   "@textSelectionSelectedTextLabel": {
     "description": "Label shown above the selected text in the action dialog"

@@ -288,6 +288,20 @@ class AppLocalizationsFr extends AppLocalizations {
       'Impossible de traiter le texte sélectionné.';
 
   @override
+  String codexUsageLimitError(int hours, int minutes) {
+    return 'Limite d\'utilisation ChatGPT/Codex atteinte. Réessayez dans environ $hours h $minutes min, ou choisissez un autre fournisseur dans les réglages.';
+  }
+
+  @override
+  String codexUsageLimitErrorSoon(int minutes) {
+    return 'Limite d\'utilisation ChatGPT/Codex atteinte. Réessayez dans environ $minutes min, ou choisissez un autre fournisseur dans les réglages.';
+  }
+
+  @override
+  String get codexUsageLimitErrorGeneric =>
+      'Limite d\'utilisation ChatGPT/Codex atteinte. Réessayez plus tard ou choisissez un autre fournisseur dans les réglages.';
+
+  @override
   String get textSelectionSelectedTextLabel => 'Texte sélectionné';
 
   @override

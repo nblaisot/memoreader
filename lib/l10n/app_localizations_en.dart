@@ -287,6 +287,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get textSelectionActionError => 'Unable to process the selected text.';
 
   @override
+  String codexUsageLimitError(int hours, int minutes) {
+    return 'ChatGPT/Codex usage limit reached. Try again in about $hours h $minutes min, or choose another provider in Settings.';
+  }
+
+  @override
+  String codexUsageLimitErrorSoon(int minutes) {
+    return 'ChatGPT/Codex usage limit reached. Try again in about $minutes min, or choose another provider in Settings.';
+  }
+
+  @override
+  String get codexUsageLimitErrorGeneric =>
+      'ChatGPT/Codex usage limit reached. Try again later or choose another provider in Settings.';
+
+  @override
   String get textSelectionSelectedTextLabel => 'Selected text';
 
   @override
