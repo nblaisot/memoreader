@@ -54,6 +54,7 @@ class WebViewReaderController {
 
   bool get isAttached => _controller != null;
   bool get isReady => _readyCompleter.isCompleted;
+  WebViewController? get webViewController => _controller;
 
   void attach(WebViewController controller) {
     _controller = controller;
@@ -363,8 +364,8 @@ class _WebViewReaderState extends State<WebViewReader> {
     }
     if (type == 'selectionAction') {
       final text = data['text'];
-      if (text is String) {
-        widget.onSelectionAction(text);
+      if (text is String && text.trim().isNotEmpty) {
+        widget.onSelectionAction(text.trim());
       }
       return;
     }

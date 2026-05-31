@@ -18,6 +18,8 @@ import '../models/book.dart';
 import '../models/reading_progress.dart';
 import '../services/book_service.dart';
 import '../services/enhanced_summary_service.dart';
+import '../services/codex_auth_service.dart';
+import '../services/codex_usage_limit_exception.dart';
 import '../services/summary_config_service.dart';
 import '../services/settings_service.dart';
 import '../services/summary_database_service.dart';
@@ -42,6 +44,7 @@ import 'reader/navigation_helper.dart';
 import 'reader/selection_warmup.dart';
 import 'reader/immediate_text_selection_controls.dart';
 import 'reader/webview_reader.dart';
+import 'reader/ios_webview_selection_menu.dart';
 import 'routes.dart';
 import 'settings_screen.dart';
 import 'summary_screen.dart';
@@ -103,6 +106,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   String? _lastWebViewLayoutKey;
   String? _lastWebViewActionLabel;
   bool? _lastWebViewActionEnabled;
+  String? _lastNativeMenuRegistrationKey;
 
   LineMetricsPaginationEngine? _engine;
   final PaginationCacheManager _cacheManager = const PaginationCacheManager();
@@ -2190,7 +2194,8 @@ class _ReaderScreenState extends State<ReaderScreen>
               onTapAction: _handleWebViewTapAction,
             ),
           ),
-          if (_webViewSelection != null) _buildWebViewSelectionToolbar(),
+          if (_webViewSelection != null && !IosWebViewSelectionMenu.isSupported)
+            _buildWebViewSelectionToolbar(),
           if (_isNavigating || html.isEmpty || _isWaitingForWebViewInit)
             Positioned.fill(
               child: Container(
@@ -2269,6 +2274,44 @@ class _ReaderScreenState extends State<ReaderScreen>
       _lastWebViewActionEnabled = actionEnabled;
       unawaited(_webViewController.setActionEnabled(actionEnabled));
     }
+
+    _registerIosNativeSelectionMenuIfNeeded(
+      actionLabel: actionLabel,
+      actionEnabled: actionEnabled,
+    );
+  }
+
+  void _registerIosNativeSelectionMenuIfNeeded({
+    required String actionLabel,
+    required bool actionEnabled,
+  }) {
+    if (!IosWebViewSelectionMenu.isSupported ||
+        !_webViewController.isAttached ||
+        !_webViewController.isReady) {
+      return;
+    }
+    final webViewController = _webViewController.webViewController;
+    if (webViewController == null) {
+      return;
+    }
+    final materialL10n = MaterialLocalizations.of(context);
+    final copyLabel = materialL10n.copyButtonLabel;
+    final selectAllLabel = materialL10n.selectAllButtonLabel;
+    final key =
+        '$actionLabel|$copyLabel|$selectAllLabel|$actionEnabled';
+    if (_lastNativeMenuRegistrationKey == key) {
+      return;
+    }
+    _lastNativeMenuRegistrationKey = key;
+    unawaited(
+      IosWebViewSelectionMenu.registerWebView(
+        controller: webViewController,
+        actionLabel: actionLabel,
+        copyLabel: copyLabel,
+        selectAllLabel: selectAllLabel,
+        actionEnabled: actionEnabled,
+      ),
+    );
   }
 
   Widget _buildProgressIndicator(ThemeData theme) {
@@ -3043,9 +3086,12 @@ class _ReaderScreenState extends State<ReaderScreen>
       debugPrint('Error executing selection action: $e');
       debugPrint('$stack');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.textSelectionActionError)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_selectionActionErrorMessage(e, l10n)),
+            duration: const Duration(seconds: 6),
+          ),
+        );
       }
     } finally {
       if (progressVisible && mounted) {
@@ -3057,6 +3103,25 @@ class _ReaderScreenState extends State<ReaderScreen>
         });
       }
     }
+  }
+
+  String _selectionActionErrorMessage(Object error, AppLocalizations l10n) {
+    if (error is CodexUsageLimitException) {
+      final seconds = error.resetsInSeconds;
+      if (seconds != null && seconds > 0) {
+        final hours = seconds ~/ 3600;
+        final minutes = ((seconds % 3600) + 59) ~/ 60;
+        if (hours > 0) {
+          return l10n.codexUsageLimitError(hours, minutes);
+        }
+        return l10n.codexUsageLimitErrorSoon(minutes.clamp(1, 59));
+      }
+      return l10n.codexUsageLimitErrorGeneric;
+    }
+    if (error is CodexAuthException) {
+      return error.message;
+    }
+    return l10n.textSelectionActionError;
   }
 
   Future<void> _saveTranslation({
@@ -3842,6 +3907,7 @@ body {
   let actionEnabled = true;
   let selectionTimer = null;
   let selectionActiveDeactivateTimer = null;
+  let lastSelectionText = '';
   let touchStart = null;
   let lastTouchTime = 0;
   let selectionActive = false;
@@ -4734,12 +4800,29 @@ body {
     };
   }
 
+  function getLastSelectionText() {
+    const selection = window.getSelection();
+    const live = selection ? selection.toString().trim() : '';
+    return live || lastSelectionText;
+  }
+
+  function triggerSelectionAction() {
+    const text = getLastSelectionText().trim();
+    if (!text || !actionEnabled) {
+      return false;
+    }
+    postMessage({ type: 'selectionAction', text: text });
+    clearSelection();
+    return true;
+  }
+
   function clearSelection() {
     if (selectionActiveDeactivateTimer) {
       clearTimeout(selectionActiveDeactivateTimer);
       selectionActiveDeactivateTimer = null;
     }
     selectionActive = false;
+    lastSelectionText = '';
     const selection = window.getSelection();
     if (selection) {
       selection.removeAllRanges();
@@ -4770,6 +4853,7 @@ body {
     selectionTimer = setTimeout(function() {
       const info = getSelectionInfo();
       if (!info) {
+        lastSelectionText = '';
         hideSelectionMenu();
         postMessage({ type: 'selectionChanged', hasSelection: false, text: '', rect: null });
         if (selectionActiveDeactivateTimer) {
@@ -4786,6 +4870,7 @@ body {
         selectionActiveDeactivateTimer = null;
       }
       selectionActive = true;
+      lastSelectionText = info.text;
       hideSelectionMenu();
       postMessage({
         type: 'selectionChanged',
@@ -4967,13 +5052,7 @@ body {
 
   selectionButton.addEventListener('click', function(event) {
     event.preventDefault();
-    const selection = window.getSelection();
-    const text = selection ? selection.toString().trim() : '';
-    if (!text || !actionEnabled) {
-      return;
-    }
-    postMessage({ type: 'selectionAction', text: text });
-    clearSelection();
+    triggerSelectionAction();
   });
 
   if (selectionCopy) {
@@ -5056,7 +5135,9 @@ body {
     setActionLabel: setActionLabel,
     setActionEnabled: setActionEnabled,
     clearSelection: clearSelection,
-    selectAll: selectAll
+    selectAll: selectAll,
+    getLastSelectionText: getLastSelectionText,
+    triggerSelectionAction: triggerSelectionAction
   };
 
   function init() {

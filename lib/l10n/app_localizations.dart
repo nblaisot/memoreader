@@ -566,6 +566,24 @@ abstract class AppLocalizations {
   /// **'Unable to process the selected text.'**
   String get textSelectionActionError;
 
+  /// Error when ChatGPT/Codex subscription usage cap is hit
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT/Codex usage limit reached. Try again in about {hours} h {minutes} min, or choose another provider in Settings.'**
+  String codexUsageLimitError(int hours, int minutes);
+
+  /// Error when ChatGPT/Codex usage cap resets in under one hour
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT/Codex usage limit reached. Try again in about {minutes} min, or choose another provider in Settings.'**
+  String codexUsageLimitErrorSoon(int minutes);
+
+  /// Error when ChatGPT/Codex usage cap is hit but reset time is unknown
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT/Codex usage limit reached. Try again later or choose another provider in Settings.'**
+  String get codexUsageLimitErrorGeneric;
+
   /// Label shown above the selected text in the action dialog
   ///
   /// In en, this message translates to:

@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'api_cache_service.dart';
 import 'codex_auth_constants.dart';
 import 'codex_auth_service.dart';
+import 'codex_usage_limit_exception.dart';
 import 'codex_sse_parser.dart';
 import 'http_response_text.dart';
 import 'resolving_http_client.dart';
@@ -112,11 +113,22 @@ class CodexSummaryService implements SummaryService {
     if (!response.statusCode.toString().startsWith('2')) {
       final body = decodeHttpResponseBody(response);
       String message = 'Codex API error (${response.statusCode})';
+      int? resetsInSeconds;
+      String? planType;
+      String? errorType;
       try {
         final err = jsonDecode(body) as Map<String, dynamic>;
         final detail = err['error'];
         if (detail is Map && detail['message'] is String) {
           message = detail['message'] as String;
+          errorType = detail['type'] as String?;
+          planType = detail['plan_type'] as String?;
+          final resetsRaw = detail['resets_in_seconds'];
+          if (resetsRaw is int) {
+            resetsInSeconds = resetsRaw;
+          } else if (resetsRaw != null) {
+            resetsInSeconds = int.tryParse(resetsRaw.toString());
+          }
         } else if (err['detail'] is String) {
           message = err['detail'] as String;
         }
@@ -124,6 +136,14 @@ class CodexSummaryService implements SummaryService {
         if (body.isNotEmpty && body.length < 500) {
           message = body;
         }
+      }
+      if (response.statusCode == 429 ||
+          errorType == 'usage_limit_reached') {
+        throw CodexUsageLimitException(
+          message,
+          resetsInSeconds: resetsInSeconds,
+          planType: planType,
+        );
       }
       throw Exception(message);
     }
