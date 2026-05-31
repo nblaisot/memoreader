@@ -746,6 +746,96 @@ abstract class AppLocalizations {
   /// **'Not configured - API key required'**
   String get openAIModelNotConfigured;
 
+  /// ChatGPT Codex subscription provider option
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT / Codex (subscription)'**
+  String get codexModel;
+
+  /// Codex provider configured message
+  ///
+  /// In en, this message translates to:
+  /// **'Signed in with ChatGPT — uses your Plus/Pro subscription'**
+  String get codexModelConfigured;
+
+  /// Codex provider not configured message
+  ///
+  /// In en, this message translates to:
+  /// **'Not signed in — ChatGPT Plus or Pro required'**
+  String get codexModelNotConfigured;
+
+  /// Codex settings section title
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT / Codex'**
+  String get codexSettings;
+
+  /// Codex settings section description
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in with your ChatGPT account to use Codex with your subscription for summaries and RAG embeddings. OpenAI or Mistral API keys below are optional fallbacks.'**
+  String get codexSettingsDescription;
+
+  /// Start ChatGPT device-code login
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in with ChatGPT'**
+  String get codexSignIn;
+
+  /// Sign out of ChatGPT Codex
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out'**
+  String get codexSignOut;
+
+  /// Device code login instructions
+  ///
+  /// In en, this message translates to:
+  /// **'Open the link below, sign in to ChatGPT, then enter this one-time code:'**
+  String get codexSignInInstructions;
+
+  /// Device code label
+  ///
+  /// In en, this message translates to:
+  /// **'One-time code'**
+  String get codexUserCode;
+
+  /// Open ChatGPT device login in browser
+  ///
+  /// In en, this message translates to:
+  /// **'Open in browser'**
+  String get codexOpenBrowser;
+
+  /// Polling for device login completion
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for sign-in…'**
+  String get codexWaitingForSignIn;
+
+  /// Codex login success message
+  ///
+  /// In en, this message translates to:
+  /// **'Signed in with ChatGPT'**
+  String get codexSignInSuccess;
+
+  /// Codex login failure title
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT sign-in failed'**
+  String get codexSignInFailed;
+
+  /// Codex signed-in status with optional email
+  ///
+  /// In en, this message translates to:
+  /// **'Signed in{emailSuffix}'**
+  String codexSignedInAs(String emailSuffix);
+
+  /// Hint when Codex is selected about embedding keys
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in with ChatGPT/Codex for RAG embeddings, or add an OpenAI or Mistral API key as fallback.'**
+  String get codexRagEmbeddingHint;
+
   /// OpenAI settings section title
   ///
   /// In en, this message translates to:

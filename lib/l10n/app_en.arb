@@ -508,6 +508,72 @@
   "@openAIModelNotConfigured": {
     "description": "OpenAI model not configured message"
   },
+  "codexModel": "ChatGPT / Codex (subscription)",
+  "@codexModel": {
+    "description": "ChatGPT Codex subscription provider option"
+  },
+  "codexModelConfigured": "Signed in with ChatGPT — uses your Plus/Pro subscription",
+  "@codexModelConfigured": {
+    "description": "Codex provider configured message"
+  },
+  "codexModelNotConfigured": "Not signed in — ChatGPT Plus or Pro required",
+  "@codexModelNotConfigured": {
+    "description": "Codex provider not configured message"
+  },
+  "codexSettings": "ChatGPT / Codex",
+  "@codexSettings": {
+    "description": "Codex settings section title"
+  },
+  "codexSettingsDescription": "Sign in with your ChatGPT account to use Codex with your subscription for summaries and RAG embeddings. OpenAI or Mistral API keys below are optional fallbacks.",
+  "@codexSettingsDescription": {
+    "description": "Codex settings section description"
+  },
+  "codexSignIn": "Sign in with ChatGPT",
+  "@codexSignIn": {
+    "description": "Start ChatGPT device-code login"
+  },
+  "codexSignOut": "Sign out",
+  "@codexSignOut": {
+    "description": "Sign out of ChatGPT Codex"
+  },
+  "codexSignInInstructions": "Open the link below, sign in to ChatGPT, then enter this one-time code:",
+  "@codexSignInInstructions": {
+    "description": "Device code login instructions"
+  },
+  "codexUserCode": "One-time code",
+  "@codexUserCode": {
+    "description": "Device code label"
+  },
+  "codexOpenBrowser": "Open in browser",
+  "@codexOpenBrowser": {
+    "description": "Open ChatGPT device login in browser"
+  },
+  "codexWaitingForSignIn": "Waiting for sign-in…",
+  "@codexWaitingForSignIn": {
+    "description": "Polling for device login completion"
+  },
+  "codexSignInSuccess": "Signed in with ChatGPT",
+  "@codexSignInSuccess": {
+    "description": "Codex login success message"
+  },
+  "codexSignInFailed": "ChatGPT sign-in failed",
+  "@codexSignInFailed": {
+    "description": "Codex login failure title"
+  },
+  "codexSignedInAs": "Signed in{emailSuffix}",
+  "@codexSignedInAs": {
+    "description": "Codex signed-in status with optional email",
+    "placeholders": {
+      "emailSuffix": {
+        "type": "String",
+        "example": " (user@example.com)"
+      }
+    }
+  },
+  "codexRagEmbeddingHint": "Sign in with ChatGPT/Codex for RAG embeddings, or add an OpenAI or Mistral API key as fallback.",
+  "@codexRagEmbeddingHint": {
+    "description": "Hint when Codex is selected about embedding keys"
+  },
   "openAISettings": "OpenAI Settings",
   "@openAISettings": {
     "description": "OpenAI settings section title"

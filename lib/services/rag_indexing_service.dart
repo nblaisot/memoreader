@@ -348,7 +348,7 @@ void _indexingWorker(_IndexingWorkerParams params) async {
         indexedChunks: 0,
         lastUpdated: DateTime.now(),
         errorMessage:
-            'Embedding service not available. Please configure API key.',
+            await RagEmbeddingServiceFactory.unavailableMessage(prefs),
       );
       await databaseService.saveIndexStatus(errorProgress);
       params.sendPort.send(errorProgress);

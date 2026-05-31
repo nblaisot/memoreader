@@ -2,47 +2,57 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'summary_service.dart';
 import 'openai_summary_service.dart';
 import 'mistral_summary_service.dart';
+import 'codex_auth_service.dart';
+import 'codex_summary_service.dart';
 
 /// Service for managing summary configuration and provider selection
-/// 
+///
 /// Handles:
-/// - Storing user's choice of summary provider (OpenAI or Mistral)
+/// - Storing user's choice of summary provider (OpenAI, Mistral, or ChatGPT/Codex)
 /// - Storing API keys (securely)
+/// - ChatGPT/Codex OAuth via [CodexAuthService]
 /// - Creating and managing summary service instances
 class SummaryConfigService {
-  static const String _providerKey = 'summary_provider';
+  static const String providerKey = 'summary_provider';
   static const String _openaiApiKeyKey = 'openai_api_key';
   static const String _mistralApiKeyKey = 'mistral_api_key';
-  
-  static const String _providerOpenAI = 'openai';
-  static const String _providerMistral = 'mistral';
-  
+
+  static const String providerOpenAI = 'openai';
+  static const String providerMistral = 'mistral';
+  static const String providerCodex = CodexSummaryService.providerId;
+
   final SharedPreferences _prefs;
+  final CodexAuthService _codexAuth;
   OpenAISummaryService? _openAIService;
   MistralSummaryService? _mistralService;
-  
-  SummaryConfigService(this._prefs);
+  CodexSummaryService? _codexService;
+
+  SummaryConfigService(this._prefs, {CodexAuthService? codexAuth})
+      : _codexAuth = codexAuth ?? CodexAuthService();
 
   /// Get the current summary service based on user configuration
   Future<SummaryService?> getSummaryService() async {
-    final provider = _prefs.getString(_providerKey) ?? _providerOpenAI;
-    
+    final provider = _prefs.getString(providerKey) ?? providerOpenAI;
+
     switch (provider) {
-      case _providerOpenAI:
-        return await _getOpenAIService();
-        
-      case _providerMistral:
-        return await _getMistralService();
-        
+      case providerOpenAI:
+        return _getOpenAIService();
+
+      case providerMistral:
+        return _getMistralService();
+
+      case providerCodex:
+        return _getCodexService();
+
       default:
-        // Default to OpenAI if available, otherwise Mistral
         final openAIService = await _getOpenAIService();
         if (openAIService != null) return openAIService;
-        return await _getMistralService();
+        final codex = await _getCodexService();
+        if (codex != null) return codex;
+        return _getMistralService();
     }
   }
 
-  /// Get OpenAI service instance, creating it if needed
   Future<OpenAISummaryService?> _getOpenAIService() async {
     final apiKey = _prefs.getString(_openaiApiKeyKey);
     if (apiKey == null || apiKey.isEmpty) {
@@ -52,7 +62,6 @@ class SummaryConfigService {
     return _openAIService;
   }
 
-  /// Get Mistral service instance, creating it if needed
   Future<MistralSummaryService?> _getMistralService() async {
     final apiKey = _prefs.getString(_mistralApiKeyKey);
     if (apiKey == null || apiKey.isEmpty) {
@@ -62,99 +71,104 @@ class SummaryConfigService {
     return _mistralService;
   }
 
-  /// Set the summary provider (OpenAI or Mistral)
+  Future<CodexSummaryService?> _getCodexService() async {
+    if (!await _codexAuth.isConfigured()) {
+      return null;
+    }
+    _codexService ??= CodexSummaryService(authService: _codexAuth);
+    return _codexService;
+  }
+
+  CodexAuthService get codexAuth => _codexAuth;
+
   Future<void> setProvider(String provider) async {
-    if (provider != _providerOpenAI && provider != _providerMistral) {
+    if (provider != providerOpenAI &&
+        provider != providerMistral &&
+        provider != providerCodex) {
       throw ArgumentError('Invalid provider: $provider');
     }
-    await _prefs.setString(_providerKey, provider);
-    // Reset service instances to force recreation
+    await _prefs.setString(providerKey, provider);
     _openAIService = null;
     _mistralService = null;
+    _codexService = null;
   }
 
-  /// Get the current provider
   String getProvider() {
-    return _prefs.getString(_providerKey) ?? _providerOpenAI;
+    return _prefs.getString(providerKey) ?? providerOpenAI;
   }
 
-  /// Set the OpenAI API key
   Future<void> setOpenAIApiKey(String apiKey) async {
     await _prefs.setString(_openaiApiKeyKey, apiKey);
-    // Reset OpenAI service instance to force recreation with new key
     _openAIService = null;
   }
 
-  /// Get the OpenAI API key (for display purposes, masked)
   String? getOpenAIApiKey() {
     final key = _prefs.getString(_openaiApiKeyKey);
     if (key == null || key.isEmpty) {
       return null;
     }
-    // Return masked version for display
     if (key.length <= 8) {
       return '••••••••';
     }
     return '${key.substring(0, 4)}••••${key.substring(key.length - 4)}';
   }
 
-  /// Get the raw OpenAI API key (for sync purposes, not masked)
   String? getRawOpenAIApiKey() {
     return _prefs.getString(_openaiApiKeyKey);
   }
 
-  /// Check if OpenAI API key is configured
   bool isOpenAIConfigured() {
     final key = _prefs.getString(_openaiApiKeyKey);
     return key != null && key.isNotEmpty;
   }
 
-  /// Set the Mistral API key
   Future<void> setMistralApiKey(String apiKey) async {
     await _prefs.setString(_mistralApiKeyKey, apiKey);
-    // Reset Mistral service instance to force recreation with new key
     _mistralService = null;
   }
 
-  /// Get the Mistral API key (for display purposes, masked)
   String? getMistralApiKey() {
     final key = _prefs.getString(_mistralApiKeyKey);
     if (key == null || key.isEmpty) {
       return null;
     }
-    // Return masked version for display
     if (key.length <= 8) {
       return '••••••••';
     }
     return '${key.substring(0, 4)}••••${key.substring(key.length - 4)}';
   }
 
-  /// Get the raw Mistral API key (for sync purposes, not masked)
   String? getRawMistralApiKey() {
     return _prefs.getString(_mistralApiKeyKey);
   }
 
-  /// Check if Mistral API key is configured
   bool isMistralConfigured() {
     final key = _prefs.getString(_mistralApiKeyKey);
     return key != null && key.isNotEmpty;
   }
 
-  /// Get available providers
+  Future<bool> isCodexConfigured() => _codexAuth.isConfigured();
+
   List<String> getAvailableProviders() {
     final providers = <String>[];
-    
+
     if (isOpenAIConfigured()) {
-      providers.add(_providerOpenAI);
+      providers.add(providerOpenAI);
     }
-    
+
+    // Codex availability is async; settings screen checks separately.
     if (isMistralConfigured()) {
-      providers.add(_providerMistral);
+      providers.add(providerMistral);
     }
-    
+
+    return providers;
+  }
+
+  Future<List<String>> getAvailableProvidersAsync() async {
+    final providers = getAvailableProviders();
+    if (await isCodexConfigured() && !providers.contains(providerCodex)) {
+      providers.add(providerCodex);
+    }
     return providers;
   }
 }
-
-
-

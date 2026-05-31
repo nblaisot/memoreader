@@ -1,26 +1,29 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Service for managing customizable prompts for summary generation
-/// 
+///
 /// Stores and retrieves custom prompts for different summary types.
 /// Each prompt has separate French and English versions.
 class PromptConfigService {
   final SharedPreferences _prefs;
-  
+
   // Keys for storing prompts
   static const String _chunkSummaryPromptFrKey = 'chunk_summary_prompt_fr';
   static const String _chunkSummaryPromptEnKey = 'chunk_summary_prompt_en';
-  static const String _characterExtractionPromptFrKey = 'character_extraction_prompt_fr';
-  static const String _characterExtractionPromptEnKey = 'character_extraction_prompt_en';
+  static const String _characterExtractionPromptFrKey =
+      'character_extraction_prompt_fr';
+  static const String _characterExtractionPromptEnKey =
+      'character_extraction_prompt_en';
   static const String _textActionLabelFrKey = 'text_action_label_fr';
   static const String _textActionLabelEnKey = 'text_action_label_en';
   static const String _textActionPromptFrKey = 'text_action_prompt_fr';
   static const String _textActionPromptEnKey = 'text_action_prompt_en';
-  
+
   PromptConfigService(this._prefs);
-  
+
   // Default prompts (French)
-  static const String _defaultChunkSummaryPromptFr = '''Résume ce passage de manière détaillée et complète.
+  static const String _defaultChunkSummaryPromptFr =
+      '''Résume ce passage de manière détaillée et complète.
 Écris un récit fluide, en suivant l'ordre chronologique des événements.
 
 INSTRUCTIONS :
@@ -36,7 +39,8 @@ Texte :
 
 Résumé :''';
 
-  static const String _defaultChunkSummaryPromptEn = '''Summarize this passage in a detailed and complete way.
+  static const String _defaultChunkSummaryPromptEn =
+      '''Summarize this passage in a detailed and complete way.
 Write a flowing narrative, following the chronological order of events.
 
 INSTRUCTIONS:
@@ -52,7 +56,8 @@ Text:
 
 Summary:''';
 
-  static const String _defaultCharacterExtractionPromptFr = '''Analyse le texte suivant pour extraire les informations clés sur les personnages.
+  static const String _defaultCharacterExtractionPromptFr =
+      '''Analyse le texte suivant pour extraire les informations clés sur les personnages.
 
 Génère une fiche pour chaque personnage présent, en te concentrant sur son RÔLE ACTIF dans ce passage spécifique.
 
@@ -74,7 +79,8 @@ Texte à analyser:
 
 Réponse (format exact requis):''';
 
-  static const String _defaultCharacterExtractionPromptEn = '''Analyze the following text to extract key information about the characters.
+  static const String _defaultCharacterExtractionPromptEn =
+      '''Analyze the following text to extract key information about the characters.
 
 Generate a profile for each character present, focusing on their ACTIVE ROLE in this specific passage.
 
@@ -99,71 +105,86 @@ Response (exact format required):''';
   static const String _defaultTextActionLabelFr = 'Traduire';
   static const String _defaultTextActionLabelEn = 'Translate';
   static const String _defaultTextActionPromptFr =
-      '''Pour le mot ou la courte phrase suivante, fournis d'abord sa prononciation/romanisation en caractères latins, puis sa traduction en {language}.
+      '''Traduis le texte sélectionné ci-dessous en {language}.
 
 INSTRUCTIONS IMPORTANTES :
-- Pour les caractères chinois, utilise le pinyin standard avec les marques de ton.
-- Pour l'arabe, utilise une translittération latine courante.
-- Pour le russe, utilise une translittération latine courante.
-- Pour les langues utilisant déjà l'alphabet latin, tu peux répéter le mot comme prononciation ou fournir une syllabification si utile.
+- Si le texte est un mot ou une très courte expression, fournis aussi sa prononciation/romanisation en caractères latins.
+- Si le texte est une phrase longue ou un paragraphe, mets simplement "-" pour la prononciation.
+- Traduis tout le texte sélectionné, sans résumé, sans explication et sans ajouter d'informations.
+- Ne répète pas le texte original dans ta réponse.
 
-FORMAT DE RÉPONSE EXACT (respecte-le strictement, sans texte supplémentaire) :
-Original: {text}
+FORMAT DE RÉPONSE EXACT :
 Pronunciation: [prononciation en caractères latins]
 Translation: [traduction en {language}]
 
-Ne rajoute aucun texte avant ou après ces trois lignes. Réponds uniquement avec ces trois lignes exactement dans cet ordre.
+Réponds uniquement avec ces deux champs. La traduction peut contenir plusieurs phrases si nécessaire.
 
-Mot ou phrase à traduire :
+Texte à traduire :
 {text}''';
   static const String _defaultTextActionPromptEn =
-      '''For the following word or short phrase, first provide its pronunciation/romanization in Latin characters, then its translation into {language}.
+      '''Translate the selected text below into {language}.
 
 IMPORTANT INSTRUCTIONS:
-- For Chinese characters, use standard pinyin with tone marks.
-- For Arabic, use a common Latin transliteration.
-- For Russian, use a common Latin transliteration.
-- For languages already using the Latin alphabet, you may repeat the word as pronunciation or provide syllabification if helpful.
+- If the selected text is a single word or very short phrase, also provide its pronunciation/romanization in Latin characters.
+- If the selected text is a full sentence or paragraph, use "-" for pronunciation.
+- Translate the entire selected text. Do not summarize, explain, or add information.
+- Do not repeat the original text in your response.
 
-EXACT RESPONSE FORMAT (follow it strictly, with no additional text):
-Original: {text}
+EXACT RESPONSE FORMAT:
 Pronunciation: [pronunciation in Latin characters]
 Translation: [translation into {language}]
 
-Do not add any text before or after these three lines. Respond only with these three lines exactly in this order.
+Respond only with these two fields. The translation may contain multiple sentences if needed.
 
-Word or phrase to translate:
+Text to translate:
 {text}''';
 
   /// Get chunk summary prompt
   String getChunkSummaryPrompt(String language) {
-    final key = language == 'fr' ? _chunkSummaryPromptFrKey : _chunkSummaryPromptEnKey;
-    return _prefs.getString(key) ?? 
-        (language == 'fr' ? _defaultChunkSummaryPromptFr : _defaultChunkSummaryPromptEn);
+    final key = language == 'fr'
+        ? _chunkSummaryPromptFrKey
+        : _chunkSummaryPromptEnKey;
+    return _prefs.getString(key) ??
+        (language == 'fr'
+            ? _defaultChunkSummaryPromptFr
+            : _defaultChunkSummaryPromptEn);
   }
 
   /// Set chunk summary prompt
   Future<void> setChunkSummaryPrompt(String language, String prompt) async {
-    final key = language == 'fr' ? _chunkSummaryPromptFrKey : _chunkSummaryPromptEnKey;
+    final key = language == 'fr'
+        ? _chunkSummaryPromptFrKey
+        : _chunkSummaryPromptEnKey;
     await _prefs.setString(key, prompt);
   }
 
   /// Get character extraction prompt
   String getCharacterExtractionPrompt(String language) {
-    final key = language == 'fr' ? _characterExtractionPromptFrKey : _characterExtractionPromptEnKey;
-    return _prefs.getString(key) ?? 
-        (language == 'fr' ? _defaultCharacterExtractionPromptFr : _defaultCharacterExtractionPromptEn);
+    final key = language == 'fr'
+        ? _characterExtractionPromptFrKey
+        : _characterExtractionPromptEnKey;
+    return _prefs.getString(key) ??
+        (language == 'fr'
+            ? _defaultCharacterExtractionPromptFr
+            : _defaultCharacterExtractionPromptEn);
   }
 
   /// Set character extraction prompt
-  Future<void> setCharacterExtractionPrompt(String language, String prompt) async {
-    final key = language == 'fr' ? _characterExtractionPromptFrKey : _characterExtractionPromptEnKey;
+  Future<void> setCharacterExtractionPrompt(
+    String language,
+    String prompt,
+  ) async {
+    final key = language == 'fr'
+        ? _characterExtractionPromptFrKey
+        : _characterExtractionPromptEnKey;
     await _prefs.setString(key, prompt);
   }
 
   /// Get the customizable label for the reader selection action
   String getTextActionLabel(String language) {
-    final key = language == 'fr' ? _textActionLabelFrKey : _textActionLabelEnKey;
+    final key = language == 'fr'
+        ? _textActionLabelFrKey
+        : _textActionLabelEnKey;
     final fallback = language == 'fr'
         ? _defaultTextActionLabelFr
         : _defaultTextActionLabelEn;
@@ -176,16 +197,22 @@ Word or phrase to translate:
 
   /// Save the label for the reader selection action
   Future<void> setTextActionLabel(String language, String label) async {
-    final key = language == 'fr' ? _textActionLabelFrKey : _textActionLabelEnKey;
+    final key = language == 'fr'
+        ? _textActionLabelFrKey
+        : _textActionLabelEnKey;
     final normalized = label.trim().isEmpty
-        ? (language == 'fr' ? _defaultTextActionLabelFr : _defaultTextActionLabelEn)
+        ? (language == 'fr'
+              ? _defaultTextActionLabelFr
+              : _defaultTextActionLabelEn)
         : label.trim();
     await _prefs.setString(key, normalized);
   }
 
   /// Get the prompt used for the reader selection action
   String getTextActionPrompt(String language) {
-    final key = language == 'fr' ? _textActionPromptFrKey : _textActionPromptEnKey;
+    final key = language == 'fr'
+        ? _textActionPromptFrKey
+        : _textActionPromptEnKey;
     final fallback = language == 'fr'
         ? _defaultTextActionPromptFr
         : _defaultTextActionPromptEn;
@@ -193,14 +220,28 @@ Word or phrase to translate:
     if (value == null || value.trim().isEmpty) {
       return fallback;
     }
+    if (_isLegacyTextActionPrompt(value)) {
+      return fallback;
+    }
     return value;
+  }
+
+  bool _isLegacyTextActionPrompt(String value) {
+    final normalized = value.toLowerCase();
+    return value.contains('Original: {text}') &&
+        (normalized.contains('short phrase') ||
+            normalized.contains('courte phrase'));
   }
 
   /// Save the prompt used for the reader selection action
   Future<void> setTextActionPrompt(String language, String prompt) async {
-    final key = language == 'fr' ? _textActionPromptFrKey : _textActionPromptEnKey;
+    final key = language == 'fr'
+        ? _textActionPromptFrKey
+        : _textActionPromptEnKey;
     final normalized = prompt.trim().isEmpty
-        ? (language == 'fr' ? _defaultTextActionPromptFr : _defaultTextActionPromptEn)
+        ? (language == 'fr'
+              ? _defaultTextActionPromptFr
+              : _defaultTextActionPromptEn)
         : prompt;
     await _prefs.setString(key, normalized);
   }
@@ -219,8 +260,7 @@ Word or phrase to translate:
 
   /// Format a prompt by replacing placeholders
   /// Supports {text} and {language} placeholders
-  String formatPrompt(String prompt,
-      {String? text, String? languageName}) {
+  String formatPrompt(String prompt, {String? text, String? languageName}) {
     var formatted = prompt;
     if (text != null) {
       formatted = formatted.replaceAll('{text}', text);

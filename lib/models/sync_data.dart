@@ -113,7 +113,7 @@ class SyncTranslationsData {
 class SyncApiKeysData {
   final String? openaiApiKey;
   final String? mistralApiKey;
-  final String? provider; // 'openai' or 'mistral'
+  final String? provider; // 'openai', 'mistral', or 'openai_codex'
   final DateTime lastModified;
 
   SyncApiKeysData({

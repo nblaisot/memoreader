@@ -49,7 +49,7 @@ void main() {
         expect(request.headers['Authorization'], 'Bearer sk-test');
 
         final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['model'], 'gpt-4o');
+        expect(body['model'], 'gpt-4.1');
         final messages = body['messages'] as List<dynamic>;
         expect(messages.length, 2);
         expect((messages[1] as Map)['content'], 'user prompt');
