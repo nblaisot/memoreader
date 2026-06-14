@@ -28,6 +28,7 @@ import '../services/prompt_config_service.dart';
 import '../services/saved_translation_database_service.dart';
 import '../services/rag_query_service.dart';
 import '../services/rag_indexing_service.dart';
+import '../services/epub_content_resolver.dart';
 import '../services/latest_events_service.dart';
 import '../models/rag_index_progress.dart';
 import '../models/saved_translation.dart';
@@ -3427,24 +3428,25 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
     cssResolver.parseAll();
 
-    final epubChapters = epub.Chapters ?? const <EpubChapter>[];
-    for (var i = 0; i < epubChapters.length; i++) {
-      final chapter = epubChapters[i];
-      final title = chapter.Title?.trim().isNotEmpty == true
-          ? chapter.Title!.trim()
-          : 'Chapitre ${i + 1}';
-      final html = chapter.HtmlContent ?? '';
+    final resolution = EpubContentResolver.resolve(epub);
+    for (final navEntry in resolution.chapters) {
+      chapters.add(
+        _ChapterEntry(index: navEntry.index, title: navEntry.title),
+      );
+    }
+
+    for (final section in resolution.sections) {
+      final html = section.html;
       if (html.isEmpty) {
         continue;
       }
       final result = _buildBlocksFromHtml(
         html,
-        chapterIndex: i,
+        chapterIndex: section.chapterIndex,
         images: images,
         cssResolver: cssResolver,
       );
       if (result.isNotEmpty) {
-        chapters.add(_ChapterEntry(index: i, title: title));
         blocks.addAll(result);
       }
     }
@@ -3498,10 +3500,9 @@ class _ReaderScreenState extends State<ReaderScreen>
       }
     }
 
-    final epubChapters = epub.Chapters ?? const <EpubChapter>[];
-    for (var i = 0; i < epubChapters.length; i++) {
-      final chapter = epubChapters[i];
-      final html = chapter.HtmlContent ?? '';
+    final resolution = EpubContentResolver.resolve(epub);
+    for (final section in resolution.sections) {
+      final html = section.html;
       if (html.isEmpty) {
         continue;
       }
@@ -3549,14 +3550,21 @@ class _ReaderScreenState extends State<ReaderScreen>
       }
 
       final normalizedText = HtmlTextExtractor.extract(html);
-      chapterOffsets.add(
-        _ChapterOffset(chapterIndex: i, startChar: totalCharacters),
-      );
+      if (section.isChapterStart) {
+        chapterOffsets.add(
+          _ChapterOffset(
+            chapterIndex: section.chapterIndex,
+            startChar: totalCharacters,
+          ),
+        );
+      }
       totalCharacters += normalizedText.length;
       fullTextBuffer.write(normalizedText);
 
+      final sectionClass =
+          section.pageBreakBefore ? 'chapter' : 'section-continues';
       contentBuffer.writeln(
-        '<section class="chapter" data-chapter-index="$i">${body.innerHtml}</section>',
+        '<section class="$sectionClass" data-chapter-index="${section.chapterIndex}">${body.innerHtml}</section>',
       );
     }
 
@@ -3773,6 +3781,11 @@ body {
   -webkit-column-break-before: always;
 }
 .chapter:first-child {
+  break-before: auto;
+  page-break-before: auto;
+  -webkit-column-break-before: auto;
+}
+.section-continues {
   break-before: auto;
   page-break-before: auto;
   -webkit-column-break-before: auto;
