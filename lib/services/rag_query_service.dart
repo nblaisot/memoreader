@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/rag_chunk.dart';
@@ -8,37 +6,44 @@ import '../services/rag_database_service.dart';
 import '../services/rag_embedding_service_factory.dart';
 import '../services/settings_service.dart';
 import '../services/summary_service.dart';
+import '../services/rag_hybrid_retriever.dart';
+import '../services/query_planner.dart';
 
 /// Result of a RAG query
 class RagQueryResult {
   final String answer;
   final List<RagChunk> sourceChunks;
   final double? relevanceScore;
+  final bool insufficientEvidence;
 
   RagQueryResult({
     required this.answer,
     required this.sourceChunks,
     this.relevanceScore,
+    this.insufficientEvidence = false,
   });
 }
 
 /// Service for querying books using RAG
 class RagQueryService {
   final RagDatabaseService _databaseService;
-  static const int _defaultTopK = 10;
+  late final RagHybridRetriever _retriever;
+  static const int _defaultTopK = 8;
 
   RagQueryService({RagDatabaseService? databaseService})
-      : _databaseService = databaseService ?? RagDatabaseService();
+    : _databaseService = databaseService ?? RagDatabaseService() {
+    _retriever = RagHybridRetriever(databaseService: _databaseService);
+  }
 
   /// Query a book using RAG
-  /// 
+  ///
   /// [bookId] - ID of the book to query
   /// [question] - User's question
   /// [onlyReadSoFar] - If true, only search in content up to reading position
   /// [maxCharPosition] - Maximum character position (for "read so far" mode)
   /// [summaryService] - LLM service for generating answers
   /// [language] - Language code ('fr' or 'en') for the prompt and answer
-  /// [topK] - Number of top chunks to retrieve (default: 10)
+  /// [topK] - Number of top chunks to retrieve (default: 8)
   Future<RagQueryResult> query({
     required String bookId,
     required String question,
@@ -56,7 +61,9 @@ class RagQueryService {
     final embeddingService = await RagEmbeddingServiceFactory.create(prefs);
 
     if (embeddingService == null) {
-      throw Exception(await RagEmbeddingServiceFactory.unavailableMessage(prefs));
+      throw Exception(
+        await RagEmbeddingServiceFactory.unavailableMessage(prefs),
+      );
     }
 
     // Check if book is indexed
@@ -67,16 +74,17 @@ class RagQueryService {
       );
     }
 
-    // Check embedding dimension match
-    if (indexStatus.embeddingDimension != embeddingService.embeddingDimensions) {
+    // Check the complete embedding identity. Equal dimensions do not make
+    // vectors from different providers/models compatible.
+    if (indexStatus.embeddingDimension !=
+            embeddingService.embeddingDimensions ||
+        indexStatus.embeddingModel != embeddingService.modelName ||
+        indexStatus.embeddingProvider != embeddingService.providerName) {
       throw Exception(
-        'Embedding dimension mismatch. Book was indexed with ${indexStatus.embeddingDimension} dimensions, '
-        'but current service uses ${embeddingService.embeddingDimensions} dimensions.',
+        'Embedding index mismatch. Re-index this book with the selected '
+        '${embeddingService.providerName}/${embeddingService.modelName} provider.',
       );
     }
-
-    // Generate embedding for question
-    final questionEmbedding = await embeddingService.embedText(question);
 
     // Retrieve candidate chunks
     final candidates = onlyReadSoFar && maxCharPosition != null
@@ -87,40 +95,33 @@ class RagQueryService {
       throw Exception('No chunks found for this book.');
     }
 
-    debugPrint('[RAG] Query: Retrieved ${candidates.length} candidate chunks');
-    debugPrint('[RAG] Query: Question embedding dimension: ${questionEmbedding.length}');
-
-    // Compute cosine similarity for each chunk
-    final scoredChunks = <({RagChunk chunk, double score})>[];
-    int skippedCount = 0;
-    for (final chunk in candidates) {
-      if (chunk.embedding.length != questionEmbedding.length) {
-        skippedCount++;
-        if (skippedCount <= 5) {
-          debugPrint('[RAG] Query: Skipping chunk ${chunk.chunkId} - embedding dimension mismatch: chunk=${chunk.embedding.length}, question=${questionEmbedding.length}, chunkDimension=${chunk.embeddingDimension}');
-        }
-        continue; // Skip chunks with mismatched dimensions
-      }
-      final similarity = _cosineSimilarity(questionEmbedding, chunk.embedding);
-      scoredChunks.add((chunk: chunk, score: similarity));
-    }
-    
-    if (skippedCount > 0) {
-      debugPrint('[RAG] Query: Skipped $skippedCount chunks due to dimension mismatch');
-    }
-    debugPrint('[RAG] Query: Computed similarity for ${scoredChunks.length} chunks');
-
-    // Sort by similarity (descending)
-    scoredChunks.sort((a, b) => b.score.compareTo(a.score));
-
-    // Select top-K chunks
-    final topChunks = scoredChunks
-        .take(resolvedTopK > 0 ? resolvedTopK : _defaultTopK)
-        .map((s) => s.chunk)
-        .toList();
+    final retrieval = await _retriever.retrieve(
+      question: question,
+      bookIds: [bookId],
+      candidates: candidates,
+      embeddingService: embeddingService,
+      boundaries: {if (onlyReadSoFar) bookId: maxCharPosition},
+      topK: resolvedTopK > 0 ? resolvedTopK : _defaultTopK,
+      planner: summaryService != null && _needsModelPlanning(question)
+          ? ModelQueryPlanner(
+              summaryService: summaryService,
+              language: language,
+            )
+          : null,
+    );
+    final topChunks = retrieval.chunks;
 
     if (topChunks.isEmpty) {
       throw Exception('No relevant chunks found.');
+    }
+
+    if (!_hasEnoughEvidence(retrieval)) {
+      return RagQueryResult(
+        answer: _insufficientEvidenceMessage(language),
+        sourceChunks: topChunks,
+        relevanceScore: retrieval.bestDenseScore,
+        insufficientEvidence: true,
+      );
     }
 
     // If summary service is provided, generate answer using LLM
@@ -141,7 +142,7 @@ class RagQueryService {
     return RagQueryResult(
       answer: answer,
       sourceChunks: topChunks,
-      relevanceScore: scoredChunks.isNotEmpty ? scoredChunks.first.score : null,
+      relevanceScore: retrieval.bestDenseScore,
     );
   }
 
@@ -155,11 +156,19 @@ class RagQueryService {
   }) async {
     // Build context from chunks
     final excerptLabel = language == 'fr' ? 'Extrait' : 'Excerpt';
-    final context = chunks.asMap().entries.map((entry) {
-      final index = entry.key + 1;
-      final chunk = entry.value;
-      return '$excerptLabel $index:\n${chunk.text}\n';
-    }).join('\n---\n\n');
+    final context = chunks
+        .asMap()
+        .entries
+        .map((entry) {
+          final index = entry.key + 1;
+          final chunk = entry.value;
+          final sourceId = 'S$index';
+          final location = chunk.chapterTitle?.trim().isNotEmpty == true
+              ? chunk.chapterTitle!.trim()
+              : 'chars ${chunk.charStart}-${chunk.charEnd}';
+          return '[$sourceId] $excerptLabel $index ($location):\n${chunk.text}\n';
+        })
+        .join('\n---\n\n');
 
     // Build prompt based on language
     final prompt = language == 'fr'
@@ -173,7 +182,7 @@ $context
 
 Question : $question
 
-Fournis une réponse utile basée UNIQUEMENT sur les extraits fournis. ${onlyReadSoFar ? 'Ne mentionne pas et ne révèle rien au-delà de ce qui est montré dans les extraits.' : 'Si les extraits ne contiennent pas assez d\'informations pour répondre à la question, dis-le.'}'''
+Fournis une réponse utile basée UNIQUEMENT sur les extraits fournis. Cite chaque affirmation factuelle avec son identifiant, par exemple [S1]. Si les extraits ne contiennent pas assez d'informations, dis-le explicitement au lieu de compléter avec tes connaissances. ${onlyReadSoFar ? 'Ne mentionne pas et ne révèle rien au-delà de ce qui est montré dans les extraits.' : ''}'''
         : '''You are a helpful assistant that answers questions about a book using ONLY the provided excerpts.
 
 ${onlyReadSoFar ? 'IMPORTANT: The user has only read up to a certain point in the book. DO NOT reveal spoilers or information beyond what they have read. Only use information from the provided excerpts.' : ''}
@@ -184,37 +193,11 @@ $context
 
 Question: $question
 
-Please provide a helpful answer based ONLY on the provided excerpts. ${onlyReadSoFar ? 'Do not mention or reveal anything beyond what is shown in the excerpts.' : 'If the excerpts do not contain enough information to answer the question, say so.'}''';
+Please answer using ONLY the provided excerpts. Cite every factual claim with its source identifier, for example [S1]. If the excerpts do not contain enough evidence, say so explicitly instead of filling gaps from prior knowledge. ${onlyReadSoFar ? 'Do not mention or reveal anything beyond what is shown in the excerpts.' : ''}''';
 
     // Generate answer using summary service
-    return await summaryService.generateSummary(prompt, language);
-  }
-
-  /// Compute cosine similarity between two vectors
-  /// 
-  /// If vectors are normalized (L2 norm = 1), cosine similarity = dot product
-  double _cosineSimilarity(Float32List a, Float32List b) {
-    if (a.length != b.length) {
-      throw ArgumentError('Vectors must have same length');
-    }
-
-    double dotProduct = 0.0;
-    double normA = 0.0;
-    double normB = 0.0;
-
-    for (int i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
-    }
-
-    // Avoid division by zero
-    if (normA == 0.0 || normB == 0.0) {
-      return 0.0;
-    }
-
-    // Cosine similarity = dot product / (||a|| * ||b||)
-    return dotProduct / (math.sqrt(normA) * math.sqrt(normB));
+    final answer = await summaryService.generateSummary(prompt, language);
+    return _sanitizeCitations(answer, chunks.length);
   }
 
   /// Query multiple books using RAG
@@ -244,7 +227,9 @@ Please provide a helpful answer based ONLY on the provided excerpts. ${onlyReadS
     final embeddingService = await RagEmbeddingServiceFactory.create(prefs);
 
     if (embeddingService == null) {
-      throw Exception(await RagEmbeddingServiceFactory.unavailableMessage(prefs));
+      throw Exception(
+        await RagEmbeddingServiceFactory.unavailableMessage(prefs),
+      );
     }
 
     // Filter to only fully indexed books
@@ -252,19 +237,19 @@ Please provide a helpful answer based ONLY on the provided excerpts. ${onlyReadS
     for (final bookId in bookIds) {
       final status = await _databaseService.getIndexStatus(bookId);
       if (status != null && status.isComplete) {
-        // Check embedding dimension compatibility
-        if (status.embeddingDimension == embeddingService.embeddingDimensions) {
+        if (status.embeddingDimension == embeddingService.embeddingDimensions &&
+            status.embeddingModel == embeddingService.modelName &&
+            status.embeddingProvider == embeddingService.providerName) {
           indexedBookIds.add(bookId);
         }
       }
     }
 
     if (indexedBookIds.isEmpty) {
-      throw Exception('None of the selected books are indexed. Please wait for indexing to complete.');
+      throw Exception(
+        'None of the selected books are indexed. Please wait for indexing to complete.',
+      );
     }
-
-    // Embed question
-    final questionEmbedding = await embeddingService.embedText(question);
 
     // Load chunks for all indexed books
     List<RagChunk> allCandidates;
@@ -286,22 +271,38 @@ Please provide a helpful answer based ONLY on the provided excerpts. ${onlyReadS
       throw Exception('No chunks found for the selected books.');
     }
 
-    debugPrint('[RAG] MultiQuery: ${allCandidates.length} candidate chunks from ${indexedBookIds.length} books');
+    debugPrint(
+      '[RAG] MultiQuery: ${allCandidates.length} candidate chunks from ${indexedBookIds.length} books',
+    );
 
-    // Score chunks
-    final scoredChunks = <({RagChunk chunk, double score})>[];
-    for (final chunk in allCandidates) {
-      if (chunk.embedding.length != questionEmbedding.length) continue;
-      final similarity = _cosineSimilarity(questionEmbedding, chunk.embedding);
-      scoredChunks.add((chunk: chunk, score: similarity));
-    }
-
-    scoredChunks.sort((a, b) => b.score.compareTo(a.score));
     final effectiveTopK = resolvedTopK > 0 ? resolvedTopK : _defaultTopK;
-    final topChunks = scoredChunks.take(effectiveTopK).map((s) => s.chunk).toList();
+    final retrieval = await _retriever.retrieve(
+      question: question,
+      bookIds: indexedBookIds,
+      candidates: allCandidates,
+      embeddingService: embeddingService,
+      boundaries: onlyReadSoFar ? bookReadPositions : const {},
+      topK: effectiveTopK,
+      planner: summaryService != null && _needsModelPlanning(question)
+          ? ModelQueryPlanner(
+              summaryService: summaryService,
+              language: language,
+            )
+          : null,
+    );
+    final topChunks = retrieval.chunks;
 
     if (topChunks.isEmpty) {
       throw Exception('No relevant chunks found.');
+    }
+
+    if (!_hasEnoughEvidence(retrieval)) {
+      return RagQueryResult(
+        answer: _insufficientEvidenceMessage(language),
+        sourceChunks: topChunks,
+        relevanceScore: retrieval.bestDenseScore,
+        insufficientEvidence: true,
+      );
     }
 
     String answer;
@@ -315,13 +316,15 @@ Please provide a helpful answer based ONLY on the provided excerpts. ${onlyReadS
         language: language,
       );
     } else {
-      answer = topChunks.map((c) => '(${bookTitles[c.bookId] ?? c.bookId}): ${c.text}').join('\n\n---\n\n');
+      answer = topChunks
+          .map((c) => '(${bookTitles[c.bookId] ?? c.bookId}): ${c.text}')
+          .join('\n\n---\n\n');
     }
 
     return RagQueryResult(
       answer: answer,
       sourceChunks: topChunks,
-      relevanceScore: scoredChunks.isNotEmpty ? scoredChunks.first.score : null,
+      relevanceScore: retrieval.bestDenseScore,
     );
   }
 
@@ -335,12 +338,20 @@ Please provide a helpful answer based ONLY on the provided excerpts. ${onlyReadS
     required String language,
   }) async {
     final excerptLabel = language == 'fr' ? 'Extrait' : 'Excerpt';
-    final context = chunks.asMap().entries.map((entry) {
-      final index = entry.key + 1;
-      final chunk = entry.value;
-      final title = bookTitles[chunk.bookId] ?? chunk.bookId;
-      return '$excerptLabel $index ($title):\n${chunk.text}\n';
-    }).join('\n---\n\n');
+    final context = chunks
+        .asMap()
+        .entries
+        .map((entry) {
+          final index = entry.key + 1;
+          final chunk = entry.value;
+          final title = bookTitles[chunk.bookId] ?? chunk.bookId;
+          final sourceId = 'S$index';
+          final location = chunk.chapterTitle?.trim().isNotEmpty == true
+              ? chunk.chapterTitle!.trim()
+              : 'chars ${chunk.charStart}-${chunk.charEnd}';
+          return '[$sourceId] $excerptLabel $index ($title; $location):\n${chunk.text}\n';
+        })
+        .join('\n---\n\n');
 
     final prompt = language == 'fr'
         ? '''Tu es un assistant utile qui répond aux questions sur des livres en utilisant UNIQUEMENT les extraits fournis.
@@ -353,7 +364,7 @@ $context
 
 Question : $question
 
-Fournis une réponse utile basée UNIQUEMENT sur les extraits fournis. Cite le(s) titre(s) de livre(s) concerné(s) dans ta réponse. ${onlyReadSoFar ? 'Ne révèle rien au-delà de ce qui est montré dans les extraits.' : 'Si les extraits ne contiennent pas assez d\'informations, dis-le.'}'''
+Fournis une réponse utile basée UNIQUEMENT sur les extraits fournis. Cite chaque affirmation factuelle avec son identifiant, par exemple [S1], ainsi que le titre pertinent. Si les extraits ne contiennent pas assez d'informations, dis-le explicitement. ${onlyReadSoFar ? 'Ne révèle rien au-delà de ce qui est montré dans les extraits.' : ''}'''
         : '''You are a helpful assistant that answers questions about books using ONLY the provided excerpts.
 
 ${onlyReadSoFar ? 'IMPORTANT: The user has only read part of the books. DO NOT reveal spoilers beyond what they have read.' : ''}
@@ -364,9 +375,10 @@ $context
 
 Question: $question
 
-Please provide a helpful answer based ONLY on the provided excerpts. Cite the relevant book title(s) in your answer. ${onlyReadSoFar ? 'Do not reveal anything beyond what is shown in the excerpts.' : 'If the excerpts do not contain enough information to answer the question, say so.'}''';
+Please answer using ONLY the provided excerpts. Cite every factual claim with its source identifier, for example [S1], and the relevant book title. If the excerpts do not contain enough evidence, say so explicitly. ${onlyReadSoFar ? 'Do not reveal anything beyond what is shown in the excerpts.' : ''}''';
 
-    return await summaryService.generateSummary(prompt, language);
+    final answer = await summaryService.generateSummary(prompt, language);
+    return _sanitizeCitations(answer, chunks.length);
   }
 
   /// Check if a book is indexed
@@ -378,5 +390,35 @@ Please provide a helpful answer based ONLY on the provided excerpts. Cite the re
   /// Get indexing progress for a book
   Future<RagIndexProgress?> getIndexingProgress(String bookId) async {
     return await _databaseService.getIndexStatus(bookId);
+  }
+
+  static bool _needsModelPlanning(String question) {
+    final lower = question.toLowerCase();
+    return question.length > 180 ||
+        lower.contains('compare') ||
+        lower.contains('difference') ||
+        lower.contains('comparez') ||
+        lower.contains('différence') ||
+        lower.contains('before and after') ||
+        lower.contains('avant et après');
+  }
+
+  static bool _hasEnoughEvidence(HybridRetrievalResult result) {
+    return result.hasLexicalEvidence || result.bestDenseScore >= 0.18;
+  }
+
+  static String _insufficientEvidenceMessage(String language) {
+    return language == 'fr'
+        ? 'Les extraits disponibles ne contiennent pas assez d’éléments pertinents pour répondre de façon fiable.'
+        : 'The available excerpts do not contain enough relevant evidence to answer reliably.';
+  }
+
+  static String _sanitizeCitations(String answer, int sourceCount) {
+    return answer.replaceAllMapped(RegExp(r'\[S(\d+)\]'), (match) {
+      final source = int.tryParse(match.group(1)!);
+      return source != null && source >= 1 && source <= sourceCount
+          ? match.group(0)!
+          : '';
+    }).trim();
   }
 }

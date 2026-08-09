@@ -1197,7 +1197,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     // Build read-positions map from already-loaded _bookProgress
     final positions = <String, int?>{};
     for (final book in _books) {
-      positions[book.id] = _bookProgress[book.id]?.currentCharacterIndex;
+      positions[book.id] =
+          _bookProgress[book.id]?.lastVisibleCharacterIndex ??
+          _bookProgress[book.id]?.currentCharacterIndex;
     }
 
     if (!mounted) return;

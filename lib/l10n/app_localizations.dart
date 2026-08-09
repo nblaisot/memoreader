@@ -791,7 +791,7 @@ abstract class AppLocalizations {
   /// Codex settings section description
   ///
   /// In en, this message translates to:
-  /// **'Sign in with your ChatGPT account to use Codex with your subscription for summaries and RAG embeddings. OpenAI or Mistral API keys below are optional fallbacks.'**
+  /// **'Sign in with your ChatGPT account to use Codex for summaries. RAG indexing separately requires an OpenAI Platform or Mistral API key.'**
   String get codexSettingsDescription;
 
   /// Start ChatGPT device-code login
@@ -851,7 +851,7 @@ abstract class AppLocalizations {
   /// Hint when Codex is selected about embedding keys
   ///
   /// In en, this message translates to:
-  /// **'Sign in with ChatGPT/Codex for RAG embeddings, or add an OpenAI or Mistral API key as fallback.'**
+  /// **'RAG indexing requires an OpenAI Platform or Mistral API key; ChatGPT/Codex sign-in alone does not provide embeddings.'**
   String get codexRagEmbeddingHint;
 
   /// OpenAI settings section title

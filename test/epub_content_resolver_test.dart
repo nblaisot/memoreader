@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:epubx/epubx.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:memoreader/services/epub_content_resolver.dart';
+import 'package:memoreader/services/canonical_book_text_service.dart';
 import 'package:memoreader/utils/html_text_extractor.dart';
 
 void main() {
@@ -57,6 +58,14 @@ void main() {
       );
       expect(resolution.chapters, hasLength(1));
       expect(resolution.chapters.first.title, 'Chapter One');
+
+      final canonical = const CanonicalBookTextService().fromEpub(epub);
+      final readerText = resolution.sections
+          .map((section) => HtmlTextExtractor.extract(section.html))
+          .join();
+      expect(canonical.text, readerText);
+      expect(canonical.sections, hasLength(2));
+      expect(canonical.text, contains('cour de récréation'));
     });
 
     test('does not page-break body sections that follow title stubs', () {

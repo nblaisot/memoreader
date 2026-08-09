@@ -14,7 +14,6 @@ import 'services/rag_indexing_service.dart';
 import 'services/rag_database_service.dart';
 import 'services/book_service.dart';
 import 'services/google_drive_sync_service.dart';
-import 'models/rag_index_progress.dart';
 
 void main() {
   runApp(const MyApp());
@@ -135,11 +134,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       for (final book in books) {
         final status = await ragDbService.getIndexStatus(book.id);
         
-        // Auto-resume if indexing was in progress or had errors
-        if (status != null && 
-            status.status == RagIndexStatus.indexing &&
-            status.indexedChunks < status.totalChunks) {
-          debugPrint('[RAG] Auto-resuming indexing for book: ${book.title} (${status.indexedChunks}/${status.totalChunks})');
+        // Resume every non-complete state after credentials/config may change.
+        if (status == null || !status.isComplete) {
+          debugPrint('[RAG] Auto-resuming indexing for book: ${book.title} (${status?.indexedChunks ?? 0}/${status?.totalChunks ?? 0})');
           
           // Start indexing in background (non-blocking)
           // The service will pick up from the last checkpoint

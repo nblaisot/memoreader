@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +14,8 @@ import '../services/rag_embedding_service.dart';
 import '../services/rag_embedding_service_factory.dart';
 import '../services/book_service.dart';
 import '../services/settings_service.dart';
+import '../services/canonical_book_text_service.dart';
+import '../services/embedding_capability_service.dart';
 
 /// Simple rate limiter/semaphore for controlling concurrent batch processing
 class _RateLimiter {
@@ -26,7 +30,7 @@ class _RateLimiter {
       _current++;
       return;
     }
-    
+
     final completer = Completer<void>();
     _waitQueue.add(completer);
     return completer.future;
@@ -72,19 +76,22 @@ class RagIndexingService {
   // Track active indexing operations
   final Map<String, Isolate> _activeIndexes = {};
   final Map<String, ReceivePort> _progressPorts = {};
-  final Map<String, StreamController<RagIndexProgress>> _progressControllers = {};
+  final Map<String, StreamController<RagIndexProgress>> _progressControllers =
+      {};
   // Track books that are in the process of starting indexing (synchronous check)
   final Set<String> _startingBooks = {};
 
   RagIndexingService._internal({
     RagDatabaseService? databaseService,
     BookService? bookService,
-  })  : _databaseService = databaseService ?? RagDatabaseService(),
-        _bookService = bookService;
-
+  }) : _databaseService = databaseService ?? RagDatabaseService(),
+       _bookService = bookService;
 
   /// Load current status from database and send to controller
-  void _loadAndSendStatus(String bookId, StreamController<RagIndexProgress> controller) {
+  void _loadAndSendStatus(
+    String bookId,
+    StreamController<RagIndexProgress> controller,
+  ) {
     _databaseService.getIndexStatus(bookId).then((status) {
       if (status != null) {
         controller.add(status);
@@ -102,24 +109,29 @@ class RagIndexingService {
       debugPrint('[RAG] Returning existing progress stream for $bookId');
       return _progressControllers[bookId]!.stream;
     }
-    
+
     // Synchronous check: If isolate is running but no controller, create one
     if (_activeIndexes.containsKey(bookId)) {
-      debugPrint('[RAG] Isolate running for $bookId, creating new controller to receive updates');
+      debugPrint(
+        '[RAG] Isolate running for $bookId, creating new controller to receive updates',
+      );
       final controller = StreamController<RagIndexProgress>.broadcast();
       _progressControllers[bookId] = controller;
       _loadAndSendStatus(bookId, controller);
       return controller.stream;
     }
-    
+
     // Synchronous check: If another call is starting, wait for it
     if (_startingBooks.contains(bookId)) {
-      debugPrint('[RAG] Another call is starting indexing for $bookId, will wait for controller');
+      debugPrint(
+        '[RAG] Another call is starting indexing for $bookId, will wait for controller',
+      );
       // Create a temporary controller that will be replaced when the real one is created
       final tempController = StreamController<RagIndexProgress>.broadcast();
       // Poll for the real controller (will be replaced shortly)
       Future.delayed(const Duration(milliseconds: 50), () {
-        if (_progressControllers.containsKey(bookId) && _progressControllers[bookId] != tempController) {
+        if (_progressControllers.containsKey(bookId) &&
+            _progressControllers[bookId] != tempController) {
           // Real controller created, forward events
           _progressControllers[bookId]!.stream.listen(
             (progress) => tempController.add(progress),
@@ -134,36 +146,28 @@ class RagIndexingService {
       });
       return tempController.stream;
     }
-    
+
     // Synchronous decision: We're starting indexing for this book
     _startingBooks.add(bookId);
     debugPrint('[RAG] Starting indexing for book $bookId');
-    
+
     // Create controller immediately (synchronous)
     final controller = StreamController<RagIndexProgress>.broadcast();
     _progressControllers[bookId] = controller;
-    
+
     // Start the actual indexing work asynchronously (sequential, no race conditions)
     () async {
       try {
-        // FIRST: Check database status BEFORE starting any work
-        final status = await _databaseService.getIndexStatus(bookId);
-        if (status?.isComplete == true) {
-          debugPrint('[RAG] Indexing already complete for $bookId, returning status');
-          controller.add(status!);
-          // DON'T close or remove controller - keep it so future calls return it
-          _startingBooks.remove(bookId);
-          return;
-        }
-        
         // Check if isolate already running (shouldn't happen, but safety check)
         if (_activeIndexes.containsKey(bookId)) {
-          debugPrint('[RAG] Isolate already running for $bookId, subscribing to updates');
+          debugPrint(
+            '[RAG] Isolate already running for $bookId, subscribing to updates',
+          );
           _loadAndSendStatus(bookId, controller);
           _startingBooks.remove(bookId);
           return;
         }
-        
+
         // Start indexing isolate
         debugPrint('[RAG] Starting indexing isolate for $bookId');
         await _startIndexingIsolate(bookId);
@@ -177,7 +181,7 @@ class RagIndexingService {
         _startingBooks.remove(bookId);
       }
     }();
-    
+
     return controller.stream;
   }
 
@@ -185,10 +189,12 @@ class RagIndexingService {
   Future<void> _startIndexingIsolate(String bookId) async {
     // Safety check: verify no isolate exists
     if (_activeIndexes.containsKey(bookId)) {
-      debugPrint('[RAG] WARNING: Isolate already exists for $bookId, this should not happen');
+      debugPrint(
+        '[RAG] WARNING: Isolate already exists for $bookId, this should not happen',
+      );
       return;
     }
-    
+
     // Create receive port for progress updates
     final receivePort = ReceivePort();
     _progressPorts[bookId] = receivePort;
@@ -232,7 +238,9 @@ class RagIndexingService {
       if (message is RagIndexProgress) {
         _progressControllers[bookId]?.add(message);
       } else if (message is String && message == 'done') {
-        debugPrint('[RAG] Indexing completed for book $bookId, cleaning up isolate');
+        debugPrint(
+          '[RAG] Indexing completed for book $bookId, cleaning up isolate',
+        );
         receivePort.close();
         _activeIndexes.remove(bookId);
         _progressPorts.remove(bookId);
@@ -315,7 +323,9 @@ class _IndexingWorkerParams {
 void _indexingWorker(_IndexingWorkerParams params) async {
   // Initialize background isolate binary messenger for SQLite (if token available)
   if (params.rootIsolateToken != null) {
-    BackgroundIsolateBinaryMessenger.ensureInitialized(params.rootIsolateToken!);
+    BackgroundIsolateBinaryMessenger.ensureInitialized(
+      params.rootIsolateToken!,
+    );
   }
 
   final databaseService = RagDatabaseService();
@@ -347,8 +357,9 @@ void _indexingWorker(_IndexingWorkerParams params) async {
         totalChunks: 0,
         indexedChunks: 0,
         lastUpdated: DateTime.now(),
-        errorMessage:
-            await RagEmbeddingServiceFactory.unavailableMessage(prefs),
+        errorMessage: await RagEmbeddingServiceFactory.unavailableMessage(
+          prefs,
+        ),
       );
       await databaseService.saveIndexStatus(errorProgress);
       params.sendPort.send(errorProgress);
@@ -367,9 +378,14 @@ void _indexingWorker(_IndexingWorkerParams params) async {
     final modelMaxTokens = embeddingService.maxTokensPerInput;
     final maxTokensPerInput = modelMaxTokens; // For validation later
     final safetyMargin = 256;
-    final effectiveMaxTokens =
-        (configuredMaxTokens.clamp(1, modelMaxTokens - safetyMargin));
+    final effectiveMaxTokens = (configuredMaxTokens.clamp(
+      1,
+      modelMaxTokens - safetyMargin,
+    ));
 
+    final canonicalProjection = await const CanonicalBookTextService().fromFile(
+      bookFile,
+    );
     final chunkingService = RagChunkingService(
       minTokens: configuredMinTokens,
       maxTokens: effectiveMaxTokens,
@@ -377,10 +393,14 @@ void _indexingWorker(_IndexingWorkerParams params) async {
     );
 
     // Chunk the book
-    debugPrint('[RAG] Starting chunking for book ${params.bookId} with maxTokens=$effectiveMaxTokens (model limit: $modelMaxTokens)');
-    debugPrint('[RAG] EPUB file path: ${bookFile.path}, exists: ${await bookFile.exists()}');
-    final chunks = await chunkingService.chunkBook(
-      epubFile: bookFile,
+    debugPrint(
+      '[RAG] Starting chunking for book ${params.bookId} with maxTokens=$effectiveMaxTokens (model limit: $modelMaxTokens)',
+    );
+    debugPrint(
+      '[RAG] EPUB file path: ${bookFile.path}, exists: ${await bookFile.exists()}',
+    );
+    final chunks = chunkingService.chunkCanonicalBook(
+      projection: canonicalProjection,
       bookId: params.bookId,
     );
     debugPrint('[RAG] Chunking completed, got ${chunks.length} chunks');
@@ -388,7 +408,7 @@ void _indexingWorker(_IndexingWorkerParams params) async {
       '[RAG] Chunking finished: ${chunks.length} chunks. '
       'Sample ranges: ${chunks.take(3).map((c) => '(${c.charStart}-${c.charEnd})').join(', ')}',
     );
-    
+
     // Validate chunks against embedding model limits before indexing
     int oversizedChunks = 0;
     for (final chunk in chunks) {
@@ -402,7 +422,9 @@ void _indexingWorker(_IndexingWorkerParams params) async {
       }
     }
     if (oversizedChunks > 0) {
-      debugPrint('[RAG] Found $oversizedChunks oversized chunks that will be skipped during indexing');
+      debugPrint(
+        '[RAG] Found $oversizedChunks oversized chunks that will be skipped during indexing',
+      );
     }
 
     if (chunks.isEmpty) {
@@ -412,7 +434,8 @@ void _indexingWorker(_IndexingWorkerParams params) async {
         totalChunks: 0,
         indexedChunks: 0,
         lastUpdated: DateTime.now(),
-        errorMessage: 'No text extracted from EPUB (0 chunks). Check chapter parsing or file content.',
+        errorMessage:
+            'No text extracted from EPUB (0 chunks). Check chapter parsing or file content.',
       );
       await databaseService.saveIndexStatus(errorProgress);
       params.sendPort.send(errorProgress);
@@ -421,15 +444,49 @@ void _indexingWorker(_IndexingWorkerParams params) async {
       return;
     }
 
-    // Send progress update with actual total chunks after chunking completes
+    // Compare the complete index contract, not only vector dimensions.
     final totalChunks = chunks.length;
+    final configHash = sha256
+        .convert(
+          utf8.encode(
+            '$configuredMinTokens:$effectiveMaxTokens:$overlapTokens:'
+            '${embeddingService.providerName}:${embeddingService.modelName}:'
+            '${embeddingService.embeddingDimensions}',
+          ),
+        )
+        .toString();
+    existingStatus = await databaseService.getIndexStatus(params.bookId);
     var existingChunkCount = await databaseService.getChunkCount(params.bookId);
-    if (existingChunkCount > 0 && existingChunkCount != totalChunks) {
+    final compatible =
+        existingStatus != null &&
+        existingStatus.embeddingProvider == embeddingService.providerName &&
+        existingStatus.embeddingModel == embeddingService.modelName &&
+        existingStatus.embeddingDimension ==
+            embeddingService.embeddingDimensions &&
+        existingStatus.contentHash == canonicalProjection.contentHash &&
+        existingStatus.extractionVersion ==
+            canonicalProjection.extractionVersion &&
+        existingStatus.chunkingVersion == RagChunkingService.chunkingVersion &&
+        existingStatus.configHash == configHash &&
+        existingStatus.indexVersion == RagDatabaseService.indexVersion &&
+        existingChunkCount == totalChunks;
+
+    if (existingStatus?.isComplete == true && compatible) {
+      params.sendPort.send(existingStatus);
+      params.sendPort.send('done');
+      return;
+    }
+
+    // A stored credential only proves configuration. Probe the exact endpoint
+    // and model before deleting or replacing an existing index.
+    await EmbeddingCapabilityService(prefs).ensureAvailable(embeddingService);
+
+    if (existingChunkCount > 0 && !compatible) {
       debugPrint(
-        '[RAG] Detected inconsistent chunk count for ${params.bookId}: '
-        '$existingChunkCount/$totalChunks. Clearing and re-indexing.',
+        '[RAG] Index manifest changed for ${params.bookId}; rebuilding.',
       );
       await databaseService.clearBook(params.bookId);
+      existingStatus = null;
       existingChunkCount = 0;
     }
     final chunkingProgress = RagIndexProgress(
@@ -438,56 +495,37 @@ void _indexingWorker(_IndexingWorkerParams params) async {
       totalChunks: totalChunks,
       indexedChunks: existingChunkCount,
       lastUpdated: DateTime.now(),
+      embeddingModel: embeddingService.modelName,
+      embeddingProvider: embeddingService.providerName,
+      embeddingDimension: embeddingService.embeddingDimensions,
+      contentHash: canonicalProjection.contentHash,
+      extractionVersion: canonicalProjection.extractionVersion,
+      chunkingVersion: RagChunkingService.chunkingVersion,
+      configHash: configHash,
+      indexVersion: RagDatabaseService.indexVersion,
     );
     await databaseService.saveIndexStatus(chunkingProgress);
     params.sendPort.send(chunkingProgress);
 
-    // Check embedding dimensions match
-    existingStatus = await databaseService.getIndexStatus(params.bookId);
-    if (existingStatus != null &&
-        existingStatus.embeddingDimension != null &&
-        existingStatus.embeddingDimension != 0 &&
-        existingStatus.embeddingDimension != embeddingService.embeddingDimensions) {
-      throw Exception(
-        'Embedding dimension mismatch. Existing: ${existingStatus.embeddingDimension}, '
-        'Current: ${embeddingService.embeddingDimensions}. Please clear RAG database.',
-      );
-    }
-
-    // Update index status with embedding model info (totalChunks already set above)
-    await databaseService.saveIndexStatus(
-      RagIndexProgress(
-        bookId: params.bookId,
-        status: RagIndexStatus.indexing,
-        totalChunks: totalChunks,
-        indexedChunks: existingChunkCount,
-        lastUpdated: DateTime.now(),
-        embeddingModel: embeddingService.modelName,
-        embeddingDimension: embeddingService.embeddingDimensions,
-      ),
-    );
-    
-    // Send progress update with embedding model info
-    params.sendPort.send(
-      RagIndexProgress(
-        bookId: params.bookId,
-        status: RagIndexStatus.indexing,
-        totalChunks: totalChunks,
-        indexedChunks: existingChunkCount,
-        lastUpdated: DateTime.now(),
-        embeddingModel: embeddingService.modelName,
-        embeddingDimension: embeddingService.embeddingDimensions,
-      ),
-    );
-
     // Filter out already-indexed chunks (idempotency) - batch check for performance
     final chunkRanges = chunks.map((c) => (c.charStart, c.charEnd)).toList();
-    debugPrint('[RAG] Checking for existing chunks: ${chunkRanges.length} total chunks');
-    debugPrint('[RAG] Sample chunk ranges (first 3): ${chunkRanges.take(3).map((r) => '(${r.$1}-${r.$2})').join(', ')}');
-    final existingChunks = await databaseService.chunksExist(params.bookId, chunkRanges);
-    debugPrint('[RAG] Found ${existingChunks.length} existing chunks out of ${chunkRanges.length} total');
+    debugPrint(
+      '[RAG] Checking for existing chunks: ${chunkRanges.length} total chunks',
+    );
+    debugPrint(
+      '[RAG] Sample chunk ranges (first 3): ${chunkRanges.take(3).map((r) => '(${r.$1}-${r.$2})').join(', ')}',
+    );
+    final existingChunks = await databaseService.chunksExist(
+      params.bookId,
+      chunkRanges,
+    );
+    debugPrint(
+      '[RAG] Found ${existingChunks.length} existing chunks out of ${chunkRanges.length} total',
+    );
     if (existingChunks.isNotEmpty) {
-      debugPrint('[RAG] Sample existing chunks (first 3): ${existingChunks.take(3).map((r) => '(${r.$1}-${r.$2})').join(', ')}');
+      debugPrint(
+        '[RAG] Sample existing chunks (first 3): ${existingChunks.take(3).map((r) => '(${r.$1}-${r.$2})').join(', ')}',
+      );
     }
     // Also check total chunk count in database
     final dbChunkCount = await databaseService.getChunkCount(params.bookId);
@@ -495,10 +533,14 @@ void _indexingWorker(_IndexingWorkerParams params) async {
     final chunksToIndex = chunks.where((chunk) {
       return !existingChunks.contains((chunk.charStart, chunk.charEnd));
     }).toList();
-    debugPrint('[RAG] Chunks to index: ${chunksToIndex.length} (${existingChunkCount} already indexed)');
+    debugPrint(
+      '[RAG] Chunks to index: ${chunksToIndex.length} (${existingChunkCount} already indexed)',
+    );
 
     if (chunksToIndex.isEmpty) {
-      debugPrint('[RAG] All chunks already indexed for ${params.bookId}, skipping embedding calls');
+      debugPrint(
+        '[RAG] All chunks already indexed for ${params.bookId}, skipping embedding calls',
+      );
       final completedProgress = RagIndexProgress(
         bookId: params.bookId,
         status: RagIndexStatus.completed,
@@ -519,33 +561,39 @@ void _indexingWorker(_IndexingWorkerParams params) async {
     // Index chunks in batches with dynamic batch sizing
     // Use embedding service's actual limits for accurate batch sizing
     final configuredBatchSize = await settingsService.getRagBatchSize();
-    final maxConcurrentBatches = await settingsService.getRagConcurrentBatches();
-    final progressUpdateFrequency = await settingsService.getRagProgressUpdateFrequency();
-    
+    final maxConcurrentBatches = await settingsService
+        .getRagConcurrentBatches();
+    final progressUpdateFrequency = await settingsService
+        .getRagProgressUpdateFrequency();
+
     // Use configured batch size if set, otherwise use provider defaults
     // For mobile, use conservative defaults to avoid memory pressure
     // IMPORTANT: Limit batch size to ensure progress updates are visible
     // Even if chunks fit in one batch, we want multiple batches for progress feedback
     final maxBatchSize = configuredBatchSize > 0
-        ? configuredBatchSize.clamp(1, 100) // Cap at 100 chunks per batch for progress visibility
+        ? configuredBatchSize.clamp(
+            1,
+            100,
+          ) // Cap at 100 chunks per batch for progress visibility
         : 50; // Default to 50 chunks per batch for better progress granularity
     const maxTokensPerBatch = 300000; // OpenAI total batch limit
     // maxTokensPerInput is already declared earlier for validation
-    
+
     int indexedCount = existingChunkCount;
     bool hadFailures = false;
     int skippedChunks = 0;
     int currentIndex = 0;
     final List<String> errorDetails = []; // Track specific error details
     batchesCompleted = 0; // Reset for this indexing run
-    
+
     // Parallel batch processing with rate limiting
     final activeBatches = <Future<void>>{};
     final semaphore = _RateLimiter(maxConcurrentBatches);
 
     while (currentIndex < chunksToIndex.length || activeBatches.isNotEmpty) {
       // Start new batches up to concurrency limit
-      while (currentIndex < chunksToIndex.length && activeBatches.length < maxConcurrentBatches) {
+      while (currentIndex < chunksToIndex.length &&
+          activeBatches.length < maxConcurrentBatches) {
         // Calculate optimal batch size based on token count
         final batchSize = _calculateOptimalBatchSize(
           chunksToIndex,
@@ -554,20 +602,23 @@ void _indexingWorker(_IndexingWorkerParams params) async {
           maxTokensPerBatch,
           maxTokensPerInput,
         );
-        
+
         if (batchSize == 0) {
           // Single chunk exceeds token limit - skip it with error
           final chunk = chunksToIndex[currentIndex];
           final chunkTokens = chunk.tokenEnd - chunk.tokenStart;
-          final errorMsg = 'Chunk exceeds ${embeddingService.modelName} limit: $chunkTokens tokens > $maxTokensPerInput max';
-          debugPrint('[RAG] ERROR: $errorMsg (chunk ${currentIndex + 1}/${chunksToIndex.length})');
+          final errorMsg =
+              'Chunk exceeds ${embeddingService.modelName} limit: $chunkTokens tokens > $maxTokensPerInput max';
+          debugPrint(
+            '[RAG] ERROR: $errorMsg (chunk ${currentIndex + 1}/${chunksToIndex.length})',
+          );
           errorDetails.add(errorMsg);
           skippedChunks++;
           hadFailures = true;
           currentIndex++;
           continue;
         }
-        
+
         final batch = chunksToIndex.sublist(
           currentIndex,
           currentIndex + batchSize,
@@ -586,7 +637,9 @@ void _indexingWorker(_IndexingWorkerParams params) async {
               );
             } catch (e) {
               final errorMsg = 'Embedding generation failed: ${e.toString()}';
-              debugPrint('[RAG] ERROR: $errorMsg (batch of ${batch.length} chunks)');
+              debugPrint(
+                '[RAG] ERROR: $errorMsg (batch of ${batch.length} chunks)',
+              );
               errorDetails.add(errorMsg);
               hadFailures = true;
               return;
@@ -604,26 +657,32 @@ void _indexingWorker(_IndexingWorkerParams params) async {
             }
 
             // Save chunks to database
-            debugPrint('[RAG] Saving ${chunksWithEmbeddings.length} chunks to database for book ${params.bookId}');
+            debugPrint(
+              '[RAG] Saving ${chunksWithEmbeddings.length} chunks to database for book ${params.bookId}',
+            );
             await databaseService.saveChunks(chunksWithEmbeddings);
             debugPrint('[RAG] Chunks saved successfully');
-            
+
             // Get the count BEFORE clearing (this was the bug!)
             final savedCount = chunksWithEmbeddings.length;
-            
+
             // Clear embeddings from memory to reduce RAM usage
             chunksWithEmbeddings.clear();
             embeddings.clear();
-            
+
             // Verify chunks were actually saved
-            final verifyCount = await databaseService.getChunkCount(params.bookId);
-            debugPrint('[RAG] Verified chunk count in database after save: $verifyCount');
-            
-            final newIndexedCount = await databaseService.incrementIndexedChunks(
+            final verifyCount = await databaseService.getChunkCount(
               params.bookId,
-              savedCount,
             );
-            debugPrint('[RAG] Incremented indexed chunks: $savedCount, new total: $newIndexedCount');
+            debugPrint(
+              '[RAG] Verified chunk count in database after save: $verifyCount',
+            );
+
+            final newIndexedCount = await databaseService
+                .incrementIndexedChunks(params.bookId, savedCount);
+            debugPrint(
+              '[RAG] Incremented indexed chunks: $savedCount, new total: $newIndexedCount',
+            );
 
             // Update progress
             final progress = RagIndexProgress(
@@ -638,56 +697,67 @@ void _indexingWorker(_IndexingWorkerParams params) async {
 
             // Always save progress to database for accuracy and resume capability
             await databaseService.saveIndexStatus(progress);
-            
+
             // Send progress updates more frequently for better UX
             // Update every batch if frequency is 1, otherwise throttle based on batch count
             batchesCompleted++;
-            final shouldSendUpdate = progressUpdateFrequency == 1 || 
-                                     batchesCompleted % progressUpdateFrequency == 0 ||
-                                     batchesCompleted == 1;
-            
-            debugPrint('[RAG] Batch completed: $batchesCompleted, indexedChunks: $newIndexedCount/$totalChunks, shouldSendUpdate: $shouldSendUpdate');
-            
+            final shouldSendUpdate =
+                progressUpdateFrequency == 1 ||
+                batchesCompleted % progressUpdateFrequency == 0 ||
+                batchesCompleted == 1;
+
+            debugPrint(
+              '[RAG] Batch completed: $batchesCompleted, indexedChunks: $newIndexedCount/$totalChunks, shouldSendUpdate: $shouldSendUpdate',
+            );
+
             if (shouldSendUpdate) {
-              debugPrint('[RAG] Sending progress update: $newIndexedCount/$totalChunks (${((newIndexedCount / totalChunks) * 100).toStringAsFixed(1)}%)');
+              debugPrint(
+                '[RAG] Sending progress update: $newIndexedCount/$totalChunks (${((newIndexedCount / totalChunks) * 100).toStringAsFixed(1)}%)',
+              );
               params.sendPort.send(progress);
             }
-            
+
             // Update local counter for final check
             indexedCount = newIndexedCount;
           } finally {
             semaphore.release();
           }
         });
-        
+
         // Add to active batches and remove when complete
         activeBatches.add(batchFuture);
         batchFuture.whenComplete(() {
           activeBatches.remove(batchFuture);
         });
       }
-      
+
       // Wait for at least one batch to complete before starting more
       if (activeBatches.isNotEmpty) {
         await Future.any(activeBatches);
       }
     }
-    
+
     // Wait for all remaining batches to complete
     if (activeBatches.isNotEmpty) {
-      debugPrint('[RAG] Waiting for ${activeBatches.length} remaining batches to complete');
+      debugPrint(
+        '[RAG] Waiting for ${activeBatches.length} remaining batches to complete',
+      );
       await Future.wait(activeBatches.toList());
       debugPrint('[RAG] All batches completed');
     }
-    
+
     // Get final count from database for accuracy and ensure progress is up to date
     final finalChunkCount = await databaseService.getChunkCount(params.bookId);
-    debugPrint('[RAG] Final chunk count in database: $finalChunkCount (expected: $totalChunks)');
+    debugPrint(
+      '[RAG] Final chunk count in database: $finalChunkCount (expected: $totalChunks)',
+    );
     final finalStatus = await databaseService.getIndexStatus(params.bookId);
     indexedCount = finalStatus?.indexedChunks ?? indexedCount;
     debugPrint('[RAG] Final indexed count from status: $indexedCount');
-    debugPrint('[RAG] Final stats for ${params.bookId}: indexed=$indexedCount/$totalChunks, batches=$batchesCompleted, dbCount=$finalChunkCount');
-    
+    debugPrint(
+      '[RAG] Final stats for ${params.bookId}: indexed=$indexedCount/$totalChunks, batches=$batchesCompleted, dbCount=$finalChunkCount',
+    );
+
     // Always send final progress update to ensure UI is up to date
     final finalProgress = RagIndexProgress(
       bookId: params.bookId,
@@ -707,7 +777,9 @@ void _indexingWorker(_IndexingWorkerParams params) async {
       // Build detailed error message
       final errorParts = <String>[];
       if (skippedChunks > 0) {
-        errorParts.add('$skippedChunks chunk${skippedChunks > 1 ? 's' : ''} skipped');
+        errorParts.add(
+          '$skippedChunks chunk${skippedChunks > 1 ? 's' : ''} skipped',
+        );
       }
       if (errorDetails.isNotEmpty) {
         final uniqueErrors = errorDetails.toSet().take(3).join('; ');
@@ -720,9 +792,9 @@ void _indexingWorker(_IndexingWorkerParams params) async {
       final errorMessage = errorParts.isEmpty
           ? 'Indexing incomplete due to errors'
           : 'Indexing incomplete: ${errorParts.join('. ')}';
-      
+
       debugPrint('[RAG] Indexing completed with errors: $errorMessage');
-      
+
       final errorProgress = RagIndexProgress(
         bookId: params.bookId,
         status: RagIndexStatus.error,
@@ -762,12 +834,12 @@ void _indexingWorker(_IndexingWorkerParams params) async {
   } catch (e, stackTrace) {
     debugPrint('[RAG] Indexing error: $e');
     debugPrint('[RAG] Stack trace: $stackTrace');
-    
+
     // Get current status to preserve totalChunks and skippedChunks if available
     final currentStatus = await databaseService.getIndexStatus(params.bookId);
     final totalChunks = currentStatus?.totalChunks ?? 0;
     final existingSkipped = currentStatus?.skippedChunks ?? 0;
-    
+
     // Update status with error
     final errorProgress = RagIndexProgress(
       bookId: params.bookId,
@@ -776,8 +848,11 @@ void _indexingWorker(_IndexingWorkerParams params) async {
       indexedChunks: currentStatus?.indexedChunks ?? 0,
       lastUpdated: DateTime.now(),
       errorMessage: e.toString(),
-      embeddingModel: existingStatus?.embeddingModel ?? currentStatus?.embeddingModel,
-      embeddingDimension: existingStatus?.embeddingDimension ?? currentStatus?.embeddingDimension,
+      embeddingModel:
+          existingStatus?.embeddingModel ?? currentStatus?.embeddingModel,
+      embeddingDimension:
+          existingStatus?.embeddingDimension ??
+          currentStatus?.embeddingDimension,
       skippedChunks: existingSkipped > 0 ? existingSkipped : null,
       apiCalls: batchesCompleted,
     );
@@ -803,23 +878,27 @@ Future<List<Float32List>> _generateEmbeddingsWithRetry(
       return await embeddingService.embedTexts(texts);
     } on EmbeddingRateLimitException catch (e) {
       attempt++;
-      
+
       // Use retry-after from API if available, otherwise exponential backoff
       if (e.retryAfterSeconds != null) {
         delay = Duration(seconds: e.retryAfterSeconds!);
-        debugPrint('[RAG] Rate limit hit. API suggests retry after ${e.retryAfterSeconds}s (attempt $attempt/$maxRetries)');
+        debugPrint(
+          '[RAG] Rate limit hit. API suggests retry after ${e.retryAfterSeconds}s (attempt $attempt/$maxRetries)',
+        );
       } else {
         // Exponential backoff: 2s, 4s, 8s, 16s, 32s
-        debugPrint('[RAG] Rate limit hit. Using exponential backoff: ${delay.inSeconds}s (attempt $attempt/$maxRetries)');
+        debugPrint(
+          '[RAG] Rate limit hit. Using exponential backoff: ${delay.inSeconds}s (attempt $attempt/$maxRetries)',
+        );
       }
-      
+
       if (attempt >= maxRetries) {
         debugPrint('[RAG] Max retries exceeded after rate limiting');
         rethrow;
       }
-      
+
       await Future.delayed(delay);
-      
+
       // Double the delay for next retry if not using API-provided value
       if (e.retryAfterSeconds == null) {
         delay = Duration(seconds: delay.inSeconds * 2);
@@ -827,13 +906,15 @@ Future<List<Float32List>> _generateEmbeddingsWithRetry(
     } on SocketException catch (e) {
       // Network connectivity issue
       attempt++;
-      debugPrint('[RAG] Network error: ${e.message} (attempt $attempt/$maxRetries)');
-      
+      debugPrint(
+        '[RAG] Network error: ${e.message} (attempt $attempt/$maxRetries)',
+      );
+
       if (attempt >= maxRetries) {
         debugPrint('[RAG] Max retries exceeded after network errors');
         rethrow;
       }
-      
+
       // For network errors, use linear backoff
       await Future.delayed(Duration(seconds: 2 * attempt));
     } catch (e) {
@@ -856,24 +937,24 @@ int _calculateOptimalBatchSize(
   int maxTokensPerInput,
 ) {
   if (startIndex >= chunks.length) return 0;
-  
+
   int tokenCount = 0;
   int batchSize = 0;
-  
+
   // Import tokenizer function
   final tokenize = (String text) {
     // Simple token estimation: ~4 characters per token (conservative)
     // For more accuracy, we could use the actual tokenizer, but this is faster
     return (text.length / 4).ceil();
   };
-  
+
   for (int i = startIndex; i < chunks.length && batchSize < maxBatchSize; i++) {
     final chunk = chunks[i];
     // Use stored token count if available, otherwise estimate
     final chunkTokens = chunk.tokenEnd > chunk.tokenStart
         ? (chunk.tokenEnd - chunk.tokenStart)
         : tokenize(chunk.text);
-    
+
     // Check per-input limit first (e.g., 8192 for OpenAI)
     if (chunkTokens > maxTokensPerInput) {
       // Single chunk exceeds per-input limit - return 0 to signal error
@@ -885,15 +966,15 @@ int _calculateOptimalBatchSize(
       );
       return 0;
     }
-    
+
     // Check total batch limit
     if (tokenCount + chunkTokens > maxTokensPerBatch) {
       break;
     }
-    
+
     tokenCount += chunkTokens;
     batchSize++;
   }
-  
+
   return batchSize;
 }

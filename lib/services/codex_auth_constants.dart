@@ -8,8 +8,7 @@ class CodexAuthConstants {
   static const String accountsApiBase = '$issuer/api/accounts';
   static const String deviceVerificationUrl = '$issuer/codex/device';
   static const String deviceRedirectUri = '$issuer/deviceauth/callback';
-  static const String scope =
-      'openid profile email offline_access';
+  static const String scope = 'openid profile email offline_access';
 
   static const String codexResponsesUrl =
       'https://chatgpt.com/backend-api/codex/responses';
@@ -19,7 +18,7 @@ class CodexAuthConstants {
       'https://api.openai.com/v1/embeddings';
 
   /// Default model for Codex backend (ChatGPT subscription).
-  static const String defaultModel = 'gpt-5.5';
+  static const String defaultModel = 'gpt-5.6-terra';
 
   /// Embedding model compatible with existing OpenAI-indexed books.
   static const String defaultEmbeddingModel = 'text-embedding-3-small';

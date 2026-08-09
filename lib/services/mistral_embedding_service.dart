@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'rag_embedding_service.dart';
+import 'ai_model_registry.dart';
 export 'rag_embedding_service.dart' show EmbeddingRateLimitException;
 
 /// Service for generating embeddings using Mistral AI API
@@ -15,7 +16,7 @@ class MistralEmbeddingService implements EmbeddingService {
   static const int _defaultDimensions = 1024;
 
   MistralEmbeddingService(this.apiKey, {String? model})
-      : model = model ?? _defaultModel;
+    : model = model ?? _defaultModel;
 
   @override
   String get providerName => 'Mistral AI';
@@ -31,7 +32,7 @@ class MistralEmbeddingService implements EmbeddingService {
     // Mistral's `mistral-embed` model supports long contexts; use a conservative
     // per-input limit to stay compatible with typical deployments. Adjust if
     // you adopt a different model or updated limits.
-    return 8192;
+    return AiModelRegistry.mistralEmbedding.maxInputTokens;
   }
 
   @override
@@ -67,13 +68,12 @@ class MistralEmbeddingService implements EmbeddingService {
           i + batchSize > texts.length ? texts.length : i + batchSize,
         );
 
-        final requestPayload = {
-          'model': model,
-          'input': batch,
-        };
+        final requestPayload = {'model': model, 'input': batch};
 
         if (kDebugMode) {
-          debugPrint('[RAG] Mistral embedding request: model=$model, batchSize=${batch.length}');
+          debugPrint(
+            '[RAG] Mistral embedding request: model=$model, batchSize=${batch.length}',
+          );
         }
 
         final response = await http.post(
@@ -94,16 +94,21 @@ class MistralEmbeddingService implements EmbeddingService {
           allEmbeddings.addAll(embeddings);
 
           if (kDebugMode) {
-            debugPrint('[RAG] Mistral embedding response: received ${embeddings.length} embeddings');
+            debugPrint(
+              '[RAG] Mistral embedding response: received ${embeddings.length} embeddings',
+            );
           }
         } else if (response.statusCode == 429) {
           // Rate limit error - extract Retry-After header if available
           final retryAfterHeader = response.headers['retry-after'];
-          final retryAfter = retryAfterHeader != null ? int.tryParse(retryAfterHeader) : null;
-          
+          final retryAfter = retryAfterHeader != null
+              ? int.tryParse(retryAfterHeader)
+              : null;
+
           throw EmbeddingRateLimitException(
             'Mistral rate limit exceeded. ${retryAfter != null ? "Retry after $retryAfter seconds." : "Please try again later."}',
-            retryAfterSeconds: retryAfter ?? 60, // Default to 60s if not specified
+            retryAfterSeconds:
+                retryAfter ?? 60, // Default to 60s if not specified
           );
         } else {
           final errorData = jsonDecode(response.body);
@@ -111,7 +116,7 @@ class MistralEmbeddingService implements EmbeddingService {
             'Mistral API error: ${errorData['error']?['message'] ?? response.statusCode}',
           );
         }
-        
+
         // Note: Removed artificial delay - rate limiting is handled by retry logic
       }
 

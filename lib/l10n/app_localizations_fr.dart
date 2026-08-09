@@ -419,7 +419,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get codexSettingsDescription =>
-      'Connectez-vous avec votre compte ChatGPT pour utiliser Codex via votre abonnement pour les résumés et les embeddings RAG. Les clés API OpenAI ou Mistral ci-dessous sont des options de secours.';
+      'Connectez-vous avec votre compte ChatGPT pour utiliser Codex pour les résumés. L’indexation RAG nécessite séparément une clé API OpenAI Platform ou Mistral.';
 
   @override
   String get codexSignIn => 'Se connecter avec ChatGPT';
@@ -453,7 +453,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get codexRagEmbeddingHint =>
-      'Connectez-vous à ChatGPT/Codex pour les embeddings RAG, ou ajoutez une clé API OpenAI ou Mistral en secours.';
+      'L’indexation RAG nécessite une clé API OpenAI Platform ou Mistral ; la connexion ChatGPT/Codex seule ne fournit pas d’embeddings.';
 
   @override
   String get openAISettings => 'Paramètres OpenAI';

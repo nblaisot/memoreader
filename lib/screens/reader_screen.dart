@@ -2581,10 +2581,13 @@ class _ReaderScreenState extends State<ReaderScreen>
     final positions = <String, int?>{};
     for (final book in allBooks) {
       if (book.id == widget.book.id) {
-        positions[book.id] = _currentCharacterIndex;
+        positions[book.id] =
+            _lastVisibleCharacterIndex ?? _currentCharacterIndex;
       } else {
         final progress = await _bookService.getReadingProgress(book.id);
-        positions[book.id] = progress?.currentCharacterIndex;
+        positions[book.id] =
+            progress?.lastVisibleCharacterIndex ??
+            progress?.currentCharacterIndex;
       }
     }
 
@@ -2625,7 +2628,8 @@ class _ReaderScreenState extends State<ReaderScreen>
       context: context,
       builder: (context) => _LatestEventsDialog(
         bookId: widget.book.id,
-        currentCharPosition: _currentCharacterIndex,
+        currentCharPosition:
+            _lastVisibleCharacterIndex ?? _currentCharacterIndex,
         summaryService: _summaryService,
         l10n: l10n,
       ),
@@ -2650,7 +2654,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     final latestEventsService = LatestEventsService();
     final hasEnough = await latestEventsService.hasEnoughChunks(
       bookId: widget.book.id,
-      currentCharPosition: _currentCharacterIndex,
+      currentCharPosition: _lastVisibleCharacterIndex ?? _currentCharacterIndex,
       minChunks: 1,
     );
 

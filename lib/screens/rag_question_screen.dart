@@ -8,6 +8,7 @@ import '../services/app_state_service.dart';
 import '../services/rag_query_service.dart';
 import '../services/rag_database_service.dart';
 import '../services/summary_config_service.dart';
+
 /// Full-screen widget for asking RAG questions over one or multiple books.
 ///
 /// When [currentBookId] is null, the screen is in "library" context:
@@ -83,7 +84,9 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
     // Determine saved selection
     List<String>? saved;
     if (widget.currentBookId != null) {
-      saved = await _appStateService.getReaderQuestionBookIds(widget.currentBookId!);
+      saved = await _appStateService.getReaderQuestionBookIds(
+        widget.currentBookId!,
+      );
     } else {
       saved = await _appStateService.getLibraryQuestionBookIds();
     }
@@ -109,7 +112,8 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
   }
 
   Set<String> _defaultSelection(List<String> indexed) {
-    if (widget.currentBookId != null && indexed.contains(widget.currentBookId)) {
+    if (widget.currentBookId != null &&
+        indexed.contains(widget.currentBookId)) {
       return {widget.currentBookId!};
     }
     // Library context: select all
@@ -126,7 +130,10 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
   Future<void> _saveSelection() async {
     final ids = _selectedBookIds.toList();
     if (widget.currentBookId != null) {
-      await _appStateService.setReaderQuestionBookIds(widget.currentBookId!, ids);
+      await _appStateService.setReaderQuestionBookIds(
+        widget.currentBookId!,
+        ids,
+      );
     } else {
       await _appStateService.setLibraryQuestionBookIds(ids);
     }
@@ -167,11 +174,13 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
     // Scroll past the question field to show progress
     await Future.delayed(const Duration(milliseconds: 100));
     if (_scrollController.hasClients) {
-      unawaited(_scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      ));
+      unawaited(
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        ),
+      );
     }
 
     try {
@@ -179,7 +188,9 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
       final configService = SummaryConfigService(prefs);
       final baseService = await configService.getSummaryService();
       if (baseService == null) {
-        throw Exception('Summary service not available. Please configure an API key in settings.');
+        throw Exception(
+          'Summary service not available. Please configure an API key in settings.',
+        );
       }
 
       if (!mounted) return;
@@ -209,11 +220,13 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
         // Scroll to answer
         await Future.delayed(const Duration(milliseconds: 100));
         if (_scrollController.hasClients) {
-          unawaited(_scrollController.animateTo(
-            _scrollController.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 400),
-            curve: Curves.easeOut,
-          ));
+          unawaited(
+            _scrollController.animateTo(
+              _scrollController.position.maxScrollExtent,
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeOut,
+            ),
+          );
         }
       }
     } catch (e) {
@@ -291,7 +304,10 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  Icon(Icons.menu_book_outlined, color: theme.colorScheme.primary),
+                  Icon(
+                    Icons.menu_book_outlined,
+                    color: theme.colorScheme.primary,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -300,7 +316,9 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
                     ),
                   ),
                   Icon(
-                    _selectorExpanded ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                    _selectorExpanded
+                        ? Icons.arrow_drop_up
+                        : Icons.arrow_drop_down,
                     color: theme.colorScheme.onSurface,
                   ),
                 ],
@@ -338,14 +356,20 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
                     book.title,
                     style: isIndexed
                         ? null
-                        : TextStyle(color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
+                        : TextStyle(
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.4,
+                            ),
+                          ),
                   ),
                   subtitle: !isIndexed
                       ? Text(
                           l10n.ragBookNotIndexed,
                           style: TextStyle(
                             fontSize: 12,
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.4,
+                            ),
                           ),
                         )
                       : null,
@@ -461,18 +485,24 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
   Widget _buildAnswerSection(AppLocalizations l10n, ThemeData theme) {
     // Collect unique book IDs from source chunks
     final sourceBookIds = _sourceChunks.map((c) => c.bookId).toSet();
-    final sourceTitles = widget.books
-        .where((b) => sourceBookIds.contains(b.id))
-        .map((b) => b.title)
-        .toList()
-      ..sort();
+    final sourceTitles =
+        widget.books
+            .where((b) => sourceBookIds.contains(b.id))
+            .map((b) => b.title)
+            .toList()
+          ..sort();
+    final titleByBookId = {
+      for (final book in widget.books) book.id: book.title,
+    };
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           l10n.ragAnswerLabel,
-          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
         ),
         const SizedBox(height: 8),
         Container(
@@ -482,16 +512,15 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
             color: theme.colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(8),
           ),
-          child: SelectableText(
-            _answer!,
-            style: theme.textTheme.bodyMedium,
-          ),
+          child: SelectableText(_answer!, style: theme.textTheme.bodyMedium),
         ),
         if (sourceTitles.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
             l10n.ragSourcesLabel,
-            style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 4),
           ...sourceTitles.map(
@@ -499,7 +528,11 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
               padding: const EdgeInsets.only(bottom: 2),
               child: Row(
                 children: [
-                  Icon(Icons.book_outlined, size: 14, color: theme.colorScheme.primary),
+                  Icon(
+                    Icons.book_outlined,
+                    size: 14,
+                    color: theme.colorScheme.primary,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(title, style: theme.textTheme.bodySmall),
@@ -508,6 +541,26 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 6),
+          ..._sourceChunks.asMap().entries.map((entry) {
+            final chunk = entry.value;
+            final title = titleByBookId[chunk.bookId] ?? chunk.bookId;
+            final location = chunk.chapterTitle?.trim().isNotEmpty == true
+                ? chunk.chapterTitle!.trim()
+                : '${chunk.charStart}-${chunk.charEnd}';
+            return ExpansionTile(
+              dense: true,
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: const EdgeInsets.only(left: 20, bottom: 8),
+              title: Text(
+                '[S${entry.key + 1}] $title — $location',
+                style: theme.textTheme.bodySmall,
+              ),
+              children: [
+                SelectableText(chunk.text, style: theme.textTheme.bodySmall),
+              ],
+            );
+          }),
         ],
       ],
     );

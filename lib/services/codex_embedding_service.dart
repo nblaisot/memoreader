@@ -11,7 +11,11 @@ import 'resolving_http_client.dart';
 import 'rag_embedding_service.dart';
 export 'rag_embedding_service.dart' show EmbeddingRateLimitException;
 
-/// Embeddings via ChatGPT/Codex OAuth against OpenAI's embeddings API.
+/// Legacy experimental service retained only for migration/tests.
+///
+/// Do not route production indexing through this class: ChatGPT/Codex OAuth
+/// does not establish OpenAI Platform `/v1/embeddings` authorization.
+@Deprecated('Use EmbeddingConfigService with a Platform API key')
 class CodexEmbeddingService implements EmbeddingService {
   CodexEmbeddingService({
     CodexAuthService? authService,

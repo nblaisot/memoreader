@@ -14,10 +14,18 @@ class RagIndexProgress {
   final int indexedChunks;
   final DateTime lastUpdated;
   final String? errorMessage;
-  final String? embeddingModel; // 'text-embedding-3-small', 'mistral-embed', etc.
+  final String?
+  embeddingModel; // 'text-embedding-3-small', 'mistral-embed', etc.
+  final String? embeddingProvider;
   final int? embeddingDimension; // 1536, 1024, etc.
+  final String? contentHash;
+  final int? extractionVersion;
+  final int? chunkingVersion;
+  final String? configHash;
+  final int? indexVersion;
   final int? skippedChunks; // Chunks skipped due to size limits or errors
-  final int? apiCalls; // Number of embedding API calls (batches) used during indexing
+  final int?
+  apiCalls; // Number of embedding API calls (batches) used during indexing
 
   RagIndexProgress({
     required this.bookId,
@@ -27,7 +35,13 @@ class RagIndexProgress {
     required this.lastUpdated,
     this.errorMessage,
     this.embeddingModel,
+    this.embeddingProvider,
     this.embeddingDimension,
+    this.contentHash,
+    this.extractionVersion,
+    this.chunkingVersion,
+    this.configHash,
+    this.indexVersion,
     this.skippedChunks,
     this.apiCalls,
   });
@@ -57,7 +71,13 @@ class RagIndexProgress {
       'lastUpdated': lastUpdated.toIso8601String(),
       'errorMessage': errorMessage,
       'embeddingModel': embeddingModel,
+      'embeddingProvider': embeddingProvider,
       'embeddingDimension': embeddingDimension,
+      'contentHash': contentHash,
+      'extractionVersion': extractionVersion,
+      'chunkingVersion': chunkingVersion,
+      'configHash': configHash,
+      'indexVersion': indexVersion,
       'skippedChunks': skippedChunks,
       'apiCalls': apiCalls,
     };
@@ -76,7 +96,13 @@ class RagIndexProgress {
       lastUpdated: DateTime.parse(json['lastUpdated'] as String),
       errorMessage: json['errorMessage'] as String?,
       embeddingModel: json['embeddingModel'] as String?,
+      embeddingProvider: json['embeddingProvider'] as String?,
       embeddingDimension: json['embeddingDimension'] as int?,
+      contentHash: json['contentHash'] as String?,
+      extractionVersion: json['extractionVersion'] as int?,
+      chunkingVersion: json['chunkingVersion'] as int?,
+      configHash: json['configHash'] as String?,
+      indexVersion: json['indexVersion'] as int?,
       skippedChunks: json['skippedChunks'] as int?,
       apiCalls: json['apiCalls'] as int?,
     );
@@ -91,7 +117,13 @@ class RagIndexProgress {
     DateTime? lastUpdated,
     String? errorMessage,
     String? embeddingModel,
+    String? embeddingProvider,
     int? embeddingDimension,
+    String? contentHash,
+    int? extractionVersion,
+    int? chunkingVersion,
+    String? configHash,
+    int? indexVersion,
     int? skippedChunks,
     int? apiCalls,
   }) {
@@ -103,7 +135,13 @@ class RagIndexProgress {
       lastUpdated: lastUpdated ?? this.lastUpdated,
       errorMessage: errorMessage ?? this.errorMessage,
       embeddingModel: embeddingModel ?? this.embeddingModel,
+      embeddingProvider: embeddingProvider ?? this.embeddingProvider,
       embeddingDimension: embeddingDimension ?? this.embeddingDimension,
+      contentHash: contentHash ?? this.contentHash,
+      extractionVersion: extractionVersion ?? this.extractionVersion,
+      chunkingVersion: chunkingVersion ?? this.chunkingVersion,
+      configHash: configHash ?? this.configHash,
+      indexVersion: indexVersion ?? this.indexVersion,
       skippedChunks: skippedChunks ?? this.skippedChunks,
       apiCalls: apiCalls ?? this.apiCalls,
     );
