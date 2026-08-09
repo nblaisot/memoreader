@@ -6,10 +6,13 @@ import 'package:memoreader/l10n/app_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/summary_config_service.dart';
+import '../services/embedding_config_service.dart';
 import '../services/codex_auth_service.dart';
 import '../services/settings_service.dart';
 import '../services/prompt_config_service.dart';
 import '../services/rag_database_service.dart';
+import '../services/rag_indexing_service.dart';
+import '../services/book_service.dart';
 import '../services/google_drive_sync_service.dart';
 import '../services/drive_sync_secrets_service.dart';
 import 'rag_debug_screen.dart';
@@ -52,9 +55,11 @@ class _PromptSection {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late SummaryConfigService _configService;
+  late EmbeddingConfigService _embeddingConfigService;
   late PromptConfigService _promptConfigService;
   final SettingsService _settingsService = SettingsService();
   String _selectedProvider = 'openai';
+  String? _selectedEmbeddingProvider;
   String? _selectedLanguageCode;
   bool _isLoading = true;
   bool _isOpenAIConfigured = false;
@@ -168,9 +173,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       _configService = SummaryConfigService(prefs);
+      _embeddingConfigService = EmbeddingConfigService(prefs);
       _promptConfigService = PromptConfigService(prefs);
       
       _selectedProvider = _configService.getProvider();
+      _selectedEmbeddingProvider = _embeddingConfigService.getProvider();
       _isOpenAIConfigured = _configService.isOpenAIConfigured();
       _isMistralConfigured = _configService.isMistralConfigured();
       _isCodexConfigured = await _configService.isCodexConfigured();
@@ -441,6 +448,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _saveEmbeddingProvider(String provider) async {
+    try {
+      await _embeddingConfigService.setProvider(provider);
+      setState(() => _selectedEmbeddingProvider = provider);
+      unawaited(_restartIncompleteRagIndexes());
+      if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.settingsSaved)),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error saving embedding provider: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _restartIncompleteRagIndexes() async {
+    final books = await BookService().getAllBooks();
+    final database = RagDatabaseService();
+    final indexer = RagIndexingService();
+    for (final book in books) {
+      final status = await database.getIndexStatus(book.id);
+      if (status?.isComplete == true || indexer.isIndexing(book.id)) continue;
+      indexer.startIndexing(book.id).listen(
+        (_) {},
+        onError: (Object error) {
+          debugPrint('[RAG] Failed to restart ${book.id}: $error');
+        },
+      );
+    }
+  }
+
   Future<void> _saveOpenAIApiKey() async {
     final apiKey = _openaiApiKeyController.text.trim();
     
@@ -465,11 +509,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await _configService.setOpenAIApiKey(apiKey);
       await _configService.setProvider('openai');
+      await _embeddingConfigService.setProvider(
+        EmbeddingConfigService.providerOpenAI,
+      );
+      unawaited(_restartIncompleteRagIndexes());
       setState(() {
         _isOpenAIConfigured = true;
         _showOpenaiApiKey = false;
         _openaiApiKeyController.text = _configService.getOpenAIApiKey() ?? '';
         _selectedProvider = 'openai';
+        _selectedEmbeddingProvider = EmbeddingConfigService.providerOpenAI;
       });
       
       if (mounted) {
@@ -519,11 +568,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await _configService.setMistralApiKey(apiKey);
       await _configService.setProvider('mistral');
+      await _embeddingConfigService.setProvider(
+        EmbeddingConfigService.providerMistral,
+      );
+      unawaited(_restartIncompleteRagIndexes());
       setState(() {
         _isMistralConfigured = true;
         _showMistralApiKey = false;
         _mistralApiKeyController.text = _configService.getMistralApiKey() ?? '';
         _selectedProvider = 'mistral';
+        _selectedEmbeddingProvider = EmbeddingConfigService.providerMistral;
       });
       
       if (mounted) {
@@ -1043,7 +1097,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
 
           if (_selectedProvider == SummaryConfigService.providerCodex &&
-              !_isCodexConfigured &&
               !_isOpenAIConfigured &&
               !_isMistralConfigured)
             Padding(
@@ -1056,6 +1109,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           
+          const Divider(height: 32),
+
+          Text(
+            'RAG embedding provider',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Semantic indexing uses a Platform API key independently from the answer provider. ChatGPT sign-in does not provide embeddings.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.grey[600],
+            ),
+          ),
+          RadioListTile<String>(
+            title: const Text('OpenAI Platform — text-embedding-3-small'),
+            value: EmbeddingConfigService.providerOpenAI,
+            groupValue: _selectedEmbeddingProvider,
+            onChanged: _isOpenAIConfigured
+                ? (value) => _saveEmbeddingProvider(value!)
+                : null,
+          ),
+          RadioListTile<String>(
+            title: const Text('Mistral — mistral-embed'),
+            value: EmbeddingConfigService.providerMistral,
+            groupValue: _selectedEmbeddingProvider,
+            onChanged: _isMistralConfigured
+                ? (value) => _saveEmbeddingProvider(value!)
+                : null,
+          ),
+
           const Divider(height: 32),
 
           Text(

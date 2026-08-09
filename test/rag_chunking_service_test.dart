@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:memoreader/services/rag_chunking_service.dart';
+import 'package:memoreader/services/canonical_book_text_service.dart';
 import 'package:memoreader/services/txt_to_epub_converter.dart';
 
 void main() {
@@ -14,11 +15,15 @@ void main() {
     await txt.writeAsString(
       List.generate(
         20,
-        (i) => 'This is sentence number ${i + 1}. It has enough words to build tokens.',
+        (i) =>
+            'This is sentence number ${i + 1}. It has enough words to build tokens.',
       ).join(' '),
     );
     final outPath = '${tempDir.path}/book.epub';
-    await TxtToEpubConverter().convertToEpub(txtFile: txt, outputEpubPath: outPath);
+    await TxtToEpubConverter().convertToEpub(
+      txtFile: txt,
+      outputEpubPath: outPath,
+    );
     epubFile = File(outPath);
   });
 
@@ -54,5 +59,47 @@ void main() {
         reason: 'char ranges should be non-decreasing',
       );
     }
+  });
+
+  test('chunks are exact canonical substrings with real text overlap', () {
+    final text = List.generate(
+      12,
+      (i) => 'Sentence $i contains several useful words for retrieval. ',
+    ).join();
+    final projection = CanonicalBookText(
+      text: text,
+      sections: [
+        CanonicalBookSection(
+          sectionIndex: 0,
+          chapterIndex: 0,
+          contentFileKey: 'chapter.xhtml',
+          chapterTitle: 'Chapter',
+          charStart: 0,
+          charEnd: text.length,
+          text: text,
+        ),
+      ],
+      contentHash: 'hash',
+      extractionVersion: 1,
+    );
+    final chunks = RagChunkingService(
+      minTokens: 20,
+      maxTokens: 60,
+      overlapTokens: 20,
+    ).chunkCanonicalBook(projection: projection, bookId: 'book');
+
+    expect(chunks.length, greaterThan(1));
+    for (final chunk in chunks) {
+      expect(chunk.text, text.substring(chunk.charStart, chunk.charEnd));
+      expect(chunk.chapterTitle, 'Chapter');
+      expect(chunk.contentFileKey, 'chapter.xhtml');
+    }
+    expect(
+      chunks.skip(1).any((chunk) {
+        final previous = chunks[chunks.indexOf(chunk) - 1];
+        return chunk.charStart < previous.charEnd;
+      }),
+      isTrue,
+    );
   });
 }

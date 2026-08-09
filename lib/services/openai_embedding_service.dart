@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'rag_embedding_service.dart';
+import 'ai_model_registry.dart';
 export 'rag_embedding_service.dart' show EmbeddingRateLimitException;
 
 /// Service for generating embeddings using OpenAI API
@@ -13,7 +14,7 @@ class OpenAIEmbeddingService implements EmbeddingService {
   static const String _apiUrl = 'https://api.openai.com/v1/embeddings';
   static const String _defaultModel = 'text-embedding-3-small';
   static const int _defaultDimensions = 1536;
-  
+
   // Model dimensions mapping
   static const Map<String, int> _modelDimensions = {
     'text-embedding-3-small': 1536,
@@ -21,7 +22,7 @@ class OpenAIEmbeddingService implements EmbeddingService {
   };
 
   OpenAIEmbeddingService(this.apiKey, {String? model})
-      : model = model ?? _defaultModel;
+    : model = model ?? _defaultModel;
 
   @override
   String get providerName => 'OpenAI';
@@ -36,7 +37,7 @@ class OpenAIEmbeddingService implements EmbeddingService {
   int get maxTokensPerInput {
     // According to OpenAI documentation, text-embedding-3 models currently
     // support up to 8192 tokens per input. Adjust if you change models.
-    return 8192;
+    return AiModelRegistry.openAiEmbedding.maxInputTokens;
   }
 
   @override
@@ -62,13 +63,12 @@ class OpenAIEmbeddingService implements EmbeddingService {
 
     try {
       // Batch embedding request (up to 2048 inputs per request)
-      final requestPayload = {
-        'model': model,
-        'input': texts,
-      };
+      final requestPayload = {'model': model, 'input': texts};
 
       if (kDebugMode) {
-        debugPrint('[RAG] OpenAI embedding request: model=$model, batchSize=${texts.length}');
+        debugPrint(
+          '[RAG] OpenAI embedding request: model=$model, batchSize=${texts.length}',
+        );
       }
 
       final response = await http.post(
@@ -87,19 +87,25 @@ class OpenAIEmbeddingService implements EmbeddingService {
             .toList();
 
         if (kDebugMode) {
-          debugPrint('[RAG] OpenAI embedding response: received ${embeddings.length} embeddings');
+          debugPrint(
+            '[RAG] OpenAI embedding response: received ${embeddings.length} embeddings',
+          );
         }
 
         return embeddings;
       } else if (response.statusCode == 429) {
         // Rate limit error - extract Retry-After header if available
-        final retryAfterHeader = response.headers['retry-after'] ?? 
-                                  response.headers['x-ratelimit-reset-requests'];
-        final retryAfter = retryAfterHeader != null ? int.tryParse(retryAfterHeader) : null;
-        
+        final retryAfterHeader =
+            response.headers['retry-after'] ??
+            response.headers['x-ratelimit-reset-requests'];
+        final retryAfter = retryAfterHeader != null
+            ? int.tryParse(retryAfterHeader)
+            : null;
+
         throw EmbeddingRateLimitException(
           'OpenAI rate limit exceeded. ${retryAfter != null ? "Retry after $retryAfter seconds." : "Please try again later."}',
-          retryAfterSeconds: retryAfter ?? 60, // Default to 60s if not specified
+          retryAfterSeconds:
+              retryAfter ?? 60, // Default to 60s if not specified
         );
       } else {
         final errorData = jsonDecode(response.body);

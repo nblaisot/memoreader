@@ -3,23 +3,23 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'summary_service.dart';
 import 'api_cache_service.dart';
+import 'ai_model_registry.dart';
 
 /// Service for generating summaries using Mistral AI API
-/// 
+///
 /// This service requires an API key to be configured by the user.
 /// Mistral AI provides high-quality models with competitive pricing.
 class MistralSummaryService implements SummaryService {
   final String apiKey;
   final ApiCacheService _cacheService = ApiCacheService();
   final http.Client _httpClient;
+  final String model;
 
-  static const String _apiUrl = 'https://api.mistral.ai/v1/chat/completions';
   static const String _provider = 'mistral';
 
-  MistralSummaryService(
-    this.apiKey, {
-    http.Client? httpClient,
-  }) : _httpClient = httpClient ?? http.Client();
+  MistralSummaryService(this.apiKey, {http.Client? httpClient, String? model})
+    : _httpClient = httpClient ?? http.Client(),
+      model = model ?? AiModelRegistry.mistralAnswer.modelId;
 
   @override
   String get serviceName => 'Mistral AI';
@@ -54,27 +54,30 @@ class MistralSummaryService implements SummaryService {
 
       // Build the request payload
       final requestPayload = {
-        'model': 'mistral-large-latest', // Best quality, large context
+        'model': model,
         'messages': [
           {
             'role': 'system',
-            'content': 'You are a helpful assistant that follows instructions precisely and never repeats instructions in your responses.',
+            'content':
+                'You are a helpful assistant that follows instructions precisely and never repeats instructions in your responses.',
           },
-          {
-            'role': 'user',
-            'content': safePrompt,
-          },
+          {'role': 'user', 'content': safePrompt},
         ],
-        'max_tokens': 4000, // Increased for detailed summaries with larger context
+        'max_tokens': AiModelRegistry.mistralAnswer.maxOutputTokens,
         'temperature': 0.7,
       };
 
       // Compute hash of the full request payload for caching (includes provider name)
-      final requestHash = _cacheService.computeRequestHash(_provider, requestPayload);
+      final requestHash = _cacheService.computeRequestHash(
+        _provider,
+        requestPayload,
+      );
 
       // Check cache if bookId is provided
       if (bookId != null) {
-        final cachedResponse = await _cacheService.getCachedResponse(requestHash);
+        final cachedResponse = await _cacheService.getCachedResponse(
+          requestHash,
+        );
         if (cachedResponse != null) {
           if (kDebugMode) {
             debugPrint('[LLM] Mistral cache hit: requestHash=$requestHash');
@@ -86,14 +89,16 @@ class MistralSummaryService implements SummaryService {
       }
 
       if (kDebugMode) {
-        debugPrint('[LLM] Mistral request: model=mistral-small-latest, promptLength=${safePrompt.length}');
+        debugPrint(
+          '[LLM] Mistral request: model=$model, promptLength=${safePrompt.length}',
+        );
         debugPrint('[LLM] Mistral prompt begin >>>');
         debugPrint(safePrompt);
         debugPrint('[LLM] Mistral prompt end <<<');
       }
 
       final response = await _httpClient.post(
-        Uri.parse(_apiUrl),
+        Uri.parse(AiModelRegistry.mistralAnswer.endpoint),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $apiKey',
@@ -105,9 +110,11 @@ class MistralSummaryService implements SummaryService {
         final data = jsonDecode(response.body);
         final summary = data['choices'][0]['message']['content'] as String;
         final trimmedSummary = summary.trim();
-        
+
         if (kDebugMode) {
-          debugPrint('[LLM] Mistral response ok: summaryLength=${trimmedSummary.length}');
+          debugPrint(
+            '[LLM] Mistral response ok: summaryLength=${trimmedSummary.length}',
+          );
         }
 
         // Save to cache if bookId is provided
@@ -119,14 +126,18 @@ class MistralSummaryService implements SummaryService {
             _provider,
           );
           if (kDebugMode) {
-            debugPrint('[LLM] Mistral response cached: requestHash=$requestHash');
+            debugPrint(
+              '[LLM] Mistral response cached: requestHash=$requestHash',
+            );
           }
         }
 
         return trimmedSummary;
       } else {
         final errorData = jsonDecode(response.body);
-        throw Exception('Mistral API error: ${errorData['error']?['message'] ?? response.statusCode}');
+        throw Exception(
+          'Mistral API error: ${errorData['error']?['message'] ?? response.statusCode}',
+        );
       }
     } catch (e) {
       debugPrint('Error generating summary with Mistral: $e');
@@ -134,4 +145,3 @@ class MistralSummaryService implements SummaryService {
     }
   }
 }
-

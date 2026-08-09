@@ -411,7 +411,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get codexSettingsDescription =>
-      'Sign in with your ChatGPT account to use Codex with your subscription for summaries and RAG embeddings. OpenAI or Mistral API keys below are optional fallbacks.';
+      'Sign in with your ChatGPT account to use Codex for summaries. RAG indexing separately requires an OpenAI Platform or Mistral API key.';
 
   @override
   String get codexSignIn => 'Sign in with ChatGPT';
@@ -445,7 +445,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get codexRagEmbeddingHint =>
-      'Sign in with ChatGPT/Codex for RAG embeddings, or add an OpenAI or Mistral API key as fallback.';
+      'RAG indexing requires an OpenAI Platform or Mistral API key; ChatGPT/Codex sign-in alone does not provide embeddings.';
 
   @override
   String get openAISettings => 'OpenAI Settings';

@@ -137,8 +137,7 @@ class CodexSummaryService implements SummaryService {
           message = body;
         }
       }
-      if (response.statusCode == 429 ||
-          errorType == 'usage_limit_reached') {
+      if (response.statusCode == 429 || errorType == 'usage_limit_reached') {
         throw CodexUsageLimitException(
           message,
           resetsInSeconds: resetsInSeconds,

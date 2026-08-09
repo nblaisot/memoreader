@@ -22,7 +22,7 @@ void main() {
       expect(request.headers['Authorization'], 'Bearer token_abc');
       expect(request.headers['ChatGPT-Account-Id'], 'acct_1');
       final body = jsonDecode(request.body) as Map<String, dynamic>;
-      expect(body['model'], 'gpt-5.5');
+      expect(body['model'], 'gpt-5.6-terra');
 
       const sse = '''
 event: response.output_text.delta

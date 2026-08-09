@@ -549,7 +549,7 @@
   "@codexSettings": {
     "description": "Codex settings section title"
   },
-  "codexSettingsDescription": "Sign in with your ChatGPT account to use Codex with your subscription for summaries and RAG embeddings. OpenAI or Mistral API keys below are optional fallbacks.",
+  "codexSettingsDescription": "Sign in with your ChatGPT account to use Codex for summaries. RAG indexing separately requires an OpenAI Platform or Mistral API key.",
   "@codexSettingsDescription": {
     "description": "Codex settings section description"
   },
@@ -595,7 +595,7 @@
       }
     }
   },
-  "codexRagEmbeddingHint": "Sign in with ChatGPT/Codex for RAG embeddings, or add an OpenAI or Mistral API key as fallback.",
+  "codexRagEmbeddingHint": "RAG indexing requires an OpenAI Platform or Mistral API key; ChatGPT/Codex sign-in alone does not provide embeddings.",
   "@codexRagEmbeddingHint": {
     "description": "Hint when Codex is selected about embedding keys"
   },

@@ -3,23 +3,22 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'summary_service.dart';
 import 'api_cache_service.dart';
+import 'ai_model_registry.dart';
 
 /// Service for generating summaries using OpenAI API
-/// 
+///
 /// This service requires an API key to be configured by the user.
 class OpenAISummaryService implements SummaryService {
   final String apiKey;
   final ApiCacheService _cacheService = ApiCacheService();
   final http.Client _httpClient;
+  final String model;
 
-  static const String _apiUrl = 'https://api.openai.com/v1/chat/completions';
   static const String _provider = 'openai';
-  static const String _model = 'gpt-4.1';
 
-  OpenAISummaryService(
-    this.apiKey, {
-    http.Client? httpClient,
-  }) : _httpClient = httpClient ?? http.Client();
+  OpenAISummaryService(this.apiKey, {http.Client? httpClient, String? model})
+    : _httpClient = httpClient ?? http.Client(),
+      model = model ?? AiModelRegistry.openAiAnswer.modelId;
 
   @override
   String get serviceName => 'OpenAI (GPT)';
@@ -52,29 +51,27 @@ class OpenAISummaryService implements SummaryService {
           ? '${prompt.substring(0, maxLength)}...'
           : prompt;
 
-      // Build the request payload
+      // Responses is OpenAI's recommended endpoint for new generation work.
       final requestPayload = {
-        'model': _model,
-        'messages': [
-          {
-            'role': 'system',
-            'content': 'You are a helpful assistant that follows instructions precisely and never repeats instructions in your responses.',
-          },
-          {
-            'role': 'user',
-            'content': safePrompt,
-          },
-        ],
-        'max_tokens': 4000, // Increased for detailed summaries
-        'temperature': 0.7,
+        'model': model,
+        'instructions':
+            'Follow the user instructions precisely. Do not repeat the instructions.',
+        'input': safePrompt,
+        'max_output_tokens': AiModelRegistry.openAiAnswer.maxOutputTokens,
+        'store': false,
       };
 
       // Compute hash of the full request payload for caching (includes provider name)
-      final requestHash = _cacheService.computeRequestHash(_provider, requestPayload);
+      final requestHash = _cacheService.computeRequestHash(
+        _provider,
+        requestPayload,
+      );
 
       // Check cache if bookId is provided
       if (bookId != null) {
-        final cachedResponse = await _cacheService.getCachedResponse(requestHash);
+        final cachedResponse = await _cacheService.getCachedResponse(
+          requestHash,
+        );
         if (cachedResponse != null) {
           if (kDebugMode) {
             debugPrint('[LLM] OpenAI cache hit: requestHash=$requestHash');
@@ -86,14 +83,16 @@ class OpenAISummaryService implements SummaryService {
       }
 
       if (kDebugMode) {
-        debugPrint('[LLM] OpenAI request: model=$_model, promptLength=${safePrompt.length}');
+        debugPrint(
+          '[LLM] OpenAI request: model=$model, promptLength=${safePrompt.length}',
+        );
         debugPrint('[LLM] OpenAI prompt begin >>>');
         debugPrint(safePrompt);
         debugPrint('[LLM] OpenAI prompt end <<<');
       }
 
       final response = await _httpClient.post(
-        Uri.parse(_apiUrl),
+        Uri.parse(AiModelRegistry.openAiAnswer.endpoint),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $apiKey',
@@ -102,12 +101,14 @@ class OpenAISummaryService implements SummaryService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final summary = data['choices'][0]['message']['content'] as String;
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final summary = _extractOutputText(data);
         final trimmedSummary = summary.trim();
-        
+
         if (kDebugMode) {
-          debugPrint('[LLM] OpenAI response ok: summaryLength=${trimmedSummary.length}');
+          debugPrint(
+            '[LLM] OpenAI response ok: summaryLength=${trimmedSummary.length}',
+          );
         }
 
         // Save to cache if bookId is provided
@@ -119,21 +120,43 @@ class OpenAISummaryService implements SummaryService {
             _provider,
           );
           if (kDebugMode) {
-            debugPrint('[LLM] OpenAI response cached: requestHash=$requestHash');
+            debugPrint(
+              '[LLM] OpenAI response cached: requestHash=$requestHash',
+            );
           }
         }
 
         return trimmedSummary;
       } else {
         final errorData = jsonDecode(response.body);
-        throw Exception('OpenAI API error: ${errorData['error']['message'] ?? response.statusCode}');
+        throw Exception(
+          'OpenAI API error: ${errorData['error']['message'] ?? response.statusCode}',
+        );
       }
     } catch (e) {
       debugPrint('Error generating summary with OpenAI: $e');
       rethrow;
     }
   }
+
+  static String _extractOutputText(Map<String, dynamic> data) {
+    final direct = data['output_text'];
+    if (direct is String && direct.isNotEmpty) return direct;
+    final buffer = StringBuffer();
+    for (final item in (data['output'] as List<dynamic>? ?? const [])) {
+      if (item is! Map) continue;
+      for (final content in (item['content'] as List<dynamic>? ?? const [])) {
+        if (content is Map && content['type'] == 'output_text') {
+          final text = content['text'];
+          if (text is String) buffer.write(text);
+        }
+      }
+    }
+    if (buffer.isEmpty) {
+      throw const FormatException(
+        'OpenAI response did not contain output text',
+      );
+    }
+    return buffer.toString();
+  }
 }
-
-
-

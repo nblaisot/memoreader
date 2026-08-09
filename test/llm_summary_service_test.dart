@@ -29,36 +29,43 @@ void main() {
     });
 
     test('generateSummary throws when key missing', () async {
-      final svc = OpenAISummaryService('', httpClient: MockClient((_) async {
-        throw AssertionError('no HTTP');
-      }));
+      final svc = OpenAISummaryService(
+        '',
+        httpClient: MockClient((_) async {
+          throw AssertionError('no HTTP');
+        }),
+      );
       expect(
         () => svc.generateSummary('p', 'en'),
-        throwsA(isA<Exception>().having(
-          (e) => e.toString(),
-          'msg',
-          contains('API key'),
-        )),
+        throwsA(
+          isA<Exception>().having(
+            (e) => e.toString(),
+            'msg',
+            contains('API key'),
+          ),
+        ),
       );
     });
 
-    test('POSTs chat completions and returns trimmed content', () async {
+    test('POSTs Responses request and returns trimmed output text', () async {
       final client = MockClient((request) async {
         expect(request.method, 'POST');
         expect(request.url.host, 'api.openai.com');
         expect(request.headers['Authorization'], 'Bearer sk-test');
 
         final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['model'], 'gpt-4.1');
-        final messages = body['messages'] as List<dynamic>;
-        expect(messages.length, 2);
-        expect((messages[1] as Map)['content'], 'user prompt');
+        expect(body['model'], 'gpt-5.6-terra');
+        expect(body['input'], 'user prompt');
+        expect(body['store'], isFalse);
 
         return http.Response(
           jsonEncode({
-            'choices': [
+            'output': [
               {
-                'message': {'content': '  AI summary  '},
+                'type': 'message',
+                'content': [
+                  {'type': 'output_text', 'text': '  AI summary  '},
+                ],
               },
             ],
           }),
@@ -84,11 +91,13 @@ void main() {
       final svc = OpenAISummaryService('sk-test', httpClient: client);
       expect(
         () => svc.generateSummary('p', 'en'),
-        throwsA(isA<Exception>().having(
-          (e) => e.toString(),
-          'msg',
-          contains('model not found'),
-        )),
+        throwsA(
+          isA<Exception>().having(
+            (e) => e.toString(),
+            'msg',
+            contains('model not found'),
+          ),
+        ),
       );
     });
   });
@@ -100,7 +109,7 @@ void main() {
         expect(request.headers['Authorization'], 'Bearer mk');
 
         final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['model'], 'mistral-large-latest');
+        expect(body['model'], 'mistral-medium-3-5');
 
         return http.Response(
           jsonEncode({
@@ -131,11 +140,13 @@ void main() {
       final svc = MistralSummaryService('mk', httpClient: client);
       expect(
         () => svc.generateSummary('p', 'en'),
-        throwsA(isA<Exception>().having(
-          (e) => e.toString(),
-          'msg',
-          contains('invalid key'),
-        )),
+        throwsA(
+          isA<Exception>().having(
+            (e) => e.toString(),
+            'msg',
+            contains('invalid key'),
+          ),
+        ),
       );
     });
   });

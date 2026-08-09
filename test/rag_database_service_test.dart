@@ -13,12 +13,13 @@ RagChunk _ragSampleChunk({
   required String chunkId,
   required int charStart,
   required int charEnd,
+  String text = 'sample text',
 }) {
   final emb = Float32List.fromList([1.0, 2.0, 3.0]);
   return RagChunk(
     chunkId: chunkId,
     bookId: bookId,
-    text: 'sample text',
+    text: text,
     embedding: emb,
     embeddingDimension: emb.length,
     chapterIndex: 0,
@@ -95,12 +96,9 @@ void main() {
 
   test('clearBook removes chunks and status', () async {
     final db = RagDatabaseService();
-    await db.saveChunk(_ragSampleChunk(
-      bookId: 'b3',
-      chunkId: 'c1',
-      charStart: 0,
-      charEnd: 5,
-    ));
+    await db.saveChunk(
+      _ragSampleChunk(bookId: 'b3', chunkId: 'c1', charStart: 0, charEnd: 5),
+    );
     await db.saveIndexStatus(
       RagIndexProgress(
         bookId: 'b3',
@@ -120,14 +118,178 @@ void main() {
 
   test('chunkExists detects saved chunk', () async {
     final db = RagDatabaseService();
-    await db.saveChunk(_ragSampleChunk(
-      bookId: 'b4',
-      chunkId: 'cx',
-      charStart: 100,
-      charEnd: 200,
-    ));
+    await db.saveChunk(
+      _ragSampleChunk(
+        bookId: 'b4',
+        chunkId: 'cx',
+        charStart: 100,
+        charEnd: 200,
+      ),
+    );
 
     expect(await db.chunkExists('b4', 100, 200), isTrue);
     expect(await db.chunkExists('b4', 100, 201), isFalse);
+  });
+
+  test(
+    'boundary query includes crossing chunk for later exact clipping',
+    () async {
+      final db = RagDatabaseService();
+      await db.saveChunk(
+        _ragSampleChunk(
+          bookId: 'boundary',
+          chunkId: 'crossing',
+          charStart: 10,
+          charEnd: 30,
+        ),
+      );
+
+      final rows = await db.getChunksUpToPosition('boundary', 20);
+      expect(rows.map((row) => row.chunkId), contains('crossing'));
+    },
+  );
+
+  test(
+    'local full-text search finds exact rare terms and respects boundary',
+    () async {
+      final db = RagDatabaseService();
+      await db.saveChunks([
+        _ragSampleChunk(
+          bookId: 'fts',
+          chunkId: 'early',
+          charStart: 0,
+          charEnd: 25,
+          text: 'The quasar engine started quietly.',
+        ),
+        _ragSampleChunk(
+          bookId: 'fts',
+          chunkId: 'future',
+          charStart: 30,
+          charEnd: 60,
+          text: 'A second quasar appeared later.',
+        ),
+      ]);
+
+      final hits = await db.searchLexical(
+        matchQuery: '"quasar"',
+        bookIds: ['fts'],
+        boundaries: {'fts': 20},
+      );
+      expect(hits.map((hit) => hit.chunk.chunkId), ['early']);
+    },
+  );
+
+  test('partial progress updates preserve the index manifest', () async {
+    final db = RagDatabaseService();
+    await db.saveIndexStatus(
+      RagIndexProgress(
+        bookId: 'manifest',
+        status: RagIndexStatus.indexing,
+        totalChunks: 2,
+        indexedChunks: 0,
+        lastUpdated: DateTime.utc(2026),
+        embeddingProvider: 'OpenAI',
+        embeddingModel: 'text-embedding-3-small',
+        embeddingDimension: 1536,
+        contentHash: 'content',
+        extractionVersion: 1,
+        chunkingVersion: 2,
+        configHash: 'config',
+        indexVersion: 2,
+      ),
+    );
+    await db.saveIndexStatus(
+      RagIndexProgress(
+        bookId: 'manifest',
+        status: RagIndexStatus.indexing,
+        totalChunks: 2,
+        indexedChunks: 1,
+        lastUpdated: DateTime.utc(2026, 1, 2),
+      ),
+    );
+
+    final status = await db.getIndexStatus('manifest');
+    expect(status?.embeddingProvider, 'OpenAI');
+    expect(status?.contentHash, 'content');
+    expect(status?.configHash, 'config');
+  });
+
+  test('replacing a canonical range removes its stale lexical row', () async {
+    final db = RagDatabaseService();
+    await db.saveChunk(
+      _ragSampleChunk(
+        bookId: 'replace',
+        chunkId: 'old',
+        charStart: 0,
+        charEnd: 20,
+        text: 'obsolete quasar passage',
+      ),
+    );
+    await db.saveChunk(
+      _ragSampleChunk(
+        bookId: 'replace',
+        chunkId: 'new',
+        charStart: 0,
+        charEnd: 20,
+        text: 'current nebula passage',
+      ),
+    );
+
+    expect(
+      await db.searchLexical(
+        matchQuery: '"quasar"',
+        bookIds: ['replace'],
+      ),
+      isEmpty,
+    );
+    final current = await db.searchLexical(
+      matchQuery: '"nebula"',
+      bookIds: ['replace'],
+    );
+    expect(current.single.chunk.chunkId, 'new');
+  });
+
+  test('migrates a version-1 database to manifest columns and FTS', () async {
+    final dbPath = p.join(await getDatabasesPath(), 'rag.db');
+    final legacy = await openDatabase(
+      dbPath,
+      version: 1,
+      onCreate: (db, _) async {
+        await db.execute('''
+          CREATE TABLE rag_chunks (
+            chunkId TEXT PRIMARY KEY, bookId TEXT NOT NULL, text TEXT NOT NULL,
+            embedding BLOB NOT NULL, embeddingDimension INTEGER NOT NULL,
+            chapterIndex INTEGER, charStart INTEGER NOT NULL,
+            charEnd INTEGER NOT NULL, tokenStart INTEGER NOT NULL,
+            tokenEnd INTEGER NOT NULL, createdAt TEXT NOT NULL,
+            UNIQUE(bookId, charStart)
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE rag_index_status (
+            bookId TEXT PRIMARY KEY, status TEXT NOT NULL,
+            totalChunks INTEGER NOT NULL, indexedChunks INTEGER NOT NULL,
+            lastUpdated TEXT NOT NULL, errorMessage TEXT,
+            embeddingModel TEXT NOT NULL, embeddingDimension INTEGER NOT NULL
+          )
+        ''');
+      },
+    );
+    await legacy.close();
+
+    final migrated = await RagDatabaseService().database;
+    final columns = await migrated.rawQuery('PRAGMA table_info(rag_index_status)');
+    expect(columns.map((row) => row['name']), containsAll([
+      'embeddingProvider',
+      'contentHash',
+      'chunkingVersion',
+      'indexVersion',
+    ]));
+    final fts = await migrated.query(
+      'sqlite_master',
+      where: 'name = ?',
+      whereArgs: ['rag_chunks_fts'],
+    );
+    expect(fts, isNotEmpty);
   });
 }

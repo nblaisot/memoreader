@@ -14,20 +14,20 @@ class SettingsService {
   static const double _defaultVerticalPadding = 50.0;
   static const double _minPadding = 0.0;
   static const double _maxPadding = 100.0;
-  
+
   // RAG chunking configuration
   static const String _ragChunkMinTokensKey = 'rag_chunk_min_tokens';
   static const String _ragChunkMaxTokensKey = 'rag_chunk_max_tokens';
   static const String _ragChunkOverlapTokensKey = 'rag_chunk_overlap_tokens';
-  static const int _defaultRagChunkMinTokens = 400; // Increased from 300
-  static const int _defaultRagChunkMaxTokens = 1000; // Increased from 500 for better efficiency
-  static const int _defaultRagChunkOverlapTokens = 100; // Increased from 50 for better context
+  static const int _defaultRagChunkMinTokens = 250;
+  static const int _defaultRagChunkMaxTokens = 500;
+  static const int _defaultRagChunkOverlapTokens = 75;
   static const int _minRagChunkTokens = 50;
   static const int _maxRagChunkTokens = 2000;
-  
+
   // RAG query configuration
   static const String _ragTopKKey = 'rag_top_k';
-  static const int _defaultRagTopK = 30;
+  static const int _defaultRagTopK = 8;
   static const int _minRagTopK = 1;
   static const int _maxRagTopK = 30;
 
@@ -35,7 +35,7 @@ class SettingsService {
   Future<Locale?> getSavedLanguage() async {
     final prefs = await SharedPreferences.getInstance();
     final languageCode = prefs.getString(_languageKey);
-    
+
     if (languageCode != null) {
       return Locale(languageCode);
     }
@@ -45,7 +45,7 @@ class SettingsService {
   /// Save language preference
   Future<void> saveLanguage(Locale? locale) async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     if (locale == null) {
       await prefs.remove(_languageKey);
     } else {
@@ -157,7 +157,7 @@ class SettingsService {
 
   // RAG chunking configuration
 
-  /// Get RAG chunk minimum tokens (default: 300)
+  /// Get RAG chunk minimum tokens (default: 250)
   Future<int> getRagChunkMinTokens() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_ragChunkMinTokensKey) ?? _defaultRagChunkMinTokens;
@@ -183,10 +183,11 @@ class SettingsService {
     await prefs.setInt(_ragChunkMaxTokensKey, clamped);
   }
 
-  /// Get RAG chunk overlap tokens (default: 50)
+  /// Get RAG chunk overlap tokens (default: 75)
   Future<int> getRagChunkOverlapTokens() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(_ragChunkOverlapTokensKey) ?? _defaultRagChunkOverlapTokens;
+    return prefs.getInt(_ragChunkOverlapTokensKey) ??
+        _defaultRagChunkOverlapTokens;
   }
 
   /// Save RAG chunk overlap tokens
@@ -226,7 +227,7 @@ class SettingsService {
 
   // RAG query configuration
 
-  /// Get RAG top-K chunks (default: 10)
+  /// Get RAG top-K chunks (default: 8)
   Future<int> getRagTopK() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_ragTopKKey) ?? _defaultRagTopK;

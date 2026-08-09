@@ -8,6 +8,9 @@ class RagChunk {
   final Float32List embedding; // FLOAT32 array
   final int embeddingDimension; // Dimension of embedding (1536, 1024, etc.)
   final int? chapterIndex;
+  final String? chapterTitle;
+  final int? sectionIndex;
+  final String? contentFileKey;
   final int charStart; // Absolute character position in book
   final int charEnd; // Absolute character position in book
   final int tokenStart; // Token index for overlap tracking
@@ -21,6 +24,9 @@ class RagChunk {
     required this.embedding,
     required this.embeddingDimension,
     this.chapterIndex,
+    this.chapterTitle,
+    this.sectionIndex,
+    this.contentFileKey,
     required this.charStart,
     required this.charEnd,
     required this.tokenStart,
@@ -37,15 +43,15 @@ class RagChunk {
   static Float32List embeddingFromBlob(Uint8List blob) {
     // Each float is 4 bytes, so divide blob length by 4 to get number of floats
     final floatCount = blob.length ~/ 4;
-    
+
     // Create a ByteData view to properly read the bytes as floats
     final byteData = ByteData.sublistView(blob);
     final floats = Float32List(floatCount);
-    
+
     for (int i = 0; i < floatCount; i++) {
       floats[i] = byteData.getFloat32(i * 4, Endian.host);
     }
-    
+
     return floats;
   }
 
@@ -57,6 +63,9 @@ class RagChunk {
       'text': text,
       'embeddingDimension': embeddingDimension,
       'chapterIndex': chapterIndex,
+      'chapterTitle': chapterTitle,
+      'sectionIndex': sectionIndex,
+      'contentFileKey': contentFileKey,
       'charStart': charStart,
       'charEnd': charEnd,
       'tokenStart': tokenStart,
@@ -66,7 +75,10 @@ class RagChunk {
   }
 
   /// Deserialize from JSON + BLOB
-  factory RagChunk.fromJson(Map<String, dynamic> json, Uint8List embeddingBlob) {
+  factory RagChunk.fromJson(
+    Map<String, dynamic> json,
+    Uint8List embeddingBlob,
+  ) {
     return RagChunk(
       chunkId: json['chunkId'] as String,
       bookId: json['bookId'] as String,
@@ -74,6 +86,9 @@ class RagChunk {
       embedding: embeddingFromBlob(embeddingBlob),
       embeddingDimension: json['embeddingDimension'] as int,
       chapterIndex: json['chapterIndex'] as int?,
+      chapterTitle: json['chapterTitle'] as String?,
+      sectionIndex: json['sectionIndex'] as int?,
+      contentFileKey: json['contentFileKey'] as String?,
       charStart: json['charStart'] as int,
       charEnd: json['charEnd'] as int,
       tokenStart: json['tokenStart'] as int,
@@ -90,6 +105,9 @@ class RagChunk {
     Float32List? embedding,
     int? embeddingDimension,
     int? chapterIndex,
+    String? chapterTitle,
+    int? sectionIndex,
+    String? contentFileKey,
     int? charStart,
     int? charEnd,
     int? tokenStart,
@@ -103,6 +121,9 @@ class RagChunk {
       embedding: embedding ?? this.embedding,
       embeddingDimension: embeddingDimension ?? this.embeddingDimension,
       chapterIndex: chapterIndex ?? this.chapterIndex,
+      chapterTitle: chapterTitle ?? this.chapterTitle,
+      sectionIndex: sectionIndex ?? this.sectionIndex,
+      contentFileKey: contentFileKey ?? this.contentFileKey,
       charStart: charStart ?? this.charStart,
       charEnd: charEnd ?? this.charEnd,
       tokenStart: tokenStart ?? this.tokenStart,

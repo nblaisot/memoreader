@@ -247,7 +247,11 @@ class _RagDebugScreenState extends State<RagDebugScreen> {
           Text('Total Chunks (expected): ${status.totalChunks}'),
           Text('Indexed Chunks (reported): ${status.indexedChunks}'),
           Text('Embedding Model: ${status.embeddingModel ?? "unknown"}'),
+          Text('Embedding Provider: ${status.embeddingProvider ?? "unknown"}'),
           Text('Embedding Dimension: ${status.embeddingDimension ?? "unknown"}'),
+          Text('Content Hash: ${status.contentHash ?? "unknown"}'),
+          Text('Extraction / Chunking / Index: ${status.extractionVersion ?? "?"} / ${status.chunkingVersion ?? "?"} / ${status.indexVersion ?? "?"}'),
+          Text('Chunk Config Hash: ${status.configHash ?? "unknown"}'),
           if (status.errorMessage != null)
             Text(
               'Error: ${status.errorMessage}',
@@ -303,6 +307,8 @@ class _RagDebugScreenState extends State<RagDebugScreen> {
                     children: [
                       Text('Chunk ID: ${chunk.chunkId}'),
                       Text('Chapter Index: ${chunk.chapterIndex ?? "N/A"}'),
+                      Text('Chapter Title: ${chunk.chapterTitle ?? "N/A"}'),
+                      Text('Section / File: ${chunk.sectionIndex ?? "N/A"} / ${chunk.contentFileKey ?? "N/A"}'),
                       Text('Character Range: ${chunk.charStart} - ${chunk.charEnd} (${chunk.charEnd - chunk.charStart} chars)'),
                       Text('Token Range: ${chunk.tokenStart} - ${chunk.tokenEnd} (${chunk.tokenEnd - chunk.tokenStart} tokens)'),
                       Text('Embedding Dimension: ${chunk.embeddingDimension}'),
