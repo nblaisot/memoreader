@@ -17,6 +17,7 @@ class WebViewPageUpdate {
     required this.totalChars,
     required this.startCharIndex,
     required this.endCharIndex,
+    required this.userInitiated,
   });
 
   final int pageIndex;
@@ -24,13 +25,11 @@ class WebViewPageUpdate {
   final int totalChars;
   final int? startCharIndex;
   final int? endCharIndex;
+  final bool userInitiated;
 }
 
 class WebViewSelection {
-  const WebViewSelection({
-    required this.text,
-    required this.rect,
-  });
+  const WebViewSelection({required this.text, required this.rect});
 
   final String text;
   final Rect rect;
@@ -92,7 +91,9 @@ class WebViewReaderController {
   }
 
   Future<void> setActionEnabled(bool enabled) {
-    return _runJs('MemoReaderApi.setActionEnabled(${enabled ? 'true' : 'false'});');
+    return _runJs(
+      'MemoReaderApi.setActionEnabled(${enabled ? 'true' : 'false'});',
+    );
   }
 
   Future<void> clearSelection() {
@@ -109,8 +110,9 @@ class WebViewReaderController {
   }
 
   Future<WebViewPageRange?> getPageInfo(int pageIndex) async {
-    final result =
-        await _runJsReturning('MemoReaderApi.getPageInfo($pageIndex);');
+    final result = await _runJsReturning(
+      'MemoReaderApi.getPageInfo($pageIndex);',
+    );
     final data = _decodeJsObject(result);
     if (data == null) {
       return null;
@@ -123,25 +125,34 @@ class WebViewReaderController {
     );
   }
 
-  Future<void> goToNextPage() {
-    return _runJs('MemoReaderApi.nextPage();');
+  Future<void> goToNextPage({bool userInitiated = false}) {
+    return _runJs(
+      'MemoReaderApi.nextPage(${userInitiated ? 'true' : 'false'});',
+    );
   }
 
-  Future<void> goToPreviousPage() {
-    return _runJs('MemoReaderApi.previousPage();');
+  Future<void> goToPreviousPage({bool userInitiated = false}) {
+    return _runJs(
+      'MemoReaderApi.previousPage(${userInitiated ? 'true' : 'false'});',
+    );
   }
 
   Future<void> goToPage(int pageIndex, {bool notify = true}) {
-    return _runJs('MemoReaderApi.setPage($pageIndex, ${notify ? 'true' : 'false'});');
+    return _runJs(
+      'MemoReaderApi.setPage($pageIndex, ${notify ? 'true' : 'false'});',
+    );
   }
 
-  Future<void> goToCharIndex(int charIndex) {
-    return _runJs('MemoReaderApi.goToCharIndex($charIndex);');
+  Future<void> goToCharIndex(int charIndex, {bool userInitiated = false}) {
+    return _runJs(
+      'MemoReaderApi.goToCharIndex($charIndex, ${userInitiated ? 'true' : 'false'});',
+    );
   }
 
   Future<int?> findPageForChar(int charIndex) async {
-    final result =
-        await _runJsReturning('MemoReaderApi.findPageForChar($charIndex);');
+    final result = await _runJsReturning(
+      'MemoReaderApi.findPageForChar($charIndex);',
+    );
     return _parseJsInt(result);
   }
 
@@ -254,7 +265,7 @@ class WebViewReader extends StatefulWidget {
   final WebViewReaderController controller;
   final ValueChanged<WebViewPageUpdate> onPageChanged;
   final void Function(WebViewSelection? selection, VoidCallback clearSelection)
-      onSelectionChanged;
+  onSelectionChanged;
   final ValueChanged<String> onSelectionAction;
   final ValueChanged<String> onTapAction;
 
@@ -283,10 +294,7 @@ class _WebViewReaderState extends State<WebViewReader> {
           },
         ),
       )
-      ..addJavaScriptChannel(
-        'MemoReader',
-        onMessageReceived: _handleMessage,
-      );
+      ..addJavaScriptChannel('MemoReader', onMessageReceived: _handleMessage);
     widget.controller.attach(_webViewController);
     _loadHtml(widget.html);
   }
@@ -323,6 +331,7 @@ class _WebViewReaderState extends State<WebViewReader> {
           totalChars: totalChars,
           startCharIndex: startChar,
           endCharIndex: endChar,
+          userInitiated: data['userInitiated'] == true,
         ),
       );
       return;
@@ -340,6 +349,7 @@ class _WebViewReaderState extends State<WebViewReader> {
           totalChars: totalChars,
           startCharIndex: startChar,
           endCharIndex: endChar,
+          userInitiated: data['userInitiated'] == true,
         ),
       );
       return;
@@ -351,10 +361,7 @@ class _WebViewReaderState extends State<WebViewReader> {
         final text = data['text'];
         final rect = _parseRect(data['rect']);
         if (text is String && text.trim().isNotEmpty) {
-          selection = WebViewSelection(
-            text: text,
-            rect: rect ?? Rect.zero,
-          );
+          selection = WebViewSelection(text: text, rect: rect ?? Rect.zero);
         }
       }
       widget.onSelectionChanged(selection, () {

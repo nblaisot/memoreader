@@ -1116,5 +1116,8 @@
   "driveResetSyncBlobQueueCleared": "Google Drive data removed. Pending book file removals were cleared.",
   "@driveResetSyncBlobQueueCleared": {
     "description": "Snackbar after Reset Sync, including blob delete queue"
-  }
+  },
+  "driveSyncCompactError": "Google Drive sync failed",
+  "readingPositionSaveError": "Could not save reading position",
+  "readingPositionRestoreError": "Could not restore the saved reading position"
 }

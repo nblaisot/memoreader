@@ -614,5 +614,8 @@
   "driveSyncStopEncrypting": "Désactiver",
   "driveBookFilesRemovedFromCloud": "Les fichiers associés ont été supprimés de Google Drive.",
   "driveBookFilesRemovalQueued": "Les copies sur Google Drive seront supprimées après connexion et synchronisation.",
-  "driveResetSyncBlobQueueCleared": "Données Google Drive supprimées. La liste des suppressions de fichiers en attente a été effacée."
+  "driveResetSyncBlobQueueCleared": "Données Google Drive supprimées. La liste des suppressions de fichiers en attente a été effacée.",
+  "driveSyncCompactError": "Échec de la synchronisation Google Drive",
+  "readingPositionSaveError": "Impossible d’enregistrer la position de lecture",
+  "readingPositionRestoreError": "Impossible de restaurer la position de lecture enregistrée"
 }

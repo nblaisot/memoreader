@@ -859,4 +859,16 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get driveResetSyncBlobQueueCleared =>
       'Données Google Drive supprimées. La liste des suppressions de fichiers en attente a été effacée.';
+
+  @override
+  String get driveSyncCompactError =>
+      'Échec de la synchronisation Google Drive';
+
+  @override
+  String get readingPositionSaveError =>
+      'Impossible d’enregistrer la position de lecture';
+
+  @override
+  String get readingPositionRestoreError =>
+      'Impossible de restaurer la position de lecture enregistrée';
 }

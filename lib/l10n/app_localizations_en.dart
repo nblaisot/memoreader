@@ -842,4 +842,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get driveResetSyncBlobQueueCleared =>
       'Google Drive data removed. Pending book file removals were cleared.';
+
+  @override
+  String get driveSyncCompactError => 'Google Drive sync failed';
+
+  @override
+  String get readingPositionSaveError => 'Could not save reading position';
+
+  @override
+  String get readingPositionRestoreError =>
+      'Could not restore the saved reading position';
 }

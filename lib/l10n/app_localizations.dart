@@ -1549,6 +1549,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Google Drive data removed. Pending book file removals were cleared.'**
   String get driveResetSyncBlobQueueCleared;
+
+  /// No description provided for @driveSyncCompactError.
+  ///
+  /// In en, this message translates to:
+  /// **'Google Drive sync failed'**
+  String get driveSyncCompactError;
+
+  /// No description provided for @readingPositionSaveError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not save reading position'**
+  String get readingPositionSaveError;
+
+  /// No description provided for @readingPositionRestoreError.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not restore the saved reading position'**
+  String get readingPositionRestoreError;
 }
 
 class _AppLocalizationsDelegate

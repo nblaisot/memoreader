@@ -14,6 +14,7 @@ import 'services/rag_indexing_service.dart';
 import 'services/rag_database_service.dart';
 import 'services/book_service.dart';
 import 'services/google_drive_sync_service.dart';
+import 'widgets/compact_error_snack_bar.dart';
 
 void main() {
   runApp(const MyApp());
@@ -57,53 +58,26 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed) {
       _startDriveSync();
     }
   }
 
   void _onSyncStatusChanged() {
-    final status = _syncService.syncStatus.value;
+    final state = _syncService.syncStatus.value;
     final messenger = _scaffoldMessengerKey.currentState;
-    if (messenger == null) return;
+    if (messenger == null || !shouldNotifyForSyncState(state)) return;
 
-    switch (status) {
-      case SyncStatus.syncing:
-        messenger.showSnackBar(const SnackBar(
-          content: Row(
-            children: [
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              ),
-              SizedBox(width: 12),
-              Text('Syncing with Google Drive…'),
-            ],
-          ),
-          duration: Duration(seconds: 2),
-        ));
-        break;
-      case SyncStatus.success:
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Sync complete'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ));
-        break;
+    switch (state.status) {
       case SyncStatus.error:
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(const SnackBar(
-          content: Text('Sync encountered errors'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 3),
-        ));
+        showCompactErrorSnackBar(
+          messenger,
+          AppLocalizations.of(messenger.context)?.driveSyncCompactError ??
+              'Google Drive sync failed',
+        );
         break;
+      case SyncStatus.syncing:
+      case SyncStatus.success:
       case SyncStatus.idle:
         break;
     }
@@ -111,14 +85,12 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> _startDriveSync() async {
     try {
-      _syncService.syncOnStartup().catchError((e) {
-        debugPrint('[Main] Drive sync error: $e');
-      });
+      await _syncService.syncOnStartup();
     } catch (e) {
       debugPrint('[Main] Failed to start drive sync: $e');
     }
   }
-  
+
   /// Automatically resume RAG indexing for books with incomplete indexing
   /// This runs on app startup to continue where we left off
   Future<void> _autoResumeRagIndexing() async {
@@ -126,28 +98,36 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       final ragDbService = RagDatabaseService();
       final ragIndexingService = RagIndexingService();
       final bookService = BookService();
-      
+
       // Get all books from library
       final books = await bookService.getAllBooks();
-      
+
       // Check each book for incomplete indexing
       for (final book in books) {
         final status = await ragDbService.getIndexStatus(book.id);
-        
+
         // Resume every non-complete state after credentials/config may change.
         if (status == null || !status.isComplete) {
-          debugPrint('[RAG] Auto-resuming indexing for book: ${book.title} (${status?.indexedChunks ?? 0}/${status?.totalChunks ?? 0})');
-          
+          debugPrint(
+            '[RAG] Auto-resuming indexing for book: ${book.title} (${status?.indexedChunks ?? 0}/${status?.totalChunks ?? 0})',
+          );
+
           // Start indexing in background (non-blocking)
           // The service will pick up from the last checkpoint
-          ragIndexingService.startIndexing(book.id).listen(
-            (progress) {
-              debugPrint('[RAG] Auto-resume progress for ${book.title}: ${progress.indexedChunks}/${progress.totalChunks}');
-            },
-            onError: (error) {
-              debugPrint('[RAG] Auto-resume error for ${book.title}: $error');
-            },
-          );
+          ragIndexingService
+              .startIndexing(book.id)
+              .listen(
+                (progress) {
+                  debugPrint(
+                    '[RAG] Auto-resume progress for ${book.title}: ${progress.indexedChunks}/${progress.totalChunks}',
+                  );
+                },
+                onError: (error) {
+                  debugPrint(
+                    '[RAG] Auto-resume error for ${book.title}: $error',
+                  );
+                },
+              );
         }
       }
     } catch (e) {
@@ -194,9 +174,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       ],
       // Use saved language preference or device locale
       locale: _locale,
-      routes: {
-        libraryRoute: (context) => const LibraryScreen(),
-      },
+      routes: {libraryRoute: (context) => const LibraryScreen()},
       home: const SplashScreen(),
     );
   }

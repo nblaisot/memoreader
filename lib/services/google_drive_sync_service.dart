@@ -15,9 +15,33 @@ import 'summary_config_service.dart';
 import 'drive_api_keys_cipher.dart';
 import 'drive_sync_merge.dart';
 import 'drive_sync_secrets_service.dart';
+import 'reading_progress_coordinator.dart';
 
 /// Status of an ongoing or completed sync cycle.
 enum SyncStatus { idle, syncing, success, error }
+
+enum SyncOutcome { success, skipped, partialFailure, failure }
+
+class SyncResult {
+  const SyncResult(this.outcome, {this.message});
+
+  final SyncOutcome outcome;
+  final String? message;
+
+  bool get succeeded => outcome == SyncOutcome.success;
+  bool get failed =>
+      outcome == SyncOutcome.partialFailure || outcome == SyncOutcome.failure;
+}
+
+class SyncState {
+  const SyncState(this.status, {this.message});
+
+  final SyncStatus status;
+  final String? message;
+}
+
+bool shouldNotifyForSyncState(SyncState state) =>
+    state.status == SyncStatus.error;
 
 /// Why encrypted API keys from Drive could not be merged (for localized UI).
 enum DriveApiKeysSyncIssue {
@@ -72,6 +96,8 @@ class GoogleDriveSyncService {
   final BookService _bookService = BookService();
   final SavedTranslationDatabaseService _translationService =
       SavedTranslationDatabaseService();
+  final ReadingProgressCoordinator _progressCoordinator =
+      ReadingProgressCoordinator();
 
   drive.DriveApi? _driveApi;
   bool _isAuthenticated = false;
@@ -83,16 +109,19 @@ class GoogleDriveSyncService {
   /// Checked before running the upload phase to avoid overwriting
   /// remote data with potentially incomplete local state.
   bool _downloadHadErrors = false;
+  String? _downloadErrorMessage;
 
   /// Observable sync status so the UI can show global toasts.
-  final ValueNotifier<SyncStatus> syncStatus =
-      ValueNotifier(SyncStatus.idle);
+  final ValueNotifier<SyncState> syncStatus = ValueNotifier(
+    const SyncState(SyncStatus.idle),
+  );
 
   /// Non-null when encrypted API keys on Drive could not be applied (missing
   /// or wrong passphrase). Cleared when merge succeeds or the remote file is
   /// absent / not encrypted.
-  final ValueNotifier<DriveApiKeysSyncIssue?> apiKeysSyncIssue =
-      ValueNotifier(null);
+  final ValueNotifier<DriveApiKeysSyncIssue?> apiKeysSyncIssue = ValueNotifier(
+    null,
+  );
 
   /// Book IDs whose EPUB files are known to exist on Drive.
   /// Populated during sync by listing the appDataFolder, and updated
@@ -128,13 +157,13 @@ class GoogleDriveSyncService {
         debugPrint(
           Platform.isIOS
               ? '[DriveSync] iOS: An HTTP 400 on accounts.google.com usually means '
-                  'GIDClientID in ios/Runner/Info.plist is still a placeholder or does '
-                  'not match an iOS OAuth client whose bundle ID is com.memoreader.app. '
-                  'See GOOGLE_CLOUD_SETUP.md (iOS section).'
+                    'GIDClientID in ios/Runner/Info.plist is still a placeholder or does '
+                    'not match an iOS OAuth client whose bundle ID is com.memoreader.app. '
+                    'See GOOGLE_CLOUD_SETUP.md (iOS section).'
               : '[DriveSync] macOS: An HTTP 400 on accounts.google.com usually means '
-                  'GIDClientID in macos/Runner/Info.plist is missing or wrong, keychain '
-                  'access groups are missing in entitlements, or the OAuth client bundle ID '
-                  'does not match com.memoreader.app. See GOOGLE_CLOUD_SETUP.md (macOS section).',
+                    'GIDClientID in macos/Runner/Info.plist is missing or wrong, keychain '
+                    'access groups are missing in entitlements, or the OAuth client bundle ID '
+                    'does not match com.memoreader.app. See GOOGLE_CLOUD_SETUP.md (macOS section).',
         );
       }
       _isAuthenticated = false;
@@ -246,8 +275,9 @@ class GoogleDriveSyncService {
     final prefs = await SharedPreferences.getInstance();
     final json = prefs.getString(_deletedBooksKey);
     if (json == null) return {};
-    return (jsonDecode(json) as Map<String, dynamic>)
-        .map((k, v) => MapEntry(k, DateTime.parse(v as String)));
+    return (jsonDecode(json) as Map<String, dynamic>).map(
+      (k, v) => MapEntry(k, DateTime.parse(v as String)),
+    );
   }
 
   Future<void> _saveDeletedBooks(Map<String, DateTime> map) async {
@@ -355,13 +385,17 @@ class GoogleDriveSyncService {
     await _trackBookDeletion(bookId);
     await _enqueueDriveBlobDelete(bookId);
     if (!isAuthenticated) {
-      debugPrint('[DriveSync] Tracked deletion of book $bookId '
-          '(Drive blobs queued until sign-in)');
+      debugPrint(
+        '[DriveSync] Tracked deletion of book $bookId '
+        '(Drive blobs queued until sign-in)',
+      );
       return false;
     }
     await processPendingDriveBlobDeletes();
-    debugPrint('[DriveSync] Tracked deletion of book $bookId '
-        '(processed Drive blob queue)');
+    debugPrint(
+      '[DriveSync] Tracked deletion of book $bookId '
+      '(processed Drive blob queue)',
+    );
     return true;
   }
 
@@ -369,7 +403,9 @@ class GoogleDriveSyncService {
   Future<void> onBookReAdded(String bookId) async {
     await _untrackBookDeletion(bookId);
     await _removePendingDriveBlobDelete(bookId);
-    debugPrint('[DriveSync] Cleared deletion tracking for re-added book $bookId');
+    debugPrint(
+      '[DriveSync] Cleared deletion tracking for re-added book $bookId',
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -380,26 +416,33 @@ class GoogleDriveSyncService {
   ///
   /// Uses silent authentication (no UI).  If the user has never signed in, or
   /// revoked access, this is a no-op — the app continues normally.
-  Future<void> syncOnStartup() async {
+  Future<SyncResult> syncOnStartup() async {
     if (!await isSyncEnabled()) {
       debugPrint('[DriveSync] Sync disabled — skipping');
-      return;
+      return const SyncResult(SyncOutcome.skipped, message: 'Sync disabled');
     }
 
     if (_isSyncing) {
       debugPrint('[DriveSync] Sync already in progress — skipping');
-      return;
+      return const SyncResult(
+        SyncOutcome.skipped,
+        message: 'Sync already in progress',
+      );
     }
 
     _isSyncing = true;
     _downloadHadErrors = false;
+    _downloadErrorMessage = null;
     apiKeysSyncIssue.value = null;
-    syncStatus.value = SyncStatus.syncing;
+    syncStatus.value = const SyncState(SyncStatus.syncing);
     try {
       final ok = await _ensureAuthenticated(interactive: false);
       if (!ok) {
-        syncStatus.value = SyncStatus.idle;
-        return;
+        syncStatus.value = const SyncState(SyncStatus.idle);
+        return const SyncResult(
+          SyncOutcome.skipped,
+          message: 'No authenticated Google session',
+        );
       }
 
       debugPrint('[DriveSync] Starting sync…');
@@ -408,16 +451,21 @@ class GoogleDriveSyncService {
 
       if (_downloadHadErrors) {
         debugPrint('[DriveSync] Download had errors — skipping upload phase');
-      } else {
-        await uploadSync();
+        final message = _downloadErrorMessage ?? 'Drive download had errors';
+        syncStatus.value = SyncState(SyncStatus.error, message: message);
+        return SyncResult(SyncOutcome.partialFailure, message: message);
       }
 
+      await uploadSync();
       await _setLastSyncTime(DateTime.now());
-      syncStatus.value = SyncStatus.success;
+      syncStatus.value = const SyncState(SyncStatus.success);
       debugPrint('[DriveSync] Sync completed successfully');
+      return const SyncResult(SyncOutcome.success);
     } catch (e) {
       debugPrint('[DriveSync] Sync error: $e');
-      syncStatus.value = SyncStatus.error;
+      final message = 'Google Drive sync failed: $e';
+      syncStatus.value = SyncState(SyncStatus.error, message: message);
+      return SyncResult(SyncOutcome.failure, message: message);
     } finally {
       _isSyncing = false;
     }
@@ -469,7 +517,8 @@ class GoogleDriveSyncService {
           debugPrint('[DriveSync] Deleted remote file ${f.name ?? id}');
         } catch (e) {
           debugPrint(
-              '[DriveSync] Failed to delete remote file ${f.name ?? id}: $e');
+            '[DriveSync] Failed to delete remote file ${f.name ?? id}: $e',
+          );
         }
       }
 
@@ -480,8 +529,9 @@ class GoogleDriveSyncService {
     await _clearLastSyncTime();
     await clearPendingDriveBlobDeletes();
     debugPrint(
-        '[DriveSync] resetRemoteSyncData done: listed $totalListed, '
-        'deleted $totalDeleted');
+      '[DriveSync] resetRemoteSyncData done: listed $totalListed, '
+      'deleted $totalDeleted',
+    );
   }
 
   /// Download and merge remote Drive data into local storage.
@@ -619,7 +669,8 @@ class GoogleDriveSyncService {
       final coverBytes = await _downloadFile(remoteName);
       if (coverBytes == null || coverBytes.isEmpty) continue;
 
-      final targetPath = (book.coverImagePath != null &&
+      final targetPath =
+          (book.coverImagePath != null &&
               book.coverImagePath!.toLowerCase().endsWith('.$ext'))
           ? book.coverImagePath!
           : '$coversDir/${book.id}.$ext';
@@ -655,7 +706,9 @@ class GoogleDriveSyncService {
     }
 
     final extracted = await _bookService.extractCoverFromEpubPath(
-        book.filePath, book.id);
+      book.filePath,
+      book.id,
+    );
     if (extracted != null) {
       final withCover = Book(
         id: current.id,
@@ -670,8 +723,9 @@ class GoogleDriveSyncService {
       debugPrint('[DriveSync] Extracted cover from EPUB for "${book.title}"');
     } else {
       debugPrint(
-          '[DriveSync] No cover on Drive and EPUB extraction failed for '
-          '"${book.title}"');
+        '[DriveSync] No cover on Drive and EPUB extraction failed for '
+        '"${book.title}"',
+      );
     }
   }
 
@@ -683,12 +737,16 @@ class GoogleDriveSyncService {
     final books = await _bookService.getAllBooks();
     var deletedBooks = await _getDeletedBooks();
 
-    debugPrint('[DriveSync] Uploading books metadata: '
-        '${books.length} book(s), ${deletedBooks.length} tombstone(s)');
+    debugPrint(
+      '[DriveSync] Uploading books metadata: '
+      '${books.length} book(s), ${deletedBooks.length} tombstone(s)',
+    );
 
     if (books.isEmpty && deletedBooks.isEmpty) {
-      debugPrint('[DriveSync] WARNING: both books and tombstones are empty — '
-          'skipping upload to avoid overwriting Drive with empty data');
+      debugPrint(
+        '[DriveSync] WARNING: both books and tombstones are empty — '
+        'skipping upload to avoid overwriting Drive with empty data',
+      );
       return;
     }
 
@@ -713,11 +771,13 @@ class GoogleDriveSyncService {
     final books = await _bookService.getAllBooks();
     final progressMap = <String, ReadingProgress>{};
     for (final book in books) {
-      final p = await _bookService.getReadingProgress(book.id);
+      final p = await _progressCoordinator.read(book.id);
       if (p != null) progressMap[book.id] = p;
     }
-    final syncData =
-        SyncProgressData(progress: progressMap, lastModified: DateTime.now());
+    final syncData = SyncProgressData(
+      progress: progressMap,
+      lastModified: DateTime.now(),
+    );
     await _uploadFile(
       _progressFileName,
       utf8.encode(jsonEncode(syncData.toJson())),
@@ -731,8 +791,10 @@ class GoogleDriveSyncService {
     for (final book in books) {
       all.addAll(await _translationService.getTranslations(book.id));
     }
-    final syncData =
-        SyncTranslationsData(translations: all, lastModified: DateTime.now());
+    final syncData = SyncTranslationsData(
+      translations: all,
+      lastModified: DateTime.now(),
+    );
     await _uploadFile(
       _translationsFileName,
       utf8.encode(jsonEncode(syncData.toJson())),
@@ -806,14 +868,18 @@ class GoogleDriveSyncService {
         coversDirectory: await _bookService.getCoversDirectory(),
       );
 
-      debugPrint('[DriveSync] Remote has ${remoteData.books.length} book(s), '
-          '${remoteData.deletedBooks.length} tombstone(s)');
+      debugPrint(
+        '[DriveSync] Remote has ${remoteData.books.length} book(s), '
+        '${remoteData.deletedBooks.length} tombstone(s)',
+      );
 
       final localBooks = await _bookService.getAllBooks();
       final localDeletedBooks = await _getDeletedBooks();
 
-      debugPrint('[DriveSync] Local has ${localBooks.length} book(s), '
-          '${localDeletedBooks.length} tombstone(s)');
+      debugPrint(
+        '[DriveSync] Local has ${localBooks.length} book(s), '
+        '${localDeletedBooks.length} tombstone(s)',
+      );
 
       final localBookMap = {for (final b in localBooks) b.id: b};
       final remoteBookMap = {for (final b in remoteData.books) b.id: b};
@@ -832,28 +898,31 @@ class GoogleDriveSyncService {
           final localDeletion = localDeletedBooks[bookId];
           final remoteDeletion = remoteData.deletedBooks[bookId];
 
-          final (:newestBook, :newestDeletion) =
-              mergeBookAndDeletionTimestamps(
+          final (:newestBook, :newestDeletion) = mergeBookAndDeletionTimestamps(
             localBook: localBook,
             remoteBook: remoteBook,
             localDeletion: localDeletion,
             remoteDeletion: remoteDeletion,
           );
 
-          final shouldExist =
-              bookShouldExistAfterMerge(newestBook, newestDeletion);
+          final shouldExist = bookShouldExistAfterMerge(
+            newestBook,
+            newestDeletion,
+          );
 
           if (shouldExist) {
             final resolvedBook = newestBook!;
             if (localBook == null) {
               await _bookService.addOrUpdateBook(resolvedBook);
               debugPrint(
-                  '[DriveSync] Added book "${resolvedBook.title}" from Drive');
+                '[DriveSync] Added book "${resolvedBook.title}" from Drive',
+              );
             } else if (remoteBook != null &&
                 remoteBook.dateAdded.isAfter(localBook.dateAdded)) {
               await _bookService.addOrUpdateBook(remoteBook);
               debugPrint(
-                  '[DriveSync] Updated book "${remoteBook.title}" from Drive');
+                '[DriveSync] Updated book "${remoteBook.title}" from Drive',
+              );
             }
             if (localDeletion != null) await _untrackBookDeletion(bookId);
           } else {
@@ -864,18 +933,19 @@ class GoogleDriveSyncService {
               // user-initiated deletes).
               await _enqueueDriveBlobDelete(bookId);
               debugPrint(
-                  '[DriveSync] Deleted book "${localBook.title}" per remote state');
+                '[DriveSync] Deleted book "${localBook.title}" per remote state',
+              );
             }
             if (localDeletion == null) await _trackBookDeletion(bookId);
           }
         } catch (e) {
           debugPrint('[DriveSync] Error merging book $bookId: $e');
-          _downloadHadErrors = true;
+          _recordDownloadError(e);
         }
       }
     } catch (e) {
       debugPrint('[DriveSync] Error downloading books: $e');
-      _downloadHadErrors = true;
+      _recordDownloadError(e);
     }
   }
 
@@ -895,14 +965,14 @@ class GoogleDriveSyncService {
 
       for (final entry in remoteData.progress.entries) {
         if (!localBookIds.contains(entry.key)) continue;
-        final local = await _bookService.getReadingProgress(entry.key);
-        if (local == null || entry.value.lastRead.isAfter(local.lastRead)) {
-          await _bookService.saveReadingProgress(entry.value);
+        final result = await _progressCoordinator.mergeRemote(entry.value);
+        if (!result.succeeded) {
+          throw result.error ?? StateError('Progress merge failed');
         }
       }
     } catch (e) {
       debugPrint('[DriveSync] Error downloading progress: $e');
-      _downloadHadErrors = true;
+      _recordDownloadError(e);
     }
   }
 
@@ -920,7 +990,8 @@ class GoogleDriveSyncService {
       final localTranslations = <SavedTranslation>[];
       for (final book in books) {
         localTranslations.addAll(
-            await _translationService.getTranslations(book.id));
+          await _translationService.getTranslations(book.id),
+        );
       }
       final localMap = {
         for (final t in localTranslations)
@@ -938,7 +1009,7 @@ class GoogleDriveSyncService {
       }
     } catch (e) {
       debugPrint('[DriveSync] Error downloading translations: $e');
-      _downloadHadErrors = true;
+      _recordDownloadError(e);
     }
   }
 
@@ -948,8 +1019,7 @@ class GoogleDriveSyncService {
       final jsonBytes = await _downloadFile(_apiKeysFileName);
       if (jsonBytes == null) return;
 
-      final map =
-          jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>;
+      final map = jsonDecode(utf8.decode(jsonBytes)) as Map<String, dynamic>;
 
       late final SyncApiKeysData remote;
       if (DriveApiKeysCipher.isEncryptedEnvelope(map)) {
@@ -1012,18 +1082,24 @@ class GoogleDriveSyncService {
       // getProvider() always returns a default, so we inspect SharedPreferences
       // directly.  'summary_provider' is the key used by SummaryConfigService.
       final prefs2 = await SharedPreferences.getInstance();
-      if (remote.provider != null &&
-          !prefs2.containsKey('summary_provider')) {
+      if (remote.provider != null && !prefs2.containsKey('summary_provider')) {
         await config.setProvider(remote.provider!);
         updated = true;
-        debugPrint('[DriveSync] Populated provider from Drive: ${remote.provider}');
+        debugPrint(
+          '[DriveSync] Populated provider from Drive: ${remote.provider}',
+        );
       }
 
       if (!updated) debugPrint('[DriveSync] API keys already in sync');
     } catch (e) {
       debugPrint('[DriveSync] Error downloading API keys: $e');
-      _downloadHadErrors = true;
+      _recordDownloadError(e);
     }
+  }
+
+  void _recordDownloadError(Object error) {
+    _downloadHadErrors = true;
+    _downloadErrorMessage ??= error.toString();
   }
 
   // ---------------------------------------------------------------------------
@@ -1046,14 +1122,16 @@ class GoogleDriveSyncService {
         if (name != null &&
             name.startsWith('$_booksFolderName/') &&
             name.endsWith('.epub')) {
-          final id = name
-              .substring('$_booksFolderName/'.length,
-                  name.length - '.epub'.length);
+          final id = name.substring(
+            '$_booksFolderName/'.length,
+            name.length - '.epub'.length,
+          );
           if (id.isNotEmpty) _uploadedBookIds.add(id);
         }
       }
       debugPrint(
-          '[DriveSync] Found ${_uploadedBookIds.length} EPUB(s) on Drive');
+        '[DriveSync] Found ${_uploadedBookIds.length} EPUB(s) on Drive',
+      );
     } catch (e) {
       debugPrint('[DriveSync] Error listing uploaded books: $e');
     }
@@ -1112,10 +1190,12 @@ class GoogleDriveSyncService {
     if (file == null) return null; // file not on Drive — not an error
 
     // File was found; fetch its bytes. Let any API/network error propagate.
-    final response = await _driveApi!.files.get(
-      file.id!,
-      downloadOptions: drive.DownloadOptions.fullMedia,
-    ) as drive.Media;
+    final response =
+        await _driveApi!.files.get(
+              file.id!,
+              downloadOptions: drive.DownloadOptions.fullMedia,
+            )
+            as drive.Media;
 
     final bytes = <int>[];
     await for (final chunk in response.stream) {

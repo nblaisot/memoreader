@@ -16,14 +16,17 @@ import 'pdf_to_epub_converter.dart';
 import 'rag_indexing_service.dart';
 import 'rag_database_service.dart';
 import 'saved_translation_database_service.dart';
+import 'reading_progress_coordinator.dart';
 
 class BookService {
   static const String _booksKey = 'books';
   static const String _progressKey = 'reading_progress_';
-  
+  final ReadingProgressCoordinator _progressCoordinator =
+      ReadingProgressCoordinator();
+
   final Uuid _uuid = const Uuid();
   RagIndexingService? _ragIndexingService;
-  
+
   RagIndexingService get _ragIndexingServiceInstance {
     _ragIndexingService ??= RagIndexingService(bookService: this);
     return _ragIndexingService!;
@@ -81,19 +84,21 @@ class BookService {
       }
 
       debugPrint('Converting TXT to EPUB: ${txtFile.path}');
-      
+
       // Create a temporary EPUB file path
       final booksDir = await getBooksDirectory();
       final tempEpubPath = '$booksDir/${_uuid.v4()}_temp.epub';
-      
+
       // Convert TXT to EPUB
       final converter = TxtToEpubConverter();
       final metadata = await converter.convertToEpub(
         txtFile: txtFile,
         outputEpubPath: tempEpubPath,
       );
-      
-      debugPrint('TXT converted to EPUB. Title: ${metadata.title}, Author: ${metadata.author}');
+
+      debugPrint(
+        'TXT converted to EPUB. Title: ${metadata.title}, Author: ${metadata.author}',
+      );
 
       final tempEpubFile = File(tempEpubPath);
       final book = await importEpub(tempEpubFile);
@@ -123,7 +128,8 @@ class BookService {
       );
 
       debugPrint(
-          'PDF converted to EPUB. Title: ${metadata.title}, Author: ${metadata.author}');
+        'PDF converted to EPUB. Title: ${metadata.title}, Author: ${metadata.author}',
+      );
 
       final tempEpubFile = File(tempEpubPath);
       final book = await importEpub(tempEpubFile);
@@ -156,8 +162,12 @@ class BookService {
       final epubBytes = await epubFile.readAsBytes();
       final epub = await EpubReader.readBook(epubBytes);
 
-      final title = epub.Title?.isNotEmpty == true ? epub.Title! : 'Unknown Title';
-      final author = epub.Author?.isNotEmpty == true ? epub.Author! : 'Unknown Author';
+      final title = epub.Title?.isNotEmpty == true
+          ? epub.Title!
+          : 'Unknown Title';
+      final author = epub.Author?.isNotEmpty == true
+          ? epub.Author!
+          : 'Unknown Author';
 
       // Generate deterministic book ID from EPUB content hash
       final bookId = _generateBookIdFromContent(epubBytes);
@@ -165,14 +175,18 @@ class BookService {
       // Check for existing book with same ID (deterministic check)
       final existingBookById = await getBookById(bookId);
       if (existingBookById != null) {
-        debugPrint('Book already exists with same content hash: ${existingBookById.title}');
+        debugPrint(
+          'Book already exists with same content hash: ${existingBookById.title}',
+        );
         // Trigger RAG indexing for existing book if not already indexed (in background)
         _triggerRagIndexing(existingBookById.id).catchError((e) {
-          debugPrint('Failed to trigger RAG indexing for existing book ${existingBookById.id}: $e');
+          debugPrint(
+            'Failed to trigger RAG indexing for existing book ${existingBookById.id}: $e',
+          );
         });
         return existingBookById;
       }
-      
+
       // Note: If book was previously deleted, it won't be in getAllBooks() anymore
       // The deletion tracking will be handled by GoogleDriveSyncService when the book is re-added
 
@@ -181,15 +195,16 @@ class BookService {
       final existingBookByTitle = allBooks.firstWhere(
         (b) => b.title == title && b.author == author,
         orElse: () => Book(
-            id: '', 
-            title: '', 
-            author: '', 
-            filePath: '', 
-            dateAdded: DateTime.now()
+          id: '',
+          title: '',
+          author: '',
+          filePath: '',
+          dateAdded: DateTime.now(),
         ),
       );
 
-      if (existingBookByTitle.id.isNotEmpty && existingBookByTitle.id != bookId) {
+      if (existingBookByTitle.id.isNotEmpty &&
+          existingBookByTitle.id != bookId) {
         // Book with same title+author exists but different ID (likely UUID-based)
         // Check if the EPUB content matches by comparing file content
         try {
@@ -199,7 +214,9 @@ class BookService {
             final existingId = _generateBookIdFromContent(existingBytes);
             if (existingId == bookId) {
               // Same content, but different ID - update the existing book to use the hash-based ID
-              debugPrint('Updating existing book ID from UUID to hash-based: ${existingBookByTitle.title}');
+              debugPrint(
+                'Updating existing book ID from UUID to hash-based: ${existingBookByTitle.title}',
+              );
               final updatedBook = Book(
                 id: bookId,
                 title: existingBookByTitle.title,
@@ -224,7 +241,7 @@ class BookService {
 
       // If not exists, copy the file to app storage with deterministic filename
       final storedPath = await copyEpubFile(epubFile, bookId: bookId);
-      
+
       // Extract cover image
       String? coverImagePath;
       try {
@@ -233,7 +250,7 @@ class BookService {
         debugPrint('Failed to extract cover image: $e');
         // Continue without cover image
       }
-      
+
       final book = Book(
         id: bookId,
         title: title,
@@ -245,12 +262,12 @@ class BookService {
 
       // Save book to preferences
       await _saveBook(book);
-      
+
       // Trigger RAG indexing for the new book (in background, don't wait)
       _triggerRagIndexing(book.id).catchError((e) {
         debugPrint('Failed to trigger RAG indexing for book ${book.id}: $e');
       });
-      
+
       return book;
     } catch (e) {
       if (e is Exception) rethrow;
@@ -262,7 +279,7 @@ class BookService {
   Future<String?> _extractCoverImage(EpubBook epub, String bookId) async {
     try {
       String? coverPath;
-      
+
       // Method 1: Check CoverImage property (Image object from image package)
       // Note: CoverImage is an Image object from the image package (dependency of epubx)
       if (epub.CoverImage != null) {
@@ -279,12 +296,20 @@ class BookService {
           debugPrint('Error extracting cover from CoverImage: $e');
         }
       }
-      
+
       // Method 2: Look for cover image in Content.Images
       if (epub.Content?.Images != null && epub.Content!.Images!.isNotEmpty) {
         // Try to find cover image by common names
-        final coverNames = ['cover', 'Cover', 'COVER', 'cover.jpg', 'cover.png', 'cover.jpeg', 'cover.webp'];
-        
+        final coverNames = [
+          'cover',
+          'Cover',
+          'COVER',
+          'cover.jpg',
+          'cover.png',
+          'cover.jpeg',
+          'cover.webp',
+        ];
+
         for (final imageEntry in epub.Content!.Images!.entries) {
           final imageKey = imageEntry.key.toLowerCase();
           if (coverNames.any((name) => imageKey.contains(name.toLowerCase()))) {
@@ -296,7 +321,8 @@ class BookService {
                 String? extension;
                 if (imageKey.contains('.png')) {
                   extension = 'png';
-                } else if (imageKey.contains('.jpg') || imageKey.contains('.jpeg')) {
+                } else if (imageKey.contains('.jpg') ||
+                    imageKey.contains('.jpeg')) {
                   extension = 'jpg';
                 } else if (imageKey.contains('.webp')) {
                   extension = 'webp';
@@ -312,7 +338,7 @@ class BookService {
             }
           }
         }
-        
+
         // If no cover found by name, try the first image
         if (coverPath == null && epub.Content!.Images!.isNotEmpty) {
           try {
@@ -320,16 +346,22 @@ class BookService {
             final imageData = firstImageFile.Content;
             if (imageData != null && imageData.isNotEmpty) {
               // Determine extension from file name
-              final firstImageKey = epub.Content!.Images!.keys.first.toLowerCase();
+              final firstImageKey = epub.Content!.Images!.keys.first
+                  .toLowerCase();
               String? extension;
               if (firstImageKey.contains('.png')) {
                 extension = 'png';
-              } else if (firstImageKey.contains('.jpg') || firstImageKey.contains('.jpeg')) {
+              } else if (firstImageKey.contains('.jpg') ||
+                  firstImageKey.contains('.jpeg')) {
                 extension = 'jpg';
               } else if (firstImageKey.contains('.webp')) {
                 extension = 'webp';
               }
-              coverPath = await _saveCoverImage(Uint8List.fromList(imageData), bookId, extension);
+              coverPath = await _saveCoverImage(
+                Uint8List.fromList(imageData),
+                bookId,
+                extension,
+              );
               if (coverPath != null) {
                 return coverPath;
               }
@@ -339,7 +371,7 @@ class BookService {
           }
         }
       }
-      
+
       return coverPath;
     } catch (e) {
       debugPrint('Error extracting cover image: $e');
@@ -348,19 +380,26 @@ class BookService {
   }
 
   /// Save cover image to disk
-  Future<String?> _saveCoverImage(List<int> imageData, String bookId, String? preferredExtension) async {
+  Future<String?> _saveCoverImage(
+    List<int> imageData,
+    String bookId,
+    String? preferredExtension,
+  ) async {
     try {
       final booksDir = await getBooksDirectory();
       final coversDir = Directory('$booksDir/covers');
       if (!await coversDir.exists()) {
         await coversDir.create(recursive: true);
       }
-      
+
       // Determine file extension from image data or preferred extension
       String extension = preferredExtension ?? 'jpg';
       if (preferredExtension == null && imageData.length >= 4) {
         // Check for PNG signature
-        if (imageData[0] == 0x89 && imageData[1] == 0x50 && imageData[2] == 0x4E && imageData[3] == 0x47) {
+        if (imageData[0] == 0x89 &&
+            imageData[1] == 0x50 &&
+            imageData[2] == 0x4E &&
+            imageData[3] == 0x47) {
           extension = 'png';
         }
         // Check for JPEG signature
@@ -369,16 +408,22 @@ class BookService {
         }
         // Check for WebP signature
         else if (imageData.length >= 12 &&
-                 imageData[0] == 0x52 && imageData[1] == 0x49 && imageData[2] == 0x46 && imageData[3] == 0x46 &&
-                 imageData[8] == 0x57 && imageData[9] == 0x45 && imageData[10] == 0x42 && imageData[11] == 0x50) {
+            imageData[0] == 0x52 &&
+            imageData[1] == 0x49 &&
+            imageData[2] == 0x46 &&
+            imageData[3] == 0x46 &&
+            imageData[8] == 0x57 &&
+            imageData[9] == 0x45 &&
+            imageData[10] == 0x42 &&
+            imageData[11] == 0x50) {
           extension = 'webp';
         }
       }
-      
+
       final coverPath = '$booksDir/covers/$bookId.$extension';
       final coverFile = File(coverPath);
       await coverFile.writeAsBytes(imageData);
-      
+
       return coverPath;
     } catch (e) {
       debugPrint('Error saving cover image: $e');
@@ -397,36 +442,43 @@ class BookService {
           break;
         } catch (e) {
           if (i < retries - 1) {
-            debugPrint('SharedPreferences not ready, retrying... (${i + 1}/$retries)');
+            debugPrint(
+              'SharedPreferences not ready, retrying... (${i + 1}/$retries)',
+            );
             await Future.delayed(Duration(milliseconds: 100 * (i + 1)));
           } else {
             rethrow;
           }
         }
       }
-      
+
       if (prefs == null) {
-        throw Exception('Failed to initialize SharedPreferences after $retries attempts');
+        throw Exception(
+          'Failed to initialize SharedPreferences after $retries attempts',
+        );
       }
-      
+
       final booksJson = prefs.getStringList(_booksKey) ?? [];
-      
+
       // Get directories once for all books
       final booksDir = await getBooksDirectory();
       final coversDir = await getCoversDirectory();
-      
-      return booksJson.map((json) {
-        try {
-          return Book.fromJson(
-            jsonDecode(json),
-            booksDirectory: booksDir,
-            coversDirectory: coversDir,
-          );
-        } catch (e) {
-          debugPrint('Error loading book from JSON: $e');
-          return null;
-        }
-      }).whereType<Book>().toList()
+
+      return booksJson
+          .map((json) {
+            try {
+              return Book.fromJson(
+                jsonDecode(json),
+                booksDirectory: booksDir,
+                coversDirectory: coversDir,
+              );
+            } catch (e) {
+              debugPrint('Error loading book from JSON: $e');
+              return null;
+            }
+          })
+          .whereType<Book>()
+          .toList()
         ..sort((a, b) => b.dateAdded.compareTo(a.dateAdded));
     } catch (e) {
       throw Exception('Failed to load books: $e');
@@ -447,12 +499,12 @@ class BookService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final books = await getAllBooks();
-      
+
       // Check if book with same ID already exists
       if (books.any((b) => b.id == book.id)) {
         throw Exception('Book with this ID already exists');
       }
-      
+
       books.add(book);
       final booksJson = books.map((b) => jsonEncode(b.toJson())).toList();
       await prefs.setStringList(_booksKey, booksJson);
@@ -465,13 +517,13 @@ class BookService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final books = await getAllBooks();
-      
+
       // Find and replace the book with the same ID
       final index = books.indexWhere((b) => b.id == book.id);
       if (index == -1) {
         throw Exception('Book not found: ${book.id}');
       }
-      
+
       books[index] = book;
       final booksJson = books.map((b) => jsonEncode(b.toJson())).toList();
       await prefs.setStringList(_booksKey, booksJson);
@@ -496,32 +548,13 @@ class BookService {
   }
 
   Future<ReadingProgress?> getReadingProgress(String bookId) async {
-    try {
-      if (bookId.isEmpty) return null;
-      final prefs = await SharedPreferences.getInstance();
-      final progressJson = prefs.getString('$_progressKey$bookId');
-      if (progressJson == null) return null;
-      return ReadingProgress.fromJson(jsonDecode(progressJson));
-    } catch (e) {
-      // If progress is corrupted, return null to start fresh
-      return null;
-    }
+    return _progressCoordinator.read(bookId);
   }
 
-  Future<void> saveReadingProgress(ReadingProgress progress) async {
-    try {
-      if (progress.bookId.isEmpty) {
-        throw Exception('Book ID cannot be empty');
-      }
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        '$_progressKey${progress.bookId}',
-        jsonEncode(progress.toJson()),
-      );
-    } catch (e) {
-      // Don't throw - progress saving failures shouldn't crash the app
-      debugPrint('Failed to save reading progress: $e');
-    }
+  Future<bool> saveReadingProgress(ReadingProgress progress) async {
+    if (progress.bookId.isEmpty) return false;
+    final result = await _progressCoordinator.save(progress);
+    return result.succeeded;
   }
 
   Future<EpubBook> loadEpubBook(String filePath) async {
@@ -547,7 +580,10 @@ class BookService {
 
   /// Extract a cover image from an EPUB on disk (same logic as [importEpub]).
   /// Used after on-demand EPUB download from Drive when the cover blob is missing.
-  Future<String?> extractCoverFromEpubPath(String epubPath, String bookId) async {
+  Future<String?> extractCoverFromEpubPath(
+    String epubPath,
+    String bookId,
+  ) async {
     try {
       final epub = await loadEpubBook(epubPath);
       return await _extractCoverImage(epub, bookId);
@@ -565,16 +601,16 @@ class BookService {
       books.removeWhere((b) => b.id == book.id);
       final booksJson = books.map((b) => jsonEncode(b.toJson())).toList();
       await prefs.setStringList(_booksKey, booksJson);
-      
+
       // Note: Deletion tracking for sync is handled by GoogleDriveSyncService
       // when it detects the book is no longer in the library
-      
+
       // Delete file
       final file = File(book.filePath);
       if (await file.exists()) {
         await file.delete();
       }
-      
+
       // Delete cover image if it exists
       if (book.coverImagePath != null && book.coverImagePath!.isNotEmpty) {
         try {
@@ -586,7 +622,7 @@ class BookService {
           debugPrint('Error deleting cover image: $e');
         }
       }
-      
+
       // Delete reading progress
       await prefs.remove('$_progressKey${book.id}');
 
@@ -595,7 +631,7 @@ class BookService {
       } catch (e) {
         debugPrint('Failed to delete saved translations: $e');
       }
-      
+
       // Delete summary and cache data
       try {
         final summaryDbService = SummaryDatabaseService();
@@ -634,26 +670,30 @@ class BookService {
     try {
       final ragDbService = RagDatabaseService();
       final status = await ragDbService.getIndexStatus(bookId);
-      
+
       // Skip if already completed
       if (status?.isComplete == true) {
         return;
       }
-      
+
       // Skip if already indexing (let startIndexing handle idempotency)
       if (_ragIndexingServiceInstance.isIndexing(bookId)) {
         return;
       }
-      
+
       // Start indexing - startIndexing is now idempotent
-      _ragIndexingServiceInstance.startIndexing(bookId).listen(
-        (progress) {
-          debugPrint('[RAG] Indexing progress for $bookId: ${progress.indexedChunks}/${progress.totalChunks}');
-        },
-        onError: (error) {
-          debugPrint('[RAG] Indexing error for $bookId: $error');
-        },
-      );
+      _ragIndexingServiceInstance
+          .startIndexing(bookId)
+          .listen(
+            (progress) {
+              debugPrint(
+                '[RAG] Indexing progress for $bookId: ${progress.indexedChunks}/${progress.totalChunks}',
+              );
+            },
+            onError: (error) {
+              debugPrint('[RAG] Indexing error for $bookId: $error');
+            },
+          );
     } catch (e) {
       debugPrint('Failed to trigger RAG indexing: $e');
       // Don't throw - indexing is non-critical
