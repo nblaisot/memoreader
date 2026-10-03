@@ -45,6 +45,7 @@ import 'reader/tap_zones.dart';
 import 'reader/reader_menu.dart';
 import 'reader/navigation_helper.dart';
 import 'reader/reader_restore_policy.dart';
+import 'reader/reader_webview_layout_policy.dart';
 import 'reader/selection_warmup.dart';
 import 'reader/immediate_text_selection_controls.dart';
 import 'reader/webview_reader.dart';
@@ -625,7 +626,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_useWebViewReader) {
         if (!mounted) return;
-        int targetCharIndex;
+        int? targetCharIndex;
         if (initialCharIndex != null) {
           targetCharIndex = initialCharIndex;
         } else if (_isRestoringPosition && _savedProgress != null) {
@@ -646,15 +647,26 @@ class _ReaderScreenState extends State<ReaderScreen>
           } else {
             targetCharIndex = 0;
           }
-        } else {
-          targetCharIndex = _currentCharacterIndex;
         }
-        _pendingWebViewCharIndex = math.max(0, targetCharIndex);
-        _pendingWebViewNavigationIsUser = false;
+        // For ordinary resizes, let the WebView preserve its own last reported
+        // page-start anchor. Flutter's page update can lag a WebView resize
+        // event, so sending its cached character here could reapply a stale one.
+        final layoutAnchor = targetCharIndex == null
+            ? null
+            : resolveWebViewLayoutAnchor(
+                currentPageStart: _currentCharacterIndex,
+                requestedCharacter: targetCharIndex,
+              );
+        if (layoutAnchor != null) {
+          _pendingWebViewCharIndex = layoutAnchor;
+          _pendingWebViewNavigationIsUser = false;
+        }
         setState(() {
           _isNavigating = true;
         });
-        unawaited(_webViewController.updateLayout());
+        unawaited(
+          _webViewController.updateLayout(targetCharIndex: layoutAnchor),
+        );
         return;
       }
       if (!mounted || _docBlocks.isEmpty) return;
@@ -2069,7 +2081,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         if (!_webViewController.isReady) {
           _pendingWebViewCharIndex = clamped;
           _pendingWebViewNavigationIsUser = true;
-          unawaited(_webViewController.updateLayout());
+          unawaited(_webViewController.updateLayout(targetCharIndex: clamped));
           return;
         }
         unawaited(
@@ -3055,7 +3067,9 @@ class _ReaderScreenState extends State<ReaderScreen>
       if (!_webViewController.isReady) {
         _pendingWebViewCharIndex = targetCharIndex;
         _pendingWebViewNavigationIsUser = true;
-        unawaited(_webViewController.updateLayout());
+        unawaited(
+          _webViewController.updateLayout(targetCharIndex: targetCharIndex),
+        );
         return;
       }
       unawaited(
@@ -4193,6 +4207,9 @@ body {
   let totalChars = null;
   let lastStartChar = 0;
   let lastEndChar = 0;
+  let layoutUpdateScheduled = false;
+  let pendingLayoutTargetChar = null;
+  let layoutUpdateToken = 0;
   let actionEnabled = true;
   let selectionTimer = null;
   let selectionActiveDeactivateTimer = null;
@@ -4922,6 +4939,12 @@ body {
   }
 
   function setPage(pageIndex, notify, userInitiated) {
+    // A user page turn supersedes any queued automatic resize anchor.
+    if (userInitiated === true && layoutUpdateScheduled) {
+      layoutUpdateToken += 1;
+      layoutUpdateScheduled = false;
+      pendingLayoutTargetChar = null;
+    }
     updateLayoutMetrics();
     clearSelection();
     const clamped = Math.min(Math.max(pageIndex, 0), pageCount - 1);
@@ -4992,7 +5015,7 @@ body {
     return page;
   }
 
-  function updateStyles(styles) {
+  function updateStyles(styles, targetCharIndex) {
     if (styles && typeof styles === 'object') {
       if (styles.fontSize) {
         document.documentElement.style.setProperty('--reader-font-size', styles.fontSize + 'px');
@@ -5013,18 +5036,41 @@ body {
         document.documentElement.style.setProperty('--reader-padding-y', styles.paddingY + 'px');
       }
     }
-    updateLayout();
+    updateLayout(targetCharIndex);
   }
 
-  function updateLayout() {
-    updateLayoutMetrics();
-    if (totalChars === null) {
-      totalChars = computeCharCount(null, 0);
+  function updateLayout(targetCharIndex) {
+    // lastStartChar is the stable character anchor from the page before the
+    // viewport or styles change. Reading the current position after
+    // updateLayoutMetrics() would interpret the old scrollLeft using the new
+    // page stride and can move the reader to a different passage.
+    if (Number.isFinite(targetCharIndex)) {
+      pendingLayoutTargetChar = Math.max(0, Math.floor(targetCharIndex));
+    } else if (pendingLayoutTargetChar === null) {
+      pendingLayoutTargetChar = Math.max(0, lastStartChar || 0);
     }
-    const startCharValue = getStartCharIndex();
-    const targetChar = startCharValue === null ? 0 : startCharValue;
-    const page = findPageForChar(targetChar);
-    setPage(page, true);
+
+    // Resize events, style changes, and Flutter layout notifications can all
+    // arrive for the same frame. Reflow once, using the latest explicit anchor.
+    if (layoutUpdateScheduled) return;
+    layoutUpdateScheduled = true;
+    const updateToken = ++layoutUpdateToken;
+    const schedule = window.requestAnimationFrame
+      ? window.requestAnimationFrame.bind(window)
+      : function(callback) { return window.setTimeout(callback, 0); };
+    schedule(function() {
+      if (updateToken !== layoutUpdateToken) return;
+      layoutUpdateScheduled = false;
+      const targetChar = Math.max(0, pendingLayoutTargetChar ?? lastStartChar ?? 0);
+      pendingLayoutTargetChar = null;
+
+      updateLayoutMetrics();
+      if (totalChars === null) {
+        totalChars = computeCharCount(null, 0);
+      }
+      const page = findPageForChar(Math.min(targetChar, Math.max(0, totalChars - 1)));
+      setPage(page, true);
+    });
   }
 
   function setActionLabel(label) {
@@ -5406,7 +5452,9 @@ body {
 
   window.MemoReaderApi = {
     updateStyles: updateStyles,
-    updateLayout: updateLayout,
+    updateLayout: function(targetCharIndex) {
+      return updateLayout(targetCharIndex);
+    },
     setPage: function(pageIndex, notify) {
       return setPage(pageIndex, notify !== false);
     },

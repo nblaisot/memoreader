@@ -74,6 +74,7 @@ class WebViewReaderController {
     required Color backgroundColor,
     required double paddingX,
     required double paddingY,
+    int? targetCharIndex,
   }) {
     final payload = jsonEncode({
       'fontSize': fontSize,
@@ -83,7 +84,9 @@ class WebViewReaderController {
       'paddingX': paddingX,
       'paddingY': paddingY,
     });
-    return _runJs('MemoReaderApi.updateStyles($payload);');
+    return _runJs(
+      'MemoReaderApi.updateStyles($payload, ${_jsNullableInt(targetCharIndex)});',
+    );
   }
 
   Future<void> updateActionLabel(String label) {
@@ -156,9 +159,13 @@ class WebViewReaderController {
     return _parseJsInt(result);
   }
 
-  Future<void> updateLayout() {
-    return _runJs('MemoReaderApi.updateLayout();');
+  Future<void> updateLayout({int? targetCharIndex}) {
+    return _runJs(
+      'MemoReaderApi.updateLayout(${_jsNullableInt(targetCharIndex)});',
+    );
   }
+
+  static String _jsNullableInt(int? value) => value?.toString() ?? 'null';
 
   Future<int?> getPageCount() async {
     final result = await _runJsReturning('MemoReaderApi.getPageCount();');
