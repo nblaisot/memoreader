@@ -179,6 +179,68 @@ void main() {
     },
   );
 
+  test('FTS5 ranks a repeated exact match ahead of a weak match', () async {
+    final db = RagDatabaseService();
+    await db.saveChunks([
+      _ragSampleChunk(bookId: 'rank', chunkId: 'weak', charStart: 0,
+          charEnd: 100, text: 'quasar followed by unrelated words and a long explanation'),
+      _ragSampleChunk(bookId: 'rank', chunkId: 'strong', charStart: 101,
+          charEnd: 200, text: 'quasar quasar quasar quasar'),
+    ]);
+    final hits = await db.searchLexical(matchQuery: '"quasar"',
+        bookIds: ['rank'], limit: 2);
+    expect(hits.first.chunk.chunkId, 'strong');
+  });
+
+  test('FTS4 pages and ranks matches with a reading boundary', () async {
+    final dbPath = p.join(await getDatabasesPath(), 'rag.db');
+    final initialDb = await databaseFactoryFfi.openDatabase(dbPath);
+    await initialDb.execute('CREATE VIRTUAL TABLE rag_chunks_fts USING fts4('
+        'chunkId, bookId, text, chapterTitle, tokenize=unicode61)');
+    await initialDb.close();
+
+    final db = RagDatabaseService();
+    final chunks = [
+      for (var i = 0; i < 205; i++)
+        _ragSampleChunk(
+          bookId: 'fts4',
+          chunkId: 'match-$i',
+          charStart: i * 10,
+          charEnd: i * 10 + 9,
+          text: i == 204 ? 'quasar quasar quasar quasar' : 'quasar',
+        ),
+    ];
+    await db.saveChunks(chunks);
+
+    final hits = await db.searchLexical(
+      matchQuery: '"quasar"',
+      bookIds: ['fts4'],
+      boundaries: {'fts4': 2050},
+      limit: 3,
+    );
+    expect(hits, hasLength(3));
+    expect(hits.first.chunk.chunkId, 'match-204');
+  });
+
+  test('staged rebuild preserves the old index until activation', () async {
+    final db = RagDatabaseService();
+    final old = _ragSampleChunk(bookId: 'swap', chunkId: 'old',
+        charStart: 0, charEnd: 10, text: 'old quasar');
+    final replacement = _ragSampleChunk(bookId: 'swap', chunkId: 'new',
+        charStart: 0, charEnd: 10, text: 'new nebula');
+    await db.saveChunk(old);
+    await db.saveStagedChunks([replacement]);
+    expect((await db.getChunks('swap')).single.chunkId, 'old');
+    expect(await db.getStagedChunkCount('swap'), 1);
+    await db.activateStagedBook('swap');
+    expect((await db.getChunks('swap')).single.chunkId, 'new');
+    expect(await db.getStagedChunkCount('swap'), 0);
+    expect(await db.searchLexical(matchQuery: '"quasar"', bookIds: ['swap']),
+        isEmpty);
+    expect(await db.searchLexical(matchQuery: '"nebula"', bookIds: ['swap']),
+        isNotEmpty);
+  });
+
   test('partial progress updates preserve the index manifest', () async {
     final db = RagDatabaseService();
     await db.saveIndexStatus(

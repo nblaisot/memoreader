@@ -731,6 +731,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get ragQuestionScreenTitle => 'Ask a question';
 
   @override
+  String get ragNewChat => 'New chat';
+
+  @override
+  String get ragStop => 'Stop';
+
+  @override
+  String get ragLocalSearch => 'Local search…';
+
+  @override
+  String ragSearchingBooks(int round) {
+    return 'Searching books · $round/5';
+  }
+
+  @override
+  String get ragPreparingSearch => 'Preparing search…';
+
+  @override
+  String get ragCompatibilityFallback =>
+      'Used the previous ChatGPT/Codex model because this account does not support the new model.';
+
+  @override
   String get ragAllBooks => 'All library';
 
   @override

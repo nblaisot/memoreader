@@ -1358,6 +1358,42 @@ abstract class AppLocalizations {
   /// **'Ask a question'**
   String get ragQuestionScreenTitle;
 
+  /// No description provided for @ragNewChat.
+  ///
+  /// In en, this message translates to:
+  /// **'New chat'**
+  String get ragNewChat;
+
+  /// No description provided for @ragStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop'**
+  String get ragStop;
+
+  /// No description provided for @ragLocalSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Local search…'**
+  String get ragLocalSearch;
+
+  /// No description provided for @ragSearchingBooks.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching books · {round}/5'**
+  String ragSearchingBooks(int round);
+
+  /// No description provided for @ragPreparingSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing search…'**
+  String get ragPreparingSearch;
+
+  /// No description provided for @ragCompatibilityFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Used the previous ChatGPT/Codex model because this account does not support the new model.'**
+  String get ragCompatibilityFallback;
+
   /// Label shown when all books are selected for a RAG query
   ///
   /// In en, this message translates to:

@@ -54,7 +54,8 @@ void main() {
         expect(request.headers['Authorization'], 'Bearer sk-test');
 
         final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['model'], 'gpt-5.6-terra');
+        expect(body['model'], 'gpt-6.1-sol');
+        expect((body['reasoning'] as Map)['effort'], 'low');
         expect(body['input'], 'user prompt');
         expect(body['store'], isFalse);
 
@@ -103,13 +104,23 @@ void main() {
   });
 
   group('MistralSummaryService', () {
+    test('ignores thinking chunks in structured model responses', () async {
+      final client = MockClient((_) async => http.Response(
+        jsonEncode({'choices': [{'message': {'content': [
+          {'type': 'thinking', 'thinking': 'private'},
+          {'type': 'text', 'text': 'Final answer'},
+        ]}}]}), 200));
+      final out = await MistralSummaryService('mk', httpClient: client)
+          .generateSummary('hello', 'en');
+      expect(out, 'Final answer');
+    });
     test('POSTs chat completions and returns trimmed content', () async {
       final client = MockClient((request) async {
         expect(request.url.host, 'api.mistral.ai');
         expect(request.headers['Authorization'], 'Bearer mk');
 
         final body = jsonDecode(request.body) as Map<String, dynamic>;
-        expect(body['model'], 'mistral-medium-3-5');
+        expect(body['model'], 'mistral-large-4');
 
         return http.Response(
           jsonEncode({

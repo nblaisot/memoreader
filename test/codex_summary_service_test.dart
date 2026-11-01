@@ -7,6 +7,30 @@ import 'package:memoreader/services/codex_auth_service.dart';
 import 'package:memoreader/services/codex_summary_service.dart';
 
 void main() {
+  test('falls back only after an unsupported model response', () async {
+    String? stored = jsonEncode({
+      'access_token': 'token_abc',
+      'refresh_token': 'refresh',
+      'expires_at_ms': DateTime.now().add(const Duration(hours: 1)).millisecondsSinceEpoch,
+    });
+    final models = <String>[];
+    final client = MockClient((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      models.add(body['model'] as String);
+      if (models.length == 1) {
+        return http.Response(jsonEncode({'error': {'message': 'unsupported model'}}), 400);
+      }
+      return http.Response('event: response.output_text.delta\ndata: '
+          '{"type":"response.output_text.delta","delta":"Answer"}\n\n',
+          200, headers: {'Content-Type': 'text/event-stream'});
+    });
+    final auth = CodexAuthService(httpClient: client,
+        readStoredJson: () async => stored);
+    final service = CodexSummaryService(authService: auth, httpClient: client);
+    expect(await service.generateSummary('prompt', 'en'), 'Answer');
+    expect(models, ['gpt-6.1-sol', 'gpt-5.6-terra']);
+    expect(service.usedCompatibilityFallback, isTrue);
+  });
   test('generateSummary parses SSE response', () async {
     String? stored = jsonEncode({
       'access_token': 'token_abc',
@@ -22,7 +46,7 @@ void main() {
       expect(request.headers['Authorization'], 'Bearer token_abc');
       expect(request.headers['ChatGPT-Account-Id'], 'acct_1');
       final body = jsonDecode(request.body) as Map<String, dynamic>;
-      expect(body['model'], 'gpt-5.6-terra');
+      expect(body['model'], 'gpt-6.1-sol');
 
       const sse = '''
 event: response.output_text.delta

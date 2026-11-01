@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:math' as math;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as path;
 import '../models/rag_chunk.dart';
@@ -12,8 +13,8 @@ class RagLexicalHit {
 }
 
 class RagDatabaseService {
-  static const int schemaVersion = 3;
-  static const int indexVersion = 2;
+  static const int schemaVersion = 4;
+  static const int indexVersion = 3;
   static final RagDatabaseService _instance = RagDatabaseService._internal();
   factory RagDatabaseService() => _instance;
   RagDatabaseService._internal();
@@ -85,6 +86,7 @@ class RagDatabaseService {
           CREATE INDEX idx_rag_char_range ON rag_chunks(bookId, charStart, charEnd)
         ''');
         await _createFtsTable(db);
+        await _createStagingTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -102,9 +104,11 @@ class RagDatabaseService {
           await _createFtsTable(db);
           await _rebuildFts(db);
         }
+        if (oldVersion < 4) await _createStagingTable(db);
       },
       onOpen: (db) async {
         await _createFtsTable(db);
+        await _createStagingTable(db);
       },
     );
   }
@@ -121,6 +125,52 @@ class RagDatabaseService {
         rethrow;
       }
     }
+  }
+
+  static Future<void> _createStagingTable(Database db) async {
+    await db.execute('CREATE TABLE IF NOT EXISTS rag_chunks_staging '
+        'AS SELECT * FROM rag_chunks WHERE 0');
+    await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_stage_range '
+        'ON rag_chunks_staging(bookId, charStart)');
+  }
+
+  Future<int> getStagedChunkCount(String bookId) async {
+    final rows = await (await database).rawQuery(
+        'SELECT COUNT(*) AS count FROM rag_chunks_staging WHERE bookId = ?', [bookId]);
+    return rows.first['count'] as int;
+  }
+
+  Future<void> clearStagingBook(String bookId) async {
+    await (await database).delete('rag_chunks_staging',
+        where: 'bookId = ?', whereArgs: [bookId]);
+  }
+
+  Future<void> saveStagedChunks(List<RagChunk> chunks) async {
+    if (chunks.isEmpty) return;
+    final db = await database;
+    await db.transaction((txn) async {
+      final batch = txn.batch();
+      for (final chunk in chunks) {
+        batch.insert('rag_chunks_staging', {
+          ...chunk.toJson(), 'embedding': chunk.embeddingToBlob(),
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<void> activateStagedBook(String bookId) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('rag_chunks_fts', where: 'bookId = ?', whereArgs: [bookId]);
+      await txn.delete('rag_chunks', where: 'bookId = ?', whereArgs: [bookId]);
+      await txn.rawInsert('INSERT INTO rag_chunks SELECT * FROM rag_chunks_staging '
+          'WHERE bookId = ?', [bookId]);
+      await txn.rawInsert('INSERT INTO rag_chunks_fts(chunkId, bookId, text, chapterTitle) '
+          'SELECT chunkId, bookId, text, COALESCE(chapterTitle, \'\') '
+          'FROM rag_chunks_staging WHERE bookId = ?', [bookId]);
+      await txn.delete('rag_chunks_staging', where: 'bookId = ?', whereArgs: [bookId]);
+    });
   }
 
   Future<void> _createFtsTable(Database db) async {
@@ -349,6 +399,7 @@ class RagDatabaseService {
   Future<Set<(int, int)>> chunksExist(
     String bookId,
     List<(int charStart, int charEnd)> chunkRanges,
+    {bool staging = false}
   ) async {
     if (chunkRanges.isEmpty) return {};
 
@@ -356,7 +407,7 @@ class RagDatabaseService {
 
     // SQLite doesn't support tuple IN clause directly, so we use OR conditions
     // For large lists, we'll batch the query to avoid SQL statement size limits
-    const maxBatchSize = 500; // SQLite has limits on query size
+    const maxBatchSize = 400; // 2 placeholders per range plus book ID
     final existingChunks = <(int, int)>{};
 
     for (int i = 0; i < chunkRanges.length; i += maxBatchSize) {
@@ -374,7 +425,7 @@ class RagDatabaseService {
       final args = batch.expand((r) => [r.$1, r.$2]).toList();
 
       final results = await db.rawQuery(
-        'SELECT charStart, charEnd FROM rag_chunks WHERE bookId = ? AND ($conditions)',
+        'SELECT charStart, charEnd FROM ${staging ? 'rag_chunks_staging' : 'rag_chunks'} WHERE bookId = ? AND ($conditions)',
         [bookId, ...args],
       );
 
@@ -536,44 +587,47 @@ class RagDatabaseService {
     if (matchQuery.trim().isEmpty || bookIds.isEmpty) return [];
     final db = await database;
     final hits = <RagLexicalHit>[];
-    final perBookLimit = (limit ~/ bookIds.length).clamp(10, limit);
+    final perBookLimit = math.min(limit, math.max(1, limit ~/ bookIds.length));
 
     for (final bookId in bookIds) {
       final boundary = boundaries[bookId];
       final rankExpression = _ftsMode == 'fts5'
           ? 'bm25(rag_chunks_fts)'
           : "matchinfo(rag_chunks_fts, 'pcx')";
-      final rows = await db.rawQuery(
-        '''
-        SELECT c.*, $rankExpression AS lexicalRank
-        FROM rag_chunks_fts
-        JOIN rag_chunks c ON c.chunkId = rag_chunks_fts.chunkId
-        WHERE rag_chunks_fts MATCH ?
-          AND c.bookId = ?
-          ${boundary == null ? '' : 'AND c.charStart < ?'}
-        ${_ftsMode == 'fts5' ? 'ORDER BY lexicalRank ASC' : ''}
-        LIMIT ?
-        ''',
-        [matchQuery, bookId, if (boundary != null) boundary, perBookLimit],
-      );
-      for (var i = 0; i < rows.length; i++) {
-        final row = rows[i];
-        final embeddingBlob = row['embedding'] as Uint8List;
-        final rawRank = _ftsMode == 'fts5'
-            ? (row['lexicalRank'] as num?)?.toDouble() ?? 0
-            : _scoreFts4MatchInfo(row['lexicalRank'] as Uint8List?);
-        // FTS5 BM25 is lower/better and commonly negative. Ranks remain the
-        // primary fusion input; this score is diagnostic only.
-        final score = _ftsMode == 'fts5'
-            ? 1 / (1 + rawRank.abs())
-            : rawRank + 1 / (1000 + i);
-        hits.add(
-          RagLexicalHit(
-            chunk: RagChunk.fromJson(row, embeddingBlob),
-            score: score,
-          ),
+      // FTS4 cannot order by matchinfo in SQL. Page matches and retain only
+      // the strongest hits, rather than applying LIMIT before scoring.
+      var offset = 0;
+      final bookHits = <RagLexicalHit>[];
+      while (true) {
+        final rows = await db.rawQuery(
+          '''
+          SELECT c.*, $rankExpression AS lexicalRank
+          FROM rag_chunks_fts
+          JOIN rag_chunks c ON c.chunkId = rag_chunks_fts.chunkId
+          WHERE rag_chunks_fts MATCH ? AND c.bookId = ?
+            ${boundary == null ? '' : 'AND c.charStart < ?'}
+          ${_ftsMode == 'fts5' ? 'ORDER BY lexicalRank ASC LIMIT ?' : 'LIMIT ? OFFSET ?'}
+          ''',
+          [matchQuery, bookId, if (boundary != null) boundary,
+            if (_ftsMode == 'fts5') perBookLimit else ...[200, offset]],
         );
+        for (final row in rows) {
+          final rawRank = _ftsMode == 'fts5'
+              ? (row['lexicalRank'] as num?)?.toDouble() ?? 0
+              : _scoreFts4MatchInfo(row['lexicalRank'] as Uint8List?);
+          bookHits.add(RagLexicalHit(
+            chunk: RagChunk.fromJson(row, row['embedding'] as Uint8List),
+            score: _ftsMode == 'fts5' ? -rawRank : rawRank,
+          ));
+        }
+        bookHits.sort((a, b) => b.score.compareTo(a.score));
+        if (bookHits.length > perBookLimit) {
+          bookHits.removeRange(perBookLimit, bookHits.length);
+        }
+        if (_ftsMode == 'fts5' || rows.length < 200) break;
+        offset += rows.length;
       }
+      hits.addAll(bookHits);
     }
     hits.sort((a, b) => b.score.compareTo(a.score));
     return hits.take(limit).toList();
@@ -633,6 +687,7 @@ class RagDatabaseService {
     final db = await database;
     await db.delete('rag_chunks_fts');
     await db.delete('rag_chunks');
+    await db.delete('rag_chunks_staging');
     await db.delete('rag_index_status');
   }
 
@@ -641,6 +696,7 @@ class RagDatabaseService {
     final db = await database;
     await db.delete('rag_chunks_fts', where: 'bookId = ?', whereArgs: [bookId]);
     await db.delete('rag_chunks', where: 'bookId = ?', whereArgs: [bookId]);
+    await db.delete('rag_chunks_staging', where: 'bookId = ?', whereArgs: [bookId]);
     await db.delete(
       'rag_index_status',
       where: 'bookId = ?',

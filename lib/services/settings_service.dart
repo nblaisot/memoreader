@@ -20,8 +20,8 @@ class SettingsService {
   static const String _ragChunkMaxTokensKey = 'rag_chunk_max_tokens';
   static const String _ragChunkOverlapTokensKey = 'rag_chunk_overlap_tokens';
   static const int _defaultRagChunkMinTokens = 250;
-  static const int _defaultRagChunkMaxTokens = 500;
-  static const int _defaultRagChunkOverlapTokens = 75;
+  static const int _defaultRagChunkMaxTokens = 350;
+  static const int _defaultRagChunkOverlapTokens = 40;
   static const int _minRagChunkTokens = 50;
   static const int _maxRagChunkTokens = 2000;
 

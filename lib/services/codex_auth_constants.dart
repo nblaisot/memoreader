@@ -18,7 +18,8 @@ class CodexAuthConstants {
       'https://api.openai.com/v1/embeddings';
 
   /// Default model for Codex backend (ChatGPT subscription).
-  static const String defaultModel = 'gpt-5.6-terra';
+  static const String defaultModel = 'gpt-6.1-sol';
+  static const String compatibilityModel = 'gpt-5.6-terra';
 
   /// Embedding model compatible with existing OpenAI-indexed books.
   static const String defaultEmbeddingModel = 'text-embedding-3-small';

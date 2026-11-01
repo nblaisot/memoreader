@@ -4,12 +4,13 @@ import 'package:http/http.dart' as http;
 import 'summary_service.dart';
 import 'api_cache_service.dart';
 import 'ai_model_registry.dart';
+import 'rag_streaming.dart';
 
 /// Service for generating summaries using Mistral AI API
 ///
 /// This service requires an API key to be configured by the user.
 /// Mistral AI provides high-quality models with competitive pricing.
-class MistralSummaryService implements SummaryService {
+class MistralSummaryService implements SummaryService, RagStreamingService {
   final String apiKey;
   final ApiCacheService _cacheService = ApiCacheService();
   final http.Client _httpClient;
@@ -63,8 +64,11 @@ class MistralSummaryService implements SummaryService {
           },
           {'role': 'user', 'content': safePrompt},
         ],
-        'max_tokens': AiModelRegistry.mistralAnswer.maxOutputTokens,
-        'temperature': 0.7,
+        'max_tokens': model == AiModelRegistry.mistralPlanner.modelId
+            ? AiModelRegistry.mistralPlanner.maxOutputTokens
+            : AiModelRegistry.mistralAnswer.maxOutputTokens,
+        if (model == AiModelRegistry.mistralPlanner.modelId)
+          'reasoning_effort': 'none',
       };
 
       // Compute hash of the full request payload for caching (includes provider name)
@@ -108,7 +112,14 @@ class MistralSummaryService implements SummaryService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final summary = data['choices'][0]['message']['content'] as String;
+        final content = data['choices'][0]['message']['content'];
+        final summary = content is String
+            ? content
+            : (content as List<dynamic>)
+                  .whereType<Map>()
+                  .where((part) => part['type'] == 'text')
+                  .map((part) => part['text'] as String? ?? '')
+                  .join();
         final trimmedSummary = summary.trim();
 
         if (kDebugMode) {
@@ -144,4 +155,25 @@ class MistralSummaryService implements SummaryService {
       rethrow;
     }
   }
+
+  @override
+  Stream<String> streamRagAnswer(String prompt, String language) =>
+      streamResponseText(
+        client: _httpClient,
+        endpoint: Uri.parse(AiModelRegistry.mistralAnswer.endpoint),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        payload: {
+          'model': model,
+          'messages': [
+            {'role': 'system', 'content': 'Answer only from supplied excerpts and cite sources.'},
+            {'role': 'user', 'content': prompt},
+          ],
+          'max_tokens': AiModelRegistry.mistralAnswer.maxOutputTokens,
+          'stream': true,
+        },
+        mistral: true,
+      );
 }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/rag_chunk.dart';
@@ -8,6 +10,39 @@ import '../services/settings_service.dart';
 import '../services/summary_service.dart';
 import '../services/rag_hybrid_retriever.dart';
 import '../services/query_planner.dart';
+import '../services/ai_model_registry.dart';
+import '../services/openai_summary_service.dart';
+import '../services/mistral_summary_service.dart';
+import '../services/codex_summary_service.dart';
+import '../services/rag_chunking_service.dart';
+import '../services/rag_indexing_service.dart';
+import '../services/rag_streaming.dart';
+import '../services/book_service.dart';
+
+class RagChatTurn {
+  const RagChatTurn(
+    this.question,
+    this.answer,
+    this.sources, {
+    this.usedCompatibilityFallback = false,
+  });
+  final String question;
+  final String answer;
+  final List<RagChunk> sources;
+  final bool usedCompatibilityFallback;
+}
+
+class RagCancellationToken {
+  bool cancelled = false;
+  void cancel() => cancelled = true;
+  void check() {
+    if (cancelled) throw const RagCancelledException();
+  }
+}
+
+class RagCancelledException implements Exception {
+  const RagCancelledException();
+}
 
 /// Result of a RAG query
 class RagQueryResult {
@@ -15,12 +50,14 @@ class RagQueryResult {
   final List<RagChunk> sourceChunks;
   final double? relevanceScore;
   final bool insufficientEvidence;
+  final bool usedCompatibilityFallback;
 
   RagQueryResult({
     required this.answer,
     required this.sourceChunks,
     this.relevanceScore,
     this.insufficientEvidence = false,
+    this.usedCompatibilityFallback = false,
   });
 }
 
@@ -87,8 +124,13 @@ class RagQueryService {
     }
 
     // Retrieve candidate chunks
-    final candidates = onlyReadSoFar && maxCharPosition != null
-        ? await _databaseService.getChunksUpToPosition(bookId, maxCharPosition)
+    final candidates = onlyReadSoFar
+        ? maxCharPosition != null && maxCharPosition > 0
+              ? await _databaseService.getChunksUpToPosition(
+                  bookId,
+                  maxCharPosition,
+                )
+              : <RagChunk>[]
         : await _databaseService.getChunks(bookId);
 
     if (candidates.isEmpty) {
@@ -104,7 +146,7 @@ class RagQueryService {
       topK: resolvedTopK > 0 ? resolvedTopK : _defaultTopK,
       planner: summaryService != null && _needsModelPlanning(question)
           ? ModelQueryPlanner(
-              summaryService: summaryService,
+              summaryService: _plannerService(summaryService)!,
               language: language,
             )
           : null,
@@ -113,15 +155,6 @@ class RagQueryService {
 
     if (topChunks.isEmpty) {
       throw Exception('No relevant chunks found.');
-    }
-
-    if (!_hasEnoughEvidence(retrieval)) {
-      return RagQueryResult(
-        answer: _insufficientEvidenceMessage(language),
-        sourceChunks: topChunks,
-        relevanceScore: retrieval.bestDenseScore,
-        insufficientEvidence: true,
-      );
     }
 
     // If summary service is provided, generate answer using LLM
@@ -219,6 +252,10 @@ Please answer using ONLY the provided excerpts. Cite every factual claim with it
     SummaryService? summaryService,
     required String language,
     int? topK,
+    List<RagChatTurn> history = const [],
+    void Function(int round)? onRetrievalRound,
+    RagCancellationToken? cancellationToken,
+    void Function(String delta)? onAnswerDelta,
   }) async {
     final settingsService = SettingsService();
     final resolvedTopK = topK ?? await settingsService.getRagTopK();
@@ -234,8 +271,25 @@ Please answer using ONLY the provided excerpts. Cite every factual claim with it
 
     // Filter to only fully indexed books
     final indexedBookIds = <String>[];
+    final localBooks = {
+      for (final book in await BookService().getAllBooks()) book.id: book,
+    };
     for (final bookId in bookIds) {
-      final status = await _databaseService.getIndexStatus(bookId);
+      final book = localBooks[bookId];
+      if (book == null || !await RagIndexingService.hasLocalBookFile(book)) {
+        continue;
+      }
+      var status = await _databaseService.getIndexStatus(bookId);
+      if (status?.chunkingVersion != RagChunkingService.chunkingVersion ||
+          status?.indexVersion != RagDatabaseService.indexVersion) {
+        onRetrievalRound?.call(0);
+        await RagIndexingService()
+            .startIndexing(bookId)
+            .firstWhere((progress) => progress.isComplete)
+            .timeout(const Duration(minutes: 5));
+        cancellationToken?.check();
+        status = await _databaseService.getIndexStatus(bookId);
+      }
       if (status != null && status.isComplete) {
         if (status.embeddingDimension == embeddingService.embeddingDimensions &&
             status.embeddingModel == embeddingService.modelName &&
@@ -251,16 +305,17 @@ Please answer using ONLY the provided excerpts. Cite every factual claim with it
       );
     }
 
-    // Load chunks for all indexed books
+    // Load only content the reader is allowed to see. A missing read position
+    // grants no access when the spoiler boundary is active.
     List<RagChunk> allCandidates;
     if (onlyReadSoFar) {
       // Load per-book chunks respecting read positions
       allCandidates = [];
       for (final bookId in indexedBookIds) {
         final maxPos = bookReadPositions[bookId];
-        final chunks = maxPos != null
+        final chunks = maxPos != null && maxPos > 0
             ? await _databaseService.getChunksUpToPosition(bookId, maxPos)
-            : await _databaseService.getChunks(bookId);
+            : <RagChunk>[];
         allCandidates.addAll(chunks);
       }
     } else {
@@ -268,7 +323,11 @@ Please answer using ONLY the provided excerpts. Cite every factual claim with it
     }
 
     if (allCandidates.isEmpty) {
-      throw Exception('No chunks found for the selected books.');
+      return RagQueryResult(
+        answer: _insufficientEvidenceMessage(language),
+        sourceChunks: const [],
+        insufficientEvidence: true,
+      );
     }
 
     debugPrint(
@@ -276,31 +335,158 @@ Please answer using ONLY the provided excerpts. Cite every factual claim with it
     );
 
     final effectiveTopK = resolvedTopK > 0 ? resolvedTopK : _defaultTopK;
-    final retrieval = await _retriever.retrieve(
-      question: question,
-      bookIds: indexedBookIds,
-      candidates: allCandidates,
-      embeddingService: embeddingService,
-      boundaries: onlyReadSoFar ? bookReadPositions : const {},
-      topK: effectiveTopK,
-      planner: summaryService != null && _needsModelPlanning(question)
-          ? ModelQueryPlanner(
-              summaryService: summaryService,
-              language: language,
+    final plannerService = _plannerService(summaryService);
+    var standaloneQuestion = question;
+    var reuseSources = false;
+    if (plannerService != null && history.isNotEmpty) {
+      try {
+        final recent = history.reversed
+            .take(6)
+            .toList()
+            .reversed
+            .map((turn) => 'Q: ${turn.question}\nA: ${turn.answer}')
+            .join('\n');
+        final raw = await plannerService
+            .generateSummary(
+              'Resolve the latest message into a standalone question. Return JSON only: '
+              '{"question":string,"reuse_sources":boolean}. Reuse sources only if the '
+              'user asks to explain or rephrase the preceding answer without new facts. '
+              'History:\n$recent\nLatest: $question',
+              language,
             )
-          : null,
-    );
-    final topChunks = retrieval.chunks;
-
-    if (topChunks.isEmpty) {
-      throw Exception('No relevant chunks found.');
+            .timeout(const Duration(seconds: 12));
+        final parsed = _parseJson(raw);
+        final rewritten = parsed['question'];
+        if (rewritten is String &&
+            rewritten.trim().isNotEmpty &&
+            rewritten.length < 500) {
+          standaloneQuestion = rewritten.trim();
+        }
+        reuseSources = parsed['reuse_sources'] == true;
+      } catch (_) {
+        /* Preserve the original question. */
+      }
     }
 
-    if (!_hasEnoughEvidence(retrieval)) {
+    final evidence = <String, RagChunk>{};
+    if (reuseSources && history.isNotEmpty) {
+      for (final chunk in history.last.sources) {
+        if (!indexedBookIds.contains(chunk.bookId)) continue;
+        final end = onlyReadSoFar ? bookReadPositions[chunk.bookId] : null;
+        if (end != null && chunk.charEnd > end) continue;
+        if (onlyReadSoFar && end == null) continue;
+        evidence[chunk.chunkId] = chunk;
+      }
+    }
+    var search = reuseSources && evidence.isNotEmpty ? '' : standaloneQuestion;
+    var bestDenseScore = 0.0;
+    final preferred = <String>[];
+    final seenQueries = <String>{};
+    final started = DateTime.now();
+    Duration remainingTime() =>
+        const Duration(seconds: 120) - DateTime.now().difference(started);
+    for (var round = 1; round <= 5 && search.isNotEmpty; round++) {
+      cancellationToken?.check();
+      if (remainingTime() <= Duration.zero) break;
+      if (!seenQueries.add(search.toLowerCase().trim())) break;
+      onRetrievalRound?.call(round);
+      HybridRetrievalResult retrieval;
+      try {
+        retrieval = await _retriever
+            .retrieve(
+              question: search,
+              bookIds: indexedBookIds,
+              candidates: allCandidates,
+              embeddingService: embeddingService,
+              boundaries: onlyReadSoFar ? bookReadPositions : const {},
+              topK: 20,
+              planner: round == 1 && history.isEmpty && plannerService != null
+                  ? ModelQueryPlanner(
+                      summaryService: plannerService,
+                      language: language,
+                    )
+                  : null,
+            )
+            .timeout(remainingTime());
+      } on TimeoutException {
+        break;
+      }
+      cancellationToken?.check();
+      if (retrieval.bestDenseScore > bestDenseScore) {
+        bestDenseScore = retrieval.bestDenseScore;
+      }
+      final before = evidence.length;
+      for (final chunk in retrieval.chunks) {
+        if (evidence.length >= 40) break;
+        evidence.putIfAbsent(chunk.chunkId, () => chunk);
+      }
+      if (round == 5) {
+        preferred.insertAll(
+          0,
+          retrieval.chunks.take(4).map((chunk) => chunk.chunkId),
+        );
+      }
+      if (round == 5 || evidence.length == before || plannerService == null) {
+        break;
+      }
+      try {
+        final assessmentCandidates = <String, RagChunk>{
+          for (final chunk in retrieval.chunks.take(10)) chunk.chunkId: chunk,
+          for (final chunk in evidence.values) chunk.chunkId: chunk,
+        }.values.take(20).toList();
+        final excerpt = assessmentCandidates
+            .asMap()
+            .entries
+            .map((entry) {
+              final text = entry.value.text;
+              return '[${entry.key}] ${text.length > 900 ? text.substring(0, 900) : text}';
+            })
+            .join('\n');
+        final raw = await plannerService
+            .generateSummary(
+              'Assess whether these passages answer the question. Return JSON only: '
+              '{"sufficient":boolean,"next_query":string,"selected_indices":[integer]}. '
+              'Select up to 8 relevant passages by index. Propose a different, '
+              'specific search only if evidence is missing. No outside facts. '
+              'Question: $standaloneQuestion\nPassages:\n$excerpt',
+              language,
+            )
+            .timeout(
+              remainingTime() < const Duration(seconds: 12)
+                  ? remainingTime()
+                  : const Duration(seconds: 12),
+            );
+        final decision = _parseJson(raw);
+        final selected = decision['selected_indices'];
+        if (selected is List) {
+          for (final index in selected.whereType<int>().take(8)) {
+            if (index >= 0 && index < assessmentCandidates.length) {
+              final id = assessmentCandidates[index].chunkId;
+              if (!preferred.contains(id)) preferred.add(id);
+            }
+          }
+        }
+        if (decision['sufficient'] == true) break;
+        final next = decision['next_query'];
+        if (next is! String || next.trim().isEmpty || next.length > 240) break;
+        search = next.trim();
+      } catch (_) {
+        break;
+      }
+    }
+    cancellationToken?.check();
+    final topChunks = <RagChunk>[
+      for (final id in preferred)
+        if (evidence[id] != null) evidence[id]!,
+      for (final chunk in evidence.values)
+        if (!preferred.contains(chunk.chunkId)) chunk,
+    ].take(effectiveTopK).toList();
+
+    if (topChunks.isEmpty) {
       return RagQueryResult(
         answer: _insufficientEvidenceMessage(language),
         sourceChunks: topChunks,
-        relevanceScore: retrieval.bestDenseScore,
+        relevanceScore: bestDenseScore,
         insufficientEvidence: true,
       );
     }
@@ -308,12 +494,15 @@ Please answer using ONLY the provided excerpts. Cite every factual claim with it
     String answer;
     if (summaryService != null) {
       answer = await _generateMultiBookAnswer(
-        question: question,
+        question: standaloneQuestion,
         chunks: topChunks,
         bookTitles: bookTitles,
         onlyReadSoFar: onlyReadSoFar,
         summaryService: summaryService,
         language: language,
+        history: history,
+        cancellationToken: cancellationToken,
+        onAnswerDelta: onAnswerDelta,
       );
     } else {
       answer = topChunks
@@ -324,7 +513,10 @@ Please answer using ONLY the provided excerpts. Cite every factual claim with it
     return RagQueryResult(
       answer: answer,
       sourceChunks: topChunks,
-      relevanceScore: retrieval.bestDenseScore,
+      relevanceScore: bestDenseScore,
+      usedCompatibilityFallback:
+          summaryService is CodexSummaryService &&
+          summaryService.usedCompatibilityFallback,
     );
   }
 
@@ -336,6 +528,9 @@ Please answer using ONLY the provided excerpts. Cite every factual claim with it
     required bool onlyReadSoFar,
     required SummaryService summaryService,
     required String language,
+    List<RagChatTurn> history = const [],
+    RagCancellationToken? cancellationToken,
+    void Function(String delta)? onAnswerDelta,
   }) async {
     final excerptLabel = language == 'fr' ? 'Extrait' : 'Excerpt';
     final context = chunks
@@ -353,6 +548,12 @@ Please answer using ONLY the provided excerpts. Cite every factual claim with it
         })
         .join('\n---\n\n');
 
+    final conversation = history.reversed
+        .take(6)
+        .toList()
+        .reversed
+        .map((turn) => 'User: ${turn.question}\nAssistant: ${turn.answer}')
+        .join('\n\n');
     final prompt = language == 'fr'
         ? '''Tu es un assistant utile qui répond aux questions sur des livres en utilisant UNIQUEMENT les extraits fournis.
 
@@ -362,7 +563,7 @@ Voici des extraits de différents livres (le titre du livre est indiqué entre p
 
 $context
 
-Question : $question
+Conversation précédente (contexte conversationnel, pas une preuve du livre) :\n$conversation\n\nQuestion : $question
 
 Fournis une réponse utile basée UNIQUEMENT sur les extraits fournis. Cite chaque affirmation factuelle avec son identifiant, par exemple [S1], ainsi que le titre pertinent. Si les extraits ne contiennent pas assez d'informations, dis-le explicitement. ${onlyReadSoFar ? 'Ne révèle rien au-delà de ce qui est montré dans les extraits.' : ''}'''
         : '''You are a helpful assistant that answers questions about books using ONLY the provided excerpts.
@@ -373,11 +574,29 @@ Here are excerpts from different books (the book title is shown in parentheses):
 
 $context
 
-Question: $question
+Earlier conversation (context only, not book evidence):\n$conversation\n\nQuestion: $question
 
 Please answer using ONLY the provided excerpts. Cite every factual claim with its source identifier, for example [S1], and the relevant book title. If the excerpts do not contain enough evidence, say so explicitly. ${onlyReadSoFar ? 'Do not reveal anything beyond what is shown in the excerpts.' : ''}''';
 
-    final answer = await summaryService.generateSummary(prompt, language);
+    String answer;
+    if (summaryService is RagStreamingService && onAnswerDelta != null) {
+      final buffer = StringBuffer();
+      await for (final delta
+          in (summaryService as RagStreamingService).streamRagAnswer(
+            prompt,
+            language,
+          )) {
+        cancellationToken?.check();
+        buffer.write(delta);
+        onAnswerDelta(delta);
+      }
+      answer = buffer.toString();
+      if (answer.trim().isEmpty) {
+        throw const FormatException('Empty answer stream');
+      }
+    } else {
+      answer = await summaryService.generateSummary(prompt, language);
+    }
     return _sanitizeCitations(answer, chunks.length);
   }
 
@@ -403,10 +622,6 @@ Please answer using ONLY the provided excerpts. Cite every factual claim with it
         lower.contains('avant et après');
   }
 
-  static bool _hasEnoughEvidence(HybridRetrievalResult result) {
-    return result.hasLexicalEvidence || result.bestDenseScore >= 0.18;
-  }
-
   static String _insufficientEvidenceMessage(String language) {
     return language == 'fr'
         ? 'Les extraits disponibles ne contiennent pas assez d’éléments pertinents pour répondre de façon fiable.'
@@ -420,5 +635,36 @@ Please answer using ONLY the provided excerpts. Cite every factual claim with it
           ? match.group(0)!
           : '';
     }).trim();
+  }
+
+  static Map<String, dynamic> _parseJson(String raw) {
+    final cleaned = raw
+        .trim()
+        .replaceFirst(RegExp(r'^```(?:json)?\s*'), '')
+        .replaceFirst(RegExp(r'\s*```$'), '');
+    final value = jsonDecode(cleaned);
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('JSON object expected');
+    }
+    return value;
+  }
+
+  static SummaryService? _plannerService(SummaryService? answerService) {
+    if (answerService is OpenAISummaryService) {
+      return OpenAISummaryService(
+        answerService.apiKey,
+        model: AiModelRegistry.openAiPlanner.modelId,
+      );
+    }
+    if (answerService is MistralSummaryService) {
+      return MistralSummaryService(
+        answerService.apiKey,
+        model: AiModelRegistry.mistralPlanner.modelId,
+      );
+    }
+    if (answerService is CodexSummaryService) {
+      return CodexSummaryService(model: AiModelRegistry.openAiPlanner.modelId);
+    }
+    return answerService;
   }
 }

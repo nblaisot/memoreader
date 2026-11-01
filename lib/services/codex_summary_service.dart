@@ -11,9 +11,10 @@ import 'codex_sse_parser.dart';
 import 'http_response_text.dart';
 import 'resolving_http_client.dart';
 import 'summary_service.dart';
+import 'rag_streaming.dart';
 
 /// Summaries via ChatGPT/Codex subscription (OAuth + Codex backend).
-class CodexSummaryService implements SummaryService {
+class CodexSummaryService implements SummaryService, RagStreamingService {
   CodexSummaryService({
     CodexAuthService? authService,
     http.Client? httpClient,
@@ -26,6 +27,7 @@ class CodexSummaryService implements SummaryService {
   final CodexAuthService _auth;
   final http.Client _http;
   final String model;
+  bool usedCompatibilityFallback = false;
   final ApiCacheService _cacheService = ApiCacheService();
 
   @override
@@ -41,6 +43,7 @@ class CodexSummaryService implements SummaryService {
     String? bookId,
     VoidCallback? onCacheHit,
   }) async {
+    usedCompatibilityFallback = false;
     if (!await isAvailable()) {
       throw CodexAuthException(
         'ChatGPT/Codex is not signed in. Sign in from Settings.',
@@ -63,6 +66,7 @@ class CodexSummaryService implements SummaryService {
       ],
       'store': false,
       'stream': true,
+      'reasoning': {'effort': 'low'},
     };
 
     final requestHash = _cacheService.computeRequestHash(
@@ -108,6 +112,19 @@ class CodexSummaryService implements SummaryService {
         headers: headers,
         body: jsonEncode(requestPayload),
       );
+    }
+
+    if ((response.statusCode == 400 || response.statusCode == 404) &&
+        model != CodexAuthConstants.compatibilityModel &&
+        decodeHttpResponseBody(response).toLowerCase().contains('model')) {
+      requestPayload['model'] = CodexAuthConstants.compatibilityModel;
+      requestPayload.remove('reasoning');
+      response = await _http.post(
+        Uri.parse(CodexAuthConstants.codexResponsesUrl),
+        headers: headers,
+        body: jsonEncode(requestPayload),
+      );
+      usedCompatibilityFallback = response.statusCode >= 200 && response.statusCode < 300;
     }
 
     if (!response.statusCode.toString().startsWith('2')) {
@@ -156,7 +173,7 @@ class CodexSummaryService implements SummaryService {
       throw Exception('Codex returned an empty summary.');
     }
 
-    if (bookId != null) {
+    if (bookId != null && !usedCompatibilityFallback) {
       await _cacheService.saveCachedResponse(
         requestHash,
         bookId,
@@ -176,6 +193,53 @@ class CodexSummaryService implements SummaryService {
     }
     final data = jsonDecode(body) as Map<String, dynamic>;
     return _extractTextFromJsonResponse(data);
+  }
+
+  @override
+  Stream<String> streamRagAnswer(String prompt, String language) async* {
+    usedCompatibilityFallback = false;
+    final credentials = await _auth.getValidCredentials();
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${credentials.accessToken}',
+      'Accept': 'text/event-stream',
+      if (credentials.accountId != null)
+        'ChatGPT-Account-Id': credentials.accountId!,
+    };
+    final payload = <String, dynamic>{
+      'model': model,
+      'instructions': 'Answer only from supplied excerpts and cite sources.',
+      'input': [{'role': 'user', 'content': prompt}],
+      'store': false,
+      'stream': true,
+      'reasoning': {'effort': 'low'},
+    };
+    Stream<String> request() => streamResponseText(
+      client: _http,
+      endpoint: Uri.parse(CodexAuthConstants.codexResponsesUrl),
+      headers: headers,
+      payload: payload,
+      mistral: false,
+    );
+    try {
+      yield* request();
+    } catch (error) {
+      if (error.toString().contains('401')) {
+        final refreshed = await _auth.refreshTokens();
+        headers['Authorization'] = 'Bearer ${refreshed.accessToken}';
+        yield* request();
+      } else if ((error.toString().contains('400') ||
+              error.toString().contains('404')) &&
+          error.toString().toLowerCase().contains('model') &&
+          model != CodexAuthConstants.compatibilityModel) {
+        payload['model'] = CodexAuthConstants.compatibilityModel;
+        payload.remove('reasoning');
+        usedCompatibilityFallback = true;
+        yield* request();
+      } else {
+        rethrow;
+      }
+    }
   }
 
   static String _extractTextFromJsonResponse(Map<String, dynamic> data) {

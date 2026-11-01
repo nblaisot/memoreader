@@ -4,11 +4,12 @@ import 'package:http/http.dart' as http;
 import 'summary_service.dart';
 import 'api_cache_service.dart';
 import 'ai_model_registry.dart';
+import 'rag_streaming.dart';
 
 /// Service for generating summaries using OpenAI API
 ///
 /// This service requires an API key to be configured by the user.
-class OpenAISummaryService implements SummaryService {
+class OpenAISummaryService implements SummaryService, RagStreamingService {
   final String apiKey;
   final ApiCacheService _cacheService = ApiCacheService();
   final http.Client _httpClient;
@@ -57,7 +58,10 @@ class OpenAISummaryService implements SummaryService {
         'instructions':
             'Follow the user instructions precisely. Do not repeat the instructions.',
         'input': safePrompt,
-        'max_output_tokens': AiModelRegistry.openAiAnswer.maxOutputTokens,
+        'max_output_tokens': model == AiModelRegistry.openAiPlanner.modelId
+            ? AiModelRegistry.openAiPlanner.maxOutputTokens
+            : AiModelRegistry.openAiAnswer.maxOutputTokens,
+        'reasoning': {'effort': 'low'},
         'store': false,
       };
 
@@ -159,4 +163,25 @@ class OpenAISummaryService implements SummaryService {
     }
     return buffer.toString();
   }
+
+  @override
+  Stream<String> streamRagAnswer(String prompt, String language) =>
+      streamResponseText(
+        client: _httpClient,
+        endpoint: Uri.parse(AiModelRegistry.openAiAnswer.endpoint),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        payload: {
+          'model': model,
+          'input': prompt,
+          'instructions': 'Answer only from supplied excerpts and cite sources.',
+          'reasoning': {'effort': 'low'},
+          'max_output_tokens': AiModelRegistry.openAiAnswer.maxOutputTokens,
+          'store': false,
+          'stream': true,
+        },
+        mistral: false,
+      );
 }

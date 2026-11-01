@@ -1,12 +1,10 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/rag_chunk.dart';
 import '../utils/sentence_segmenter.dart';
-import '../utils/text_tokenizer.dart';
 import 'canonical_book_text_service.dart';
 
 /// Chunks the canonical EPUB projection without inventing a second offset
@@ -20,7 +18,7 @@ class RagChunkingService {
   }) : _canonicalTextService =
            canonicalTextService ?? const CanonicalBookTextService();
 
-  static const int chunkingVersion = 2;
+  static const int chunkingVersion = 3;
 
   final Uuid _uuid = const Uuid();
   final CanonicalBookTextService _canonicalTextService;
@@ -52,7 +50,7 @@ class RagChunkingService {
         globalTokenOffset: globalTokenOffset,
       );
       chunks.addAll(sectionChunks);
-      globalTokenOffset += tokenizePreservingWhitespace(section.text).length;
+      globalTokenOffset += _wordCount(section.text);
     }
 
     if (kDebugMode) {
@@ -73,9 +71,7 @@ class RagChunkingService {
     final spans = SentenceSegmenter.split(section.text);
     if (spans.isEmpty) return [];
 
-    final counts = [
-      for (final span in spans) tokenizePreservingWhitespace(span.text).length,
-    ];
+    final counts = [for (final span in spans) _wordCount(span.text)];
     final chunks = <RagChunk>[];
     var startSentence = 0;
 
@@ -104,6 +100,13 @@ class RagChunkingService {
       var tokenCount = 0;
       while (endSentence < spans.length) {
         final next = counts[endSentence];
+        if (tokenCount >= minTokens &&
+            RegExp(r'^\s*\n\s*\n').hasMatch(
+              section.text.substring(spans[endSentence].start,
+                  spans[endSentence].end),
+            )) {
+          break;
+        }
         if (next > maxTokens ||
             (tokenCount > 0 && tokenCount + next > maxTokens)) {
           break;
@@ -158,24 +161,19 @@ class RagChunkingService {
     required SentenceSpan span,
     required int globalTokenOffset,
   }) {
-    final tokens = tokenizePreservingWhitespace(span.text);
+    final tokens = RegExp(r'\S+').allMatches(span.text).toList();
     final chunks = <RagChunk>[];
     var startToken = 0;
     while (startToken < tokens.length) {
       final endToken = (startToken + maxTokens).clamp(0, tokens.length);
-      final prefixLength = tokens
-          .take(startToken)
-          .fold<int>(0, (length, token) => length + token.length);
-      final textLength = tokens
-          .skip(startToken)
-          .take(endToken - startToken)
-          .fold<int>(0, (length, token) => length + token.length);
+      final localStart = span.start + tokens[startToken].start;
+      final localEnd = span.start + tokens[endToken - 1].end;
       chunks.add(
         _createChunk(
           bookId: bookId,
           section: section,
-          localStart: span.start + prefixLength,
-          localEnd: span.start + prefixLength + textLength,
+          localStart: localStart,
+          localEnd: localEnd,
           tokenStart: globalTokenOffset + startToken,
         ),
       );
@@ -206,8 +204,10 @@ class RagChunkingService {
       charStart: section.charStart + localStart,
       charEnd: section.charStart + localEnd,
       tokenStart: tokenStart,
-      tokenEnd: tokenStart + tokenizePreservingWhitespace(text).length,
+      tokenEnd: tokenStart + _wordCount(text),
       createdAt: DateTime.now(),
     );
   }
+
+  static int _wordCount(String text) => RegExp(r'\S+').allMatches(text).length;
 }

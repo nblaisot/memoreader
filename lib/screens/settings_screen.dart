@@ -496,6 +496,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final database = RagDatabaseService();
     final indexer = RagIndexingService();
     for (final book in books) {
+      if (!await RagIndexingService.hasLocalBookFile(book)) continue;
       final status = await database.getIndexStatus(book.id);
       if (status?.isComplete == true || indexer.isIndexing(book.id)) continue;
       indexer

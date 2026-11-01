@@ -104,6 +104,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
       // Check each book for incomplete indexing
       for (final book in books) {
+        if (!await RagIndexingService.hasLocalBookFile(book)) {
+          continue;
+        }
         final status = await ragDbService.getIndexStatus(book.id);
 
         // Resume every non-complete state after credentials/config may change.

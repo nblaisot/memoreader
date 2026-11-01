@@ -150,6 +150,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
       final ragIndexingService = RagIndexingService();
 
       for (final book in books) {
+        if (!await RagIndexingService.hasLocalBookFile(book)) {
+          continue;
+        }
         final status = await ragDbService.getIndexStatus(book.id);
         
         // Skip if already completed

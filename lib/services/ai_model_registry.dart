@@ -6,8 +6,8 @@
 class AiModelRegistry {
   AiModelRegistry._();
 
-  static const int registryVersion = 1;
-  static const String lastVerified = '2026-07-14';
+  static const int registryVersion = 2;
+  static const String lastVerified = '2026-11-01';
 
   static const openAiEmbedding = EmbeddingModelSpec(
     providerId: 'openai',
@@ -25,21 +25,23 @@ class AiModelRegistry {
 
   static const openAiAnswer = GenerationModelSpec(
     providerId: 'openai',
-    modelId: 'gpt-5.6-terra',
+    modelId: 'gpt-6.1-sol',
     endpoint: 'https://api.openai.com/v1/responses',
     maxOutputTokens: 4000,
+    reasoningEffort: 'low',
   );
 
   static const openAiPlanner = GenerationModelSpec(
     providerId: 'openai',
-    modelId: 'gpt-5.6-luna',
+    modelId: 'gpt-6-luna',
     endpoint: 'https://api.openai.com/v1/responses',
     maxOutputTokens: 800,
+    reasoningEffort: 'low',
   );
 
   static const mistralAnswer = GenerationModelSpec(
     providerId: 'mistral',
-    modelId: 'mistral-medium-3-5',
+    modelId: 'mistral-large-4',
     endpoint: 'https://api.mistral.ai/v1/chat/completions',
     maxOutputTokens: 4000,
   );
@@ -49,6 +51,7 @@ class AiModelRegistry {
     modelId: 'mistral-small-2603',
     endpoint: 'https://api.mistral.ai/v1/chat/completions',
     maxOutputTokens: 800,
+    reasoningEffort: 'none',
   );
 }
 
@@ -74,10 +77,12 @@ class GenerationModelSpec {
     required this.modelId,
     required this.endpoint,
     required this.maxOutputTokens,
+    this.reasoningEffort,
   });
 
   final String providerId;
   final String modelId;
   final String endpoint;
   final int maxOutputTokens;
+  final String? reasoningEffort;
 }

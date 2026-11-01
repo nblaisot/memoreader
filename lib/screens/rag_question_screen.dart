@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import '../l10n/app_localizations.dart';
 import '../models/book.dart';
 import '../models/rag_chunk.dart';
@@ -53,14 +54,18 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
   bool _selectorExpanded = false;
 
   // Toggle
-  bool _onlyReadSoFar = false;
+  bool _onlyReadSoFar = true;
 
   // Question state
   bool _canSubmit = false;
   bool _isProcessing = false;
-  String? _answer;
   String? _error;
-  List<RagChunk> _sourceChunks = [];
+  final List<RagChatTurn> _turns = [];
+  RagCancellationToken? _cancellation;
+  int _requestEpoch = 0;
+  int _retrievalRound = 0;
+  String? _pendingQuestion;
+  String _partialAnswer = '';
 
   @override
   void initState() {
@@ -71,6 +76,7 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
 
   @override
   void dispose() {
+    _cancellation?.cancel();
     _questionController.removeListener(_handleQuestionChanged);
     _questionController.dispose();
     _scrollController.dispose();
@@ -140,36 +146,51 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
   }
 
   void _toggleBook(String bookId, bool selected) {
+    if (_isProcessing) _stop();
     setState(() {
       if (selected) {
         _selectedBookIds.add(bookId);
       } else {
         _selectedBookIds.remove(bookId);
       }
+      _turns.clear();
     });
     unawaited(_saveSelection());
   }
 
   void _selectAll() {
-    setState(() => _selectedBookIds = _indexedBookIds.toSet());
+    if (_isProcessing) _stop();
+    setState(() {
+      _selectedBookIds = _indexedBookIds.toSet();
+      _turns.clear();
+    });
     unawaited(_saveSelection());
   }
 
   void _deselectAll() {
-    setState(() => _selectedBookIds = {});
+    if (_isProcessing) _stop();
+    setState(() {
+      _selectedBookIds = {};
+      _turns.clear();
+    });
     unawaited(_saveSelection());
   }
 
   Future<void> _submitQuestion() async {
     final question = _questionController.text.trim();
-    if (question.isEmpty || _selectedBookIds.isEmpty) return;
+    if (question.isEmpty || _selectedBookIds.isEmpty || _isProcessing) return;
+    final epoch = ++_requestEpoch;
+    final token = RagCancellationToken();
+    _cancellation = token;
 
     setState(() {
       _isProcessing = true;
-      _answer = null;
       _error = null;
-      _sourceChunks = [];
+      _retrievalRound = 0;
+      _pendingQuestion = question;
+      _partialAnswer = '';
     });
+    _questionController.clear();
 
     // Scroll past the question field to show progress
     await Future.delayed(const Duration(milliseconds: 100));
@@ -209,13 +230,33 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
         question: question,
         summaryService: baseService,
         language: language,
+        history: List<RagChatTurn>.from(_turns),
+        cancellationToken: token,
+        onRetrievalRound: (round) {
+          if (mounted && epoch == _requestEpoch) {
+            setState(() => _retrievalRound = round);
+          }
+        },
+        onAnswerDelta: (delta) {
+          if (mounted && epoch == _requestEpoch) {
+            setState(() => _partialAnswer += delta);
+          }
+        },
       );
 
-      if (mounted) {
+      if (mounted && epoch == _requestEpoch && !token.cancelled) {
         setState(() {
-          _answer = result.answer;
-          _sourceChunks = result.sourceChunks;
+          _turns.add(
+            RagChatTurn(
+              question,
+              result.answer,
+              result.sourceChunks,
+              usedCompatibilityFallback: result.usedCompatibilityFallback,
+            ),
+          );
           _isProcessing = false;
+          _pendingQuestion = null;
+          _partialAnswer = '';
         });
         // Scroll to answer
         await Future.delayed(const Duration(milliseconds: 100));
@@ -229,15 +270,41 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
           );
         }
       }
+    } on RagCancelledException {
+      if (mounted && epoch == _requestEpoch) {
+        setState(() => _isProcessing = false);
+      }
     } catch (e) {
       debugPrint('[RAG] Question error: $e');
-      if (mounted) {
+      if (mounted && epoch == _requestEpoch) {
         setState(() {
           _error = e.toString();
           _isProcessing = false;
+          _pendingQuestion = null;
+          _partialAnswer = '';
         });
+        _questionController.text = question;
       }
     }
+  }
+
+  void _stop() {
+    _cancellation?.cancel();
+    _requestEpoch++;
+    if (_pendingQuestion != null) _questionController.text = _pendingQuestion!;
+    setState(() {
+      _isProcessing = false;
+      _partialAnswer = '';
+      _pendingQuestion = null;
+    });
+  }
+
+  void _newChat() {
+    _stop();
+    setState(() {
+      _turns.clear();
+      _error = null;
+    });
   }
 
   @override
@@ -250,6 +317,26 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
         title: Text(l10n.ragQuestionScreenTitle),
         backgroundColor: theme.colorScheme.inversePrimary,
         leading: const BackButton(),
+        actions: [
+          IconButton(
+            tooltip: l10n.ragNewChat,
+            onPressed: _newChat,
+            icon: const Icon(Icons.add_comment_outlined),
+          ),
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildQuestionField(l10n),
+              const SizedBox(height: 8),
+              _buildSubmitButton(l10n),
+            ],
+          ),
+        ),
       ),
       body: SingleChildScrollView(
         controller: _scrollController,
@@ -261,20 +348,35 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
             const SizedBox(height: 16),
             _buildAlreadyReadToggle(l10n),
             const SizedBox(height: 16),
-            _buildQuestionField(l10n),
-            const SizedBox(height: 16),
-            _buildSubmitButton(l10n),
+            for (final turn in _turns) ...[
+              _buildAnswerSection(l10n, theme, turn),
+              const SizedBox(height: 16),
+            ],
+            if (_pendingQuestion != null) ...[
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  _pendingQuestion!,
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+              if (_partialAnswer.isNotEmpty)
+                MarkdownBody(data: _partialAnswer, selectable: true),
+            ],
             if (_isProcessing) ...[
               const SizedBox(height: 24),
               const Center(child: CircularProgressIndicator()),
+              Center(
+                child: Text(
+                  _retrievalRound > 0
+                      ? l10n.ragSearchingBooks(_retrievalRound)
+                      : l10n.ragPreparingSearch,
+                ),
+              ),
             ],
             if (_error != null) ...[
               const SizedBox(height: 16),
-              _buildErrorCard(theme),
-            ],
-            if (_answer != null) ...[
-              const SizedBox(height: 16),
-              _buildAnswerSection(l10n, theme),
+              _buildErrorCard(theme, l10n),
             ],
             const SizedBox(height: 32),
           ],
@@ -408,7 +510,10 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
       value: _onlyReadSoFar,
       onChanged: _isProcessing
           ? null
-          : (val) => setState(() => _onlyReadSoFar = val),
+          : (val) => setState(() {
+              _onlyReadSoFar = val;
+              _turns.clear();
+            }),
       contentPadding: EdgeInsets.zero,
     );
   }
@@ -425,8 +530,8 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
         hintText: l10n.ragQuestionField,
         border: const OutlineInputBorder(),
       ),
-      maxLines: 4,
-      minLines: 2,
+      maxLines: 3,
+      minLines: 1,
       enabled: !_isProcessing,
       textInputAction: TextInputAction.newline,
     );
@@ -441,9 +546,9 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
-        onPressed: canAsk ? _submitQuestion : null,
-        icon: const Icon(Icons.send),
-        label: Text(l10n.ragSubmitQuestion),
+        onPressed: _isProcessing ? _stop : (canAsk ? _submitQuestion : null),
+        icon: Icon(_isProcessing ? Icons.stop : Icons.send),
+        label: Text(_isProcessing ? l10n.ragStop : l10n.ragSubmitQuestion),
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 14),
         ),
@@ -455,7 +560,7 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
   // Error
   // ---------------------------------------------------------------------------
 
-  Widget _buildErrorCard(ThemeData theme) {
+  Widget _buildErrorCard(ThemeData theme, AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -473,6 +578,8 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
               style: TextStyle(color: theme.colorScheme.onErrorContainer),
             ),
           ),
+          if (_canSubmit && _selectedBookIds.isNotEmpty)
+            TextButton(onPressed: _submitQuestion, child: Text(l10n.retry)),
         ],
       ),
     );
@@ -482,26 +589,36 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
   // Answer + sources
   // ---------------------------------------------------------------------------
 
-  Widget _buildAnswerSection(AppLocalizations l10n, ThemeData theme) {
-    // Collect unique book IDs from source chunks
-    final sourceBookIds = _sourceChunks.map((c) => c.bookId).toSet();
-    final sourceTitles =
-        widget.books
-            .where((b) => sourceBookIds.contains(b.id))
-            .map((b) => b.title)
-            .toList()
-          ..sort();
+  Widget _buildAnswerSection(
+    AppLocalizations l10n,
+    ThemeData theme,
+    RagChatTurn turn,
+  ) {
     final titleByBookId = {
       for (final book in widget.books) book.id: book.title,
     };
-
+    final cited = RegExp(r'\[S(\d+)\]')
+        .allMatches(turn.answer)
+        .map((match) => int.tryParse(match.group(1)!))
+        .whereType<int>()
+        .toSet();
+    final linkedAnswer = turn.answer.replaceAllMapped(
+      RegExp(r'\[S(\d+)\]'),
+      (match) => '[S${match.group(1)}](source:${match.group(1)})',
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          l10n.ragAnswerLabel,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
+        Align(
+          alignment: Alignment.centerRight,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 520),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(turn.question),
           ),
         ),
         const SizedBox(height: 8),
@@ -510,59 +627,90 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: theme.colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: SelectableText(_answer!, style: theme.textTheme.bodyMedium),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              MarkdownBody(
+                data: linkedAnswer,
+                selectable: true,
+                onTapLink: (text, href, title) {
+                  final index = int.tryParse(
+                    href?.replaceFirst('source:', '') ?? '',
+                  );
+                  if (index != null &&
+                      index > 0 &&
+                      index <= turn.sources.length) {
+                    _showPassage(turn.sources[index - 1], titleByBookId);
+                  }
+                },
+              ),
+              if (turn.usedCompatibilityFallback)
+                Text(
+                  l10n.ragCompatibilityFallback,
+                  style: theme.textTheme.bodySmall,
+                ),
+              if (turn.sources.isNotEmpty)
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: Text(l10n.ragLocalSearch),
+                  children: [
+                    for (final entry in turn.sources.asMap().entries)
+                      ListTile(
+                        dense: true,
+                        title: Text(
+                          '[S${entry.key + 1}] '
+                          '${titleByBookId[entry.value.bookId] ?? entry.value.bookId} — '
+                          '${entry.value.chapterTitle ?? ''}',
+                        ),
+                        subtitle: Text(
+                          entry.value.text,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: cited.contains(entry.key + 1)
+                            ? const Icon(Icons.format_quote, size: 18)
+                            : null,
+                        onTap: () => _showPassage(entry.value, titleByBookId),
+                      ),
+                  ],
+                ),
+            ],
+          ),
         ),
-        if (sourceTitles.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Text(
-            l10n.ragSourcesLabel,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          ...sourceTitles.map(
-            (title) => Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.book_outlined,
-                    size: 14,
-                    color: theme.colorScheme.primary,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(title, style: theme.textTheme.bodySmall),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          ..._sourceChunks.asMap().entries.map((entry) {
-            final chunk = entry.value;
-            final title = titleByBookId[chunk.bookId] ?? chunk.bookId;
-            final location = chunk.chapterTitle?.trim().isNotEmpty == true
-                ? chunk.chapterTitle!.trim()
-                : '${chunk.charStart}-${chunk.charEnd}';
-            return ExpansionTile(
-              dense: true,
-              tilePadding: EdgeInsets.zero,
-              childrenPadding: const EdgeInsets.only(left: 20, bottom: 8),
-              title: Text(
-                '[S${entry.key + 1}] $title — $location',
-                style: theme.textTheme.bodySmall,
-              ),
-              children: [
-                SelectableText(chunk.text, style: theme.textTheme.bodySmall),
-              ],
-            );
-          }),
-        ],
       ],
+    );
+  }
+
+  void _showPassage(RagChunk chunk, Map<String, String> titles) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: FractionallySizedBox(
+            heightFactor: 0.65,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${titles[chunk.bookId] ?? chunk.bookId} — '
+                  '${chunk.chapterTitle ?? ''}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: SelectableText(chunk.text),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

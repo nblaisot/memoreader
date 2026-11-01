@@ -554,6 +554,13 @@
     "description": "Info-bulle pour le bouton Interroger la bibliothèque"
   },
   "ragQuestionScreenTitle": "Poser une question",
+  "ragNewChat": "Nouvelle discussion",
+  "ragStop": "Arrêter",
+  "ragLocalSearch": "Recherche locale…",
+  "ragSearchingBooks": "Recherche dans les livres · {round}/5",
+  "@ragSearchingBooks": {"placeholders": {"round": {"type": "int"}}},
+  "ragPreparingSearch": "Préparation de la recherche…",
+  "ragCompatibilityFallback": "L’ancien modèle ChatGPT/Codex a été utilisé car ce compte ne prend pas en charge le nouveau modèle.",
   "@ragQuestionScreenTitle": {
     "description": "Titre de l'AppBar de l'écran de question RAG"
   },

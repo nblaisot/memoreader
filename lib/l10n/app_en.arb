@@ -981,6 +981,13 @@
     "description": "Tooltip for the Ask library FAB on the library screen"
   },
   "ragQuestionScreenTitle": "Ask a question",
+  "ragNewChat": "New chat",
+  "ragStop": "Stop",
+  "ragLocalSearch": "Local search…",
+  "ragSearchingBooks": "Searching books · {round}/5",
+  "@ragSearchingBooks": {"placeholders": {"round": {"type": "int"}}},
+  "ragPreparingSearch": "Preparing search…",
+  "ragCompatibilityFallback": "Used the previous ChatGPT/Codex model because this account does not support the new model.",
   "@ragQuestionScreenTitle": {
     "description": "AppBar title for the full-screen RAG question screen"
   },

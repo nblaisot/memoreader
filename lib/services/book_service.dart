@@ -668,6 +668,10 @@ class BookService {
   /// startIndexing is now idempotent, so this can safely call it
   Future<void> _triggerRagIndexing(String bookId) async {
     try {
+      final book = await getBookById(bookId);
+      if (book == null || !await RagIndexingService.hasLocalBookFile(book)) {
+        return;
+      }
       final ragDbService = RagDatabaseService();
       final status = await ragDbService.getIndexStatus(bookId);
 
