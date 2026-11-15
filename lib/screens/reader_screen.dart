@@ -4049,7 +4049,7 @@ body {
   line-height: var(--reader-line-height);
 }
 #reader {
-  width: 100%;
+  width: var(--page-width);
   height: var(--page-height);
   column-width: var(--page-width);
   column-gap: 0;
@@ -4139,7 +4139,7 @@ body {
   font-size: var(--reader-font-size) !important;
   line-height: var(--reader-line-height) !important;
   color: var(--reader-text-color) !important;
-  width: 100% !important;
+  width: var(--page-width) !important;
   height: var(--page-height) !important;
   box-sizing: border-box !important;
   column-width: var(--page-width) !important;
@@ -4324,18 +4324,17 @@ body {
   }
 
   function getPageStride() {
-    if (reader && window.getComputedStyle) {
-      const style = window.getComputedStyle(reader);
-      const columnWidth = parseFloat(style.columnWidth);
-      const columnGap = parseFloat(style.columnGap);
-      const width = Number.isFinite(columnWidth) ? columnWidth : pageWidth;
-      const gap = Number.isFinite(columnGap) ? columnGap : 0;
-      const stride = width + gap;
-      if (stride > 0) {
-        return stride;
-      }
-    }
+    // Columns have zero gap and share this exact width with the scrollport.
+    // Computed CSS serializes fractional widths with reduced precision; using
+    // that rounded value accumulates visible drift thousands of pages later.
     return pageWidth;
+  }
+
+  function snapPageWidth(availableWidth) {
+    // Use whole CSS pixels so layout, scroll offsets and clipping boundaries
+    // agree even at fractional device scales. Leave less than one pixel unused
+    // rather than rounding beyond the available width.
+    return Math.max(1, Math.floor(availableWidth));
   }
 
   function postMessage(payload) {
@@ -4403,7 +4402,7 @@ body {
     viewportHeight = window.innerHeight || document.documentElement.clientHeight;
     const stage = document.getElementById('stage');
     if (!stage || !reader) {
-      pageWidth = Math.max(0, viewportWidth);
+      pageWidth = snapPageWidth(viewportWidth);
       pageHeight = Math.max(0, viewportHeight);
       contentLeft = 0;
       contentTop = 0;
@@ -4426,7 +4425,7 @@ body {
       lineHeightPx,
       Math.floor(innerHeight / lineHeightPx) * lineHeightPx
     );
-    pageWidth = innerWidth;
+    pageWidth = snapPageWidth(innerWidth);
     pageHeight = snappedHeight;
     contentLeft = stageRect.left;
     contentTop = stageRect.top;
