@@ -6,7 +6,7 @@
 class AiModelRegistry {
   AiModelRegistry._();
 
-  static const int registryVersion = 2;
+  static const int registryVersion = 4;
   static const String lastVerified = '2026-11-01';
 
   static const openAiEmbedding = EmbeddingModelSpec(
@@ -31,13 +31,8 @@ class AiModelRegistry {
     reasoningEffort: 'low',
   );
 
-  static const openAiPlanner = GenerationModelSpec(
-    providerId: 'openai',
-    modelId: 'gpt-6-luna',
-    endpoint: 'https://api.openai.com/v1/responses',
-    maxOutputTokens: 800,
-    reasoningEffort: 'low',
-  );
+  // Use the answer model for research on both OpenAI API and Codex paths.
+  static const openAiPlanner = openAiAnswer;
 
   static const mistralAnswer = GenerationModelSpec(
     providerId: 'mistral',
@@ -46,13 +41,9 @@ class AiModelRegistry {
     maxOutputTokens: 4000,
   );
 
-  static const mistralPlanner = GenerationModelSpec(
-    providerId: 'mistral',
-    modelId: 'mistral-small-2603',
-    endpoint: 'https://api.mistral.ai/v1/chat/completions',
-    maxOutputTokens: 800,
-    reasoningEffort: 'none',
-  );
+  // Evidence interpretation and sufficiency decisions need the same model
+  // capability as final generation.
+  static const mistralPlanner = mistralAnswer;
 }
 
 class EmbeddingModelSpec {

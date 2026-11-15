@@ -102,4 +102,47 @@ void main() {
       isTrue,
     );
   });
+  test(
+    'long unbroken Unicode and special tokens remain bounded and canonical',
+    () {
+      final text = '${'🧭é' * 250} <|endoftext|>.';
+      final projection = CanonicalBookText(
+        text: text,
+        sections: [
+          CanonicalBookSection(
+            sectionIndex: 0,
+            chapterIndex: 0,
+            contentFileKey: 'x',
+            chapterTitle: 'X',
+            charStart: 0,
+            charEnd: text.length,
+            text: text,
+          ),
+        ],
+        contentHash: 'special',
+        extractionVersion: 1,
+      );
+      final service = RagChunkingService(
+        minTokens: 40,
+        maxTokens: 60,
+        overlapTokens: 10,
+      );
+      final chunks = service.chunkCanonicalBook(
+        projection: projection,
+        bookId: 'special',
+      );
+      expect(chunks.length, greaterThan(1));
+      for (final chunk in chunks) {
+        expect(chunk.text, text.substring(chunk.charStart, chunk.charEnd));
+        expect(chunk.tokenCount, lessThanOrEqualTo(60));
+      }
+      expect(chunks.first.charStart, 0);
+      expect(chunks.last.charEnd, text.length);
+      final rebuilt = service.chunkCanonicalBook(
+        projection: projection,
+        bookId: 'special',
+      );
+      expect(rebuilt.map((c) => c.chunkId), chunks.map((c) => c.chunkId));
+    },
+  );
 }

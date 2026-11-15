@@ -1,3 +1,5 @@
+import 'rag_generation.dart';
+import 'rag_request_scope.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -9,17 +11,33 @@ import 'rag_streaming.dart';
 /// Service for generating summaries using OpenAI API
 ///
 /// This service requires an API key to be configured by the user.
-class OpenAISummaryService implements SummaryService, RagStreamingService {
+class OpenAISummaryService
+    implements SummaryService, RagStreamingService, RagGenerationService {
   final String apiKey;
   final ApiCacheService _cacheService = ApiCacheService();
   final http.Client _httpClient;
+  final http.Client _ragClient;
   final String model;
 
   static const String _provider = 'openai';
 
-  OpenAISummaryService(this.apiKey, {http.Client? httpClient, String? model})
-    : _httpClient = httpClient ?? http.Client(),
-      model = model ?? AiModelRegistry.openAiAnswer.modelId;
+  OpenAISummaryService(
+    this.apiKey, {
+    http.Client? httpClient,
+    http.Client? ragClient,
+    String? model,
+  }) : _httpClient = RagHttpClient(httpClient ?? http.Client()),
+       _ragClient = RagHttpClient(
+         ragClient ?? httpClient ?? createRagHttpClient(),
+       ),
+       model = model ?? AiModelRegistry.openAiAnswer.modelId;
+
+  OpenAISummaryService forModel(String modelId) => OpenAISummaryService(
+    apiKey,
+    httpClient: _httpClient,
+    ragClient: _ragClient,
+    model: modelId,
+  );
 
   @override
   String get serviceName => 'OpenAI (GPT)';
@@ -58,9 +76,7 @@ class OpenAISummaryService implements SummaryService, RagStreamingService {
         'instructions':
             'Follow the user instructions precisely. Do not repeat the instructions.',
         'input': safePrompt,
-        'max_output_tokens': model == AiModelRegistry.openAiPlanner.modelId
-            ? AiModelRegistry.openAiPlanner.maxOutputTokens
-            : AiModelRegistry.openAiAnswer.maxOutputTokens,
+        'max_output_tokens': AiModelRegistry.openAiAnswer.maxOutputTokens,
         'reasoning': {'effort': 'low'},
         'store': false,
       };
@@ -77,7 +93,7 @@ class OpenAISummaryService implements SummaryService, RagStreamingService {
           requestHash,
         );
         if (cachedResponse != null) {
-          if (kDebugMode) {
+          if (kDebugMode && !RagRequestScope.active) {
             debugPrint('[LLM] OpenAI cache hit: requestHash=$requestHash');
           }
           // Notify that cache was hit
@@ -86,7 +102,7 @@ class OpenAISummaryService implements SummaryService, RagStreamingService {
         }
       }
 
-      if (kDebugMode) {
+      if (kDebugMode && !RagRequestScope.active) {
         debugPrint(
           '[LLM] OpenAI request: model=$model, promptLength=${safePrompt.length}',
         );
@@ -109,7 +125,7 @@ class OpenAISummaryService implements SummaryService, RagStreamingService {
         final summary = _extractOutputText(data);
         final trimmedSummary = summary.trim();
 
-        if (kDebugMode) {
+        if (kDebugMode && !RagRequestScope.active) {
           debugPrint(
             '[LLM] OpenAI response ok: summaryLength=${trimmedSummary.length}',
           );
@@ -123,7 +139,7 @@ class OpenAISummaryService implements SummaryService, RagStreamingService {
             trimmedSummary,
             _provider,
           );
-          if (kDebugMode) {
+          if (kDebugMode && !RagRequestScope.active) {
             debugPrint(
               '[LLM] OpenAI response cached: requestHash=$requestHash',
             );
@@ -176,7 +192,8 @@ class OpenAISummaryService implements SummaryService, RagStreamingService {
         payload: {
           'model': model,
           'input': prompt,
-          'instructions': 'Answer only from supplied excerpts and cite sources.',
+          'instructions':
+              'Answer only from supplied excerpts and cite sources.',
           'reasoning': {'effort': 'low'},
           'max_output_tokens': AiModelRegistry.openAiAnswer.maxOutputTokens,
           'store': false,
@@ -184,4 +201,29 @@ class OpenAISummaryService implements SummaryService, RagStreamingService {
         },
         mistral: false,
       );
+  @override
+  Stream<RagGenerationEvent> generateRag(RagGenerationRequest request) async* {
+    yield* streamRagHttp(
+      client: _ragClient,
+      endpoint: Uri.parse(AiModelRegistry.openAiAnswer.endpoint),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $apiKey',
+      },
+      payload: {
+        'model': request.model ?? model,
+        'input': request.prompt,
+        'reasoning': {'effort': request.effort},
+        'max_output_tokens': request.maxOutputTokens,
+        if (request.schema != null)
+          'text': {
+            'format': {'type': 'json_object'},
+          },
+        'store': false,
+        'stream': true,
+      },
+      mistral: false,
+      generation: request,
+    );
+  }
 }

@@ -1,3 +1,5 @@
+import 'rag_generation.dart';
+import 'rag_request_scope.dart';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -10,17 +12,33 @@ import 'rag_streaming.dart';
 ///
 /// This service requires an API key to be configured by the user.
 /// Mistral AI provides high-quality models with competitive pricing.
-class MistralSummaryService implements SummaryService, RagStreamingService {
+class MistralSummaryService
+    implements SummaryService, RagStreamingService, RagGenerationService {
   final String apiKey;
   final ApiCacheService _cacheService = ApiCacheService();
   final http.Client _httpClient;
+  final http.Client _ragClient;
   final String model;
 
   static const String _provider = 'mistral';
 
-  MistralSummaryService(this.apiKey, {http.Client? httpClient, String? model})
-    : _httpClient = httpClient ?? http.Client(),
-      model = model ?? AiModelRegistry.mistralAnswer.modelId;
+  MistralSummaryService(
+    this.apiKey, {
+    http.Client? httpClient,
+    http.Client? ragClient,
+    String? model,
+  }) : _httpClient = RagHttpClient(httpClient ?? http.Client()),
+       _ragClient = RagHttpClient(
+         ragClient ?? httpClient ?? createRagHttpClient(),
+       ),
+       model = model ?? AiModelRegistry.mistralAnswer.modelId;
+
+  MistralSummaryService forModel(String modelId) => MistralSummaryService(
+    apiKey,
+    httpClient: _httpClient,
+    ragClient: _ragClient,
+    model: modelId,
+  );
 
   @override
   String get serviceName => 'Mistral AI';
@@ -64,11 +82,7 @@ class MistralSummaryService implements SummaryService, RagStreamingService {
           },
           {'role': 'user', 'content': safePrompt},
         ],
-        'max_tokens': model == AiModelRegistry.mistralPlanner.modelId
-            ? AiModelRegistry.mistralPlanner.maxOutputTokens
-            : AiModelRegistry.mistralAnswer.maxOutputTokens,
-        if (model == AiModelRegistry.mistralPlanner.modelId)
-          'reasoning_effort': 'none',
+        'max_tokens': AiModelRegistry.mistralAnswer.maxOutputTokens,
       };
 
       // Compute hash of the full request payload for caching (includes provider name)
@@ -83,7 +97,7 @@ class MistralSummaryService implements SummaryService, RagStreamingService {
           requestHash,
         );
         if (cachedResponse != null) {
-          if (kDebugMode) {
+          if (kDebugMode && !RagRequestScope.active) {
             debugPrint('[LLM] Mistral cache hit: requestHash=$requestHash');
           }
           // Notify that cache was hit
@@ -92,7 +106,7 @@ class MistralSummaryService implements SummaryService, RagStreamingService {
         }
       }
 
-      if (kDebugMode) {
+      if (kDebugMode && !RagRequestScope.active) {
         debugPrint(
           '[LLM] Mistral request: model=$model, promptLength=${safePrompt.length}',
         );
@@ -122,7 +136,7 @@ class MistralSummaryService implements SummaryService, RagStreamingService {
                   .join();
         final trimmedSummary = summary.trim();
 
-        if (kDebugMode) {
+        if (kDebugMode && !RagRequestScope.active) {
           debugPrint(
             '[LLM] Mistral response ok: summaryLength=${trimmedSummary.length}',
           );
@@ -136,7 +150,7 @@ class MistralSummaryService implements SummaryService, RagStreamingService {
             trimmedSummary,
             _provider,
           );
-          if (kDebugMode) {
+          if (kDebugMode && !RagRequestScope.active) {
             debugPrint(
               '[LLM] Mistral response cached: requestHash=$requestHash',
             );
@@ -168,7 +182,10 @@ class MistralSummaryService implements SummaryService, RagStreamingService {
         payload: {
           'model': model,
           'messages': [
-            {'role': 'system', 'content': 'Answer only from supplied excerpts and cite sources.'},
+            {
+              'role': 'system',
+              'content': 'Answer only from supplied excerpts and cite sources.',
+            },
             {'role': 'user', 'content': prompt},
           ],
           'max_tokens': AiModelRegistry.mistralAnswer.maxOutputTokens,
@@ -176,4 +193,32 @@ class MistralSummaryService implements SummaryService, RagStreamingService {
         },
         mistral: true,
       );
+  @override
+  Stream<RagGenerationEvent> generateRag(RagGenerationRequest request) async* {
+    yield* streamRagHttp(
+      client: _ragClient,
+      endpoint: Uri.parse(AiModelRegistry.mistralAnswer.endpoint),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $apiKey',
+      },
+      payload: {
+        'model': request.model ?? model,
+        'messages': [
+          {
+            'role': 'system',
+            'content':
+                'Use only supplied evidence. Return compact JSON when requested; otherwise answer in cohesive prose without inline citations; sources are displayed separately.',
+          },
+          {'role': 'user', 'content': request.prompt},
+        ],
+        'reasoning_effort': request.effort,
+        'max_tokens': request.maxOutputTokens,
+        if (request.schema != null) 'response_format': {'type': 'json_object'},
+        'stream': true,
+      },
+      mistral: true,
+      generation: request,
+    );
+  }
 }

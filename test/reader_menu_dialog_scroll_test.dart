@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:memoreader/services/rag_native_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:memoreader/screens/reader/reader_menu.dart';
@@ -6,9 +8,12 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(() {
+  setUpAll(() async {
     sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
+    databaseFactory = ragDatabaseFactory;
+    await databaseFactory.setDatabasesPath(
+      (await Directory.systemTemp.createTemp('rag-widget-')).path,
+    );
   });
 
   testWidgets(

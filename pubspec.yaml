@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 6.0.0+21
+version: 6.0.0+22
 
 environment:
   sdk: ^3.9.2
@@ -51,8 +51,8 @@ dependencies:
   image: ^3.3.0
   csslib: ^1.0.0
   
-  # File picker for importing EPUB files
-  file_picker: ^8.1.2
+  # Native document picker for importing existing book files
+  file_selector: ^1.1.0
 
   # PDF text extraction for PDF import (pure Dart — avoids native libs / Play 16 KB checks)
   syncfusion_flutter_pdf: ^30.1.40
@@ -79,6 +79,13 @@ dependencies:
   
   # SQLite database for summary caching
   sqflite: ^2.3.3+1
+  sqflite_common_ffi: 2.3.6
+  sqlite3: 2.9.4
+  sqlite3_flutter_libs: 0.5.42
+  langchain_tiktoken: 1.0.1
+  workmanager: 0.10.10
+  memoreader_sqlite_vec:
+    path: packages/memoreader_sqlite_vec
   
   flutter_markdown_plus: ^1.0.5
   
@@ -105,7 +112,6 @@ dev_dependencies:
   path_provider_platform_interface: ^2.1.2
   plugin_platform_interface: ^2.1.8
   sqflite_common: ^2.5.4
-  sqflite_common_ffi: ^2.3.3
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

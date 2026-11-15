@@ -14,7 +14,8 @@ void main() {
         'data: {"type":"response.created"}\n\n'
         'data: {"type":"response.output_text.delta","delta":"Hello "}\n\n'
         'data: {"type":"response.output_text.delta","delta":"world"}\n\n'
-        'data: [DONE]\n\n', 200,
+        'data: [DONE]\n\n',
+        200,
         headers: {'Content-Type': 'text/event-stream'},
       );
     });
@@ -29,10 +30,14 @@ void main() {
   });
 
   test('Mistral stream exposes text and hides thinking chunks', () async {
-    final client = MockClient((_) async => http.Response(
-      'data: {"choices":[{"delta":{"content":['
-      '{"type":"thinking","thinking":"private"},'
-      '{"type":"text","text":"Answer"}]}}]}\n\n', 200));
+    final client = MockClient(
+      (_) async => http.Response(
+        'data: {"choices":[{"delta":{"content":['
+        '{"type":"thinking","thinking":"private"},'
+        '{"type":"text","text":"Answer"}]}}]}\n\n',
+        200,
+      ),
+    );
     final output = await streamResponseText(
       client: client,
       endpoint: Uri.parse('https://example.test/stream'),

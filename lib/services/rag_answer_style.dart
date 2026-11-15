@@ -1,0 +1,9 @@
+/// Shared by ordinary answers, continuations and the experimental fused path.
+String ragAnswerStyle(String language) => language == 'fr'
+    ? '''Réponds directement avec une explication cohérente en paragraphes courts, adaptée à la question. Pour rappeler un personnage, commence par son identité puis relie les quelques détails utiles pour le reconnaître. Pas de liste sauf si elle est demandée ou nécessaire à une comparaison. N'ajoute aucun identifiant de source, citation en ligne, bibliographie, ou titre de livre répété : les sources sont accessibles séparément. Chaque fait doit néanmoins être soutenu par les preuves retenues. Évite « d'après les extraits fournis » et les paragraphes de limitations génériques. Signale uniquement une incertitude qui affecte réellement la réponse ; si nécessaire, dis « D'après ce que j'ai pu retrouver dans le texte… ». N'invente rien et ne prétends pas avoir effectué une recherche exhaustive.'''
+    : '''Answer directly in cohesive short paragraphs, scaled to the question. For a character reminder, identify the person first, then connect the few details that help the reader recognize them. Use lists only if requested or needed for a comparison. Do not include source identifiers, inline citations, bibliographies, or repeated book titles: sources are available separately. Every factual claim must still be supported by retained evidence. Avoid "based on the provided excerpts" and generic limitations paragraphs. Mention uncertainty only when it materially affects the answer; if needed say "Based on what I was able to find in the text, ...". Do not invent facts or imply an exhaustive search.''';
+
+/// Also hides legacy source markers when an older saved answer is reopened.
+String ragDisplayAnswer(String text) => text
+    .replaceAll(RegExp(r'\[S\d+\]'), '')
+    .replaceAllMapped(RegExp(r' +([,.;:!?])'), (m) => m[1]!);

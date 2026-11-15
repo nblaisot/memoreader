@@ -12,7 +12,6 @@ import '../services/settings_service.dart';
 import '../services/prompt_config_service.dart';
 import '../services/rag_database_service.dart';
 import '../services/rag_indexing_service.dart';
-import '../services/book_service.dart';
 import '../services/google_drive_sync_service.dart';
 import '../services/drive_sync_secrets_service.dart';
 import '../widgets/compact_error_snack_bar.dart';
@@ -75,7 +74,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _showMistralApiKey = false;
   double _horizontalPadding = 30.0;
   double _verticalPadding = 50.0;
-  int _ragTopK = 10;
   final Map<String, bool> _expansionState = {
     'chunkSummary': false,
     'characterExtraction': false,
@@ -210,7 +208,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _verticalPadding = await _settingsService.getVerticalPadding();
 
       // Load RAG settings
-      _ragTopK = await _settingsService.getRagTopK();
 
       // Load Google Drive sync settings
       _syncEnabled = await _driveSyncService.isSyncEnabled();
@@ -492,22 +489,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _restartIncompleteRagIndexes() async {
-    final books = await BookService().getAllBooks();
-    final database = RagDatabaseService();
-    final indexer = RagIndexingService();
-    for (final book in books) {
-      if (!await RagIndexingService.hasLocalBookFile(book)) continue;
-      final status = await database.getIndexStatus(book.id);
-      if (status?.isComplete == true || indexer.isIndexing(book.id)) continue;
-      indexer
-          .startIndexing(book.id)
-          .listen(
-            (_) {},
-            onError: (Object error) {
-              debugPrint('[RAG] Failed to restart ${book.id}: $error');
-            },
-          );
-    }
+    await RagIndexingService().recover(configurationChanged: true);
   }
 
   Future<void> _saveOpenAIApiKey() async {
@@ -1991,8 +1973,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _buildRagDatabaseSection(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final minTopK = _settingsService.minRagTopK.toDouble();
-    final maxTopK = _settingsService.maxRagTopK.toDouble();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2010,47 +1990,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 16),
         Text(
-          l10n?.ragTopKLabel ?? 'RAG context chunks',
-          style: theme.textTheme.titleMedium,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          l10n?.ragTopKDescription ??
-              'Number of relevant chunks attached to each question.',
-          style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
-        ),
-        Row(
-          children: [
-            Expanded(
-              child: Slider(
-                min: minTopK,
-                max: maxTopK,
-                divisions: maxTopK.toInt() - minTopK.toInt(),
-                value: _ragTopK.toDouble().clamp(minTopK, maxTopK),
-                label: _ragTopK.toString(),
-                onChanged: (value) {
-                  final rounded = value.round();
-                  if (rounded != _ragTopK) {
-                    setState(() {
-                      _ragTopK = rounded;
-                    });
-                  }
-                },
-                onChangeEnd: (value) async {
-                  final rounded = value.round();
-                  await _settingsService.saveRagTopK(rounded);
-                },
-              ),
-            ),
-            SizedBox(
-              width: 40,
-              child: Text(
-                _ragTopK.toString(),
-                textAlign: TextAlign.end,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ),
-          ],
+          Localizations.localeOf(context).languageCode == 'fr'
+              ? 'Le contexte s’adapte automatiquement à chaque question.'
+              : 'Context adapts automatically to each question.',
+          style: theme.textTheme.bodyMedium,
         ),
         const SizedBox(height: 16),
         ElevatedButton.icon(

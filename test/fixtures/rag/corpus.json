@@ -1,0 +1,1090 @@
+{
+  "version": 1,
+  "kind": "original synthetic EN/FR regression corpus; live quality evaluation required",
+  "passages": [
+    {
+      "id": "en-p0",
+      "bookId": "en-coast",
+      "section": 0,
+      "start": 0,
+      "end": 183,
+      "text": "At six in the morning, Ada arrived at Port Lumen. Jules handed her a sealed brass cylinder containing the lighthouse maintenance log. He asked her to keep it dry until the inspection."
+    },
+    {
+      "id": "en-p1",
+      "bookId": "en-coast",
+      "section": 1,
+      "start": 185,
+      "end": 380,
+      "text": "The quasar valve beneath the turbine had a violet spring. Its brass handle was stuck because salt crystals had formed around the spindle. Mira loosened the crystals with warm water and opened it."
+    },
+    {
+      "id": "en-p2",
+      "bookId": "en-coast",
+      "section": 2,
+      "start": 382,
+      "end": 551,
+      "text": "The northern ferry was cancelled at noon because of the storm. Ada took the southern road on foot to deliver the log. The southern road was longer but remained passable."
+    },
+    {
+      "id": "en-p3",
+      "bookId": "en-coast",
+      "section": 3,
+      "start": 553,
+      "end": 751,
+      "text": "Cyril signed an order to replace the lighthouse pressure gauge. He copied the wrong serial number from an old invoice. The crew initially suspected sabotage; the invoice later explained the mistake."
+    },
+    {
+      "id": "en-p4",
+      "bookId": "en-coast",
+      "section": 4,
+      "start": 753,
+      "end": 940,
+      "text": "Before the rescue, Mira noticed the gauge oscillating. After the rescue, Ada compared the log with the invoice and found the serial-number error. She cleared Cyril of deliberate sabotage."
+    },
+    {
+      "id": "en-p5",
+      "bookId": "en-coast",
+      "section": 5,
+      "start": 942,
+      "end": 1100,
+      "text": "The cylinder was recovered from the inlet by Jules during the rescue. Its seal had held. The log inside was dry and showed pressure readings taken every hour."
+    },
+    {
+      "id": "en-p6",
+      "bookId": "en-coast",
+      "section": 6,
+      "start": 1102,
+      "end": 1281,
+      "text": "Ada told Mira, \"A steady light needs patient hands.\" She spoke on the lighthouse steps after they had restored the turbine. Mira replied that patience had saved the violet spring."
+    },
+    {
+      "id": "en-p7",
+      "bookId": "en-coast",
+      "section": 7,
+      "start": 1283,
+      "end": 1443,
+      "text": "The restored turbine powered the lighthouse again at eight that evening. Ada and Mira stayed for the final test. Jules returned to the harbour with the dry log."
+    },
+    {
+      "id": "en-p8",
+      "bookId": "en-observatory",
+      "section": 8,
+      "start": 0,
+      "end": 208,
+      "text": "In the inland observatory, Neri used a copper lever to open a ventilation hatch. Dust had jammed the latch. Unlike Mira, Neri cleaned the mechanism with a dry brush because water could damage the instruments."
+    },
+    {
+      "id": "en-p9",
+      "bookId": "en-observatory",
+      "section": 9,
+      "start": 210,
+      "end": 411,
+      "text": "Neri delayed the observatory inspection until morning because the lens mount was still cooling. The delay was unrelated to the coastal storm. The observatory continued recording temperatures overnight."
+    },
+    {
+      "id": "fr-p0",
+      "bookId": "fr-coast",
+      "section": 0,
+      "start": 0,
+      "end": 196,
+      "text": "À six heures du matin, Ada arriva au port Lumen. Jules lui remit un cylindre de laiton scellé contenant le journal de maintenance du phare. Il lui demanda de le garder au sec jusqu’à l’inspection."
+    },
+    {
+      "id": "fr-p1",
+      "bookId": "fr-coast",
+      "section": 1,
+      "start": 198,
+      "end": 404,
+      "text": "La vanne quasar située sous la turbine avait un ressort violet. Sa poignée de laiton était bloquée par des cristaux de sel autour de l’axe. Mira détacha les cristaux avec de l’eau chaude et ouvrit la vanne."
+    },
+    {
+      "id": "fr-p2",
+      "bookId": "fr-coast",
+      "section": 2,
+      "start": 406,
+      "end": 574,
+      "text": "Le ferry du nord fut annulé à midi à cause de la tempête. Ada prit à pied la route du sud pour livrer le journal. Cette route était plus longue mais restait praticable."
+    },
+    {
+      "id": "fr-p3",
+      "bookId": "fr-coast",
+      "section": 3,
+      "start": 576,
+      "end": 766,
+      "text": "Cyril signa un ordre de remplacement du manomètre du phare. Il copia un mauvais numéro de série sur une ancienne facture. L’équipage soupçonna un sabotage, puis la facture expliqua l’erreur."
+    },
+    {
+      "id": "fr-p4",
+      "bookId": "fr-coast",
+      "section": 4,
+      "start": 768,
+      "end": 980,
+      "text": "Avant le sauvetage, Mira remarqua les oscillations du manomètre. Après le sauvetage, Ada compara le journal à la facture et découvrit l’erreur de numéro de série. Elle innocenta Cyril de tout sabotage volontaire."
+    },
+    {
+      "id": "fr-p5",
+      "bookId": "fr-coast",
+      "section": 5,
+      "start": 982,
+      "end": 1145,
+      "text": "Jules récupéra le cylindre dans la crique pendant le sauvetage. Le sceau avait tenu. Le journal était sec et indiquait des mesures de pression prises chaque heure."
+    },
+    {
+      "id": "fr-p6",
+      "bookId": "fr-coast",
+      "section": 6,
+      "start": 1147,
+      "end": 1349,
+      "text": "Ada dit à Mira : « Une lumière stable exige des mains patientes. » Elle parla sur les marches du phare après le rétablissement de la turbine. Mira répondit que la patience avait sauvé le ressort violet."
+    },
+    {
+      "id": "fr-p7",
+      "bookId": "fr-coast",
+      "section": 7,
+      "start": 1351,
+      "end": 1503,
+      "text": "La turbine réparée alimenta de nouveau le phare à vingt heures. Ada et Mira restèrent pour le dernier essai. Jules retourna au port avec le journal sec."
+    },
+    {
+      "id": "fr-p8",
+      "bookId": "fr-observatory",
+      "section": 8,
+      "start": 0,
+      "end": 235,
+      "text": "À l’observatoire de l’intérieur des terres, Neri ouvrit une trappe de ventilation avec un levier de cuivre. La poussière bloquait le loquet. Contrairement à Mira, Neri utilisa une brosse sèche, car l’eau pouvait abîmer les instruments."
+    },
+    {
+      "id": "fr-p9",
+      "bookId": "fr-observatory",
+      "section": 9,
+      "start": 237,
+      "end": 470,
+      "text": "Neri reporta l’inspection de l’observatoire au matin parce que le support de lentille refroidissait encore. Ce retard n’avait aucun lien avec la tempête côtière. L’observatoire continua d’enregistrer les températures pendant la nuit."
+    }
+  ],
+  "questions": [
+    {
+      "id": "en-q01",
+      "language": "en",
+      "question": "Who gives Ada the cylinder?",
+      "goldIds": [
+        "en-p0"
+      ],
+      "lexicalProbe": "Jules",
+      "requiredFactsEnglish": [
+        "Jules"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q02",
+      "language": "en",
+      "question": "What is inside the sealed cylinder?",
+      "goldIds": [
+        "en-p0"
+      ],
+      "lexicalProbe": "cylinder",
+      "requiredFactsEnglish": [
+        "maintenance log"
+      ],
+      "history": [],
+      "answerable": true,
+      "boundaries": {
+        "en-coast": 183,
+        "en-observatory": 0
+      }
+    },
+    {
+      "id": "en-q03",
+      "language": "en",
+      "question": "When does Ada reach the port?",
+      "goldIds": [
+        "en-p0"
+      ],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [
+        "six in the morning"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q04",
+      "language": "en",
+      "question": "Where is the quasar valve?",
+      "goldIds": [
+        "en-p1"
+      ],
+      "lexicalProbe": "quasar",
+      "requiredFactsEnglish": [
+        "beneath the turbine"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q05",
+      "language": "en",
+      "question": "Why is the valve stuck?",
+      "goldIds": [
+        "en-p1"
+      ],
+      "lexicalProbe": "quasar",
+      "requiredFactsEnglish": [
+        "salt crystals",
+        "spindle"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q06",
+      "language": "en",
+      "question": "How does Mira free the valve?",
+      "goldIds": [
+        "en-p1"
+      ],
+      "lexicalProbe": "Mira",
+      "requiredFactsEnglish": [
+        "warm water"
+      ],
+      "history": [],
+      "answerable": true,
+      "boundaries": {
+        "en-coast": 380,
+        "en-observatory": 0
+      }
+    },
+    {
+      "id": "en-q07",
+      "language": "en",
+      "question": "What color is its spring?",
+      "goldIds": [
+        "en-p1"
+      ],
+      "lexicalProbe": "spring",
+      "requiredFactsEnglish": [
+        "violet"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q08",
+      "language": "en",
+      "question": "Why is the ferry cancelled?",
+      "goldIds": [
+        "en-p2"
+      ],
+      "lexicalProbe": "ferry",
+      "requiredFactsEnglish": [
+        "storm"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q09",
+      "language": "en",
+      "question": "Which route does Ada take instead?",
+      "goldIds": [
+        "en-p2"
+      ],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [
+        "southern road",
+        "on foot"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q10",
+      "language": "en",
+      "question": "Why does Ada choose the longer road?",
+      "goldIds": [
+        "en-p2"
+      ],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [
+        "northern ferry cancelled",
+        "southern road passable"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q11",
+      "language": "en",
+      "question": "Who signs the replacement order?",
+      "goldIds": [
+        "en-p3"
+      ],
+      "lexicalProbe": "Cyril",
+      "requiredFactsEnglish": [
+        "Cyril"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q12",
+      "language": "en",
+      "question": "What caused the wrong serial number?",
+      "goldIds": [
+        "en-p3"
+      ],
+      "lexicalProbe": "Cyril",
+      "requiredFactsEnglish": [
+        "old invoice",
+        "copied wrong number"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q13",
+      "language": "en",
+      "question": "Was Cyril deliberately sabotaging the lighthouse?",
+      "goldIds": [
+        "en-p3",
+        "en-p4"
+      ],
+      "lexicalProbe": "Cyril",
+      "requiredFactsEnglish": [
+        "mistake",
+        "cleared by Ada"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q14",
+      "language": "en",
+      "question": "What did Mira notice before the rescue?",
+      "goldIds": [
+        "en-p4"
+      ],
+      "lexicalProbe": "Mira",
+      "requiredFactsEnglish": [
+        "gauge oscillating"
+      ],
+      "history": [],
+      "answerable": true,
+      "boundaries": {
+        "en-coast": 940,
+        "en-observatory": 0
+      }
+    },
+    {
+      "id": "en-q15",
+      "language": "en",
+      "question": "How does Ada clear Cyril?",
+      "goldIds": [
+        "en-p3",
+        "en-p4"
+      ],
+      "lexicalProbe": "Cyril",
+      "requiredFactsEnglish": [
+        "compared log and invoice",
+        "serial-number error"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q16",
+      "language": "en",
+      "question": "Who recovers the cylinder, and where?",
+      "goldIds": [
+        "en-p5"
+      ],
+      "lexicalProbe": "Jules",
+      "requiredFactsEnglish": [
+        "Jules",
+        "inlet"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q17",
+      "language": "en",
+      "question": "Why can Ada still use the log after the rescue?",
+      "goldIds": [
+        "en-p0",
+        "en-p5"
+      ],
+      "lexicalProbe": "log",
+      "requiredFactsEnglish": [
+        "seal held",
+        "dry"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q18",
+      "language": "en",
+      "question": "How often were readings recorded?",
+      "goldIds": [
+        "en-p5"
+      ],
+      "lexicalProbe": "pressure",
+      "requiredFactsEnglish": [
+        "every hour"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q19",
+      "language": "en",
+      "question": "Quote Ada’s remark about patient hands.",
+      "goldIds": [
+        "en-p6"
+      ],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [
+        "A steady light needs patient hands"
+      ],
+      "history": [],
+      "answerable": true,
+      "boundaries": {
+        "en-coast": 1281,
+        "en-observatory": 0
+      }
+    },
+    {
+      "id": "en-q20",
+      "language": "en",
+      "question": "Where and when does Ada make that remark?",
+      "goldIds": [
+        "en-p6"
+      ],
+      "lexicalProbe": "Mira",
+      "requiredFactsEnglish": [
+        "lighthouse steps",
+        "after turbine restored"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q21",
+      "language": "en",
+      "question": "When does the lighthouse regain power?",
+      "goldIds": [
+        "en-p7"
+      ],
+      "lexicalProbe": "turbine",
+      "requiredFactsEnglish": [
+        "eight that evening"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q22",
+      "language": "en",
+      "question": "Who stays for the final test?",
+      "goldIds": [
+        "en-p7"
+      ],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [
+        "Ada",
+        "Mira"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q23",
+      "language": "en",
+      "question": "What happens to Jules after the repair?",
+      "goldIds": [
+        "en-p7"
+      ],
+      "lexicalProbe": "Jules",
+      "requiredFactsEnglish": [
+        "returns to harbour",
+        "dry log"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q24",
+      "language": "en",
+      "question": "What does Neri open, and with what?",
+      "goldIds": [
+        "en-p8"
+      ],
+      "lexicalProbe": "Neri",
+      "requiredFactsEnglish": [
+        "ventilation hatch",
+        "copper lever"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q25",
+      "language": "en",
+      "question": "Compare the causes of Mira’s and Neri’s jams.",
+      "goldIds": [
+        "en-p1",
+        "en-p8"
+      ],
+      "lexicalProbe": "Mira",
+      "requiredFactsEnglish": [
+        "salt crystals",
+        "dust"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q26",
+      "language": "en",
+      "question": "Why do Mira and Neri use different cleaning methods?",
+      "goldIds": [
+        "en-p1",
+        "en-p8"
+      ],
+      "lexicalProbe": "Mira",
+      "requiredFactsEnglish": [
+        "warm water dissolves salt",
+        "dry brush protects instruments"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q27",
+      "language": "en",
+      "question": "Is Neri’s delay caused by the coastal storm?",
+      "goldIds": [
+        "en-p2",
+        "en-p9"
+      ],
+      "lexicalProbe": "inspection",
+      "requiredFactsEnglish": [
+        "cooling lens mount",
+        "unrelated to storm"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q28",
+      "language": "en",
+      "question": "What continues overnight at the observatory?",
+      "goldIds": [
+        "en-p9"
+      ],
+      "lexicalProbe": "observatory",
+      "requiredFactsEnglish": [
+        "temperature recording"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "en-q29",
+      "language": "en",
+      "question": "What is Ada’s age?",
+      "goldIds": [],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [],
+      "history": [],
+      "answerable": false
+    },
+    {
+      "id": "en-q30",
+      "language": "en",
+      "question": "And how does she prove that?",
+      "goldIds": [
+        "en-p3",
+        "en-p4"
+      ],
+      "lexicalProbe": "Cyril",
+      "requiredFactsEnglish": [
+        "log",
+        "invoice",
+        "serial-number error"
+      ],
+      "history": [
+        {
+          "question": "Was Cyril responsible?",
+          "answer": "Ada cleared him of deliberate sabotage."
+        }
+      ],
+      "answerable": true
+    },
+    {
+      "id": "fr-q01",
+      "language": "fr",
+      "question": "Qui remet le cylindre à Ada ?",
+      "goldIds": [
+        "fr-p0"
+      ],
+      "lexicalProbe": "Jules",
+      "requiredFactsEnglish": [
+        "Jules"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q02",
+      "language": "fr",
+      "question": "Que contient le cylindre scellé ?",
+      "goldIds": [
+        "fr-p0"
+      ],
+      "lexicalProbe": "cylindre",
+      "requiredFactsEnglish": [
+        "maintenance log"
+      ],
+      "history": [],
+      "answerable": true,
+      "boundaries": {
+        "fr-coast": 196,
+        "fr-observatory": 0
+      }
+    },
+    {
+      "id": "fr-q03",
+      "language": "fr",
+      "question": "Quand Ada arrive-t-elle au port ?",
+      "goldIds": [
+        "fr-p0"
+      ],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [
+        "six in the morning"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q04",
+      "language": "fr",
+      "question": "Où est la vanne quasar ?",
+      "goldIds": [
+        "fr-p1"
+      ],
+      "lexicalProbe": "quasar",
+      "requiredFactsEnglish": [
+        "beneath the turbine"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q05",
+      "language": "fr",
+      "question": "Pourquoi la vanne est-elle bloquée ?",
+      "goldIds": [
+        "fr-p1"
+      ],
+      "lexicalProbe": "quasar",
+      "requiredFactsEnglish": [
+        "salt crystals",
+        "spindle"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q06",
+      "language": "fr",
+      "question": "Comment Mira débloque-t-elle la vanne ?",
+      "goldIds": [
+        "fr-p1"
+      ],
+      "lexicalProbe": "Mira",
+      "requiredFactsEnglish": [
+        "warm water"
+      ],
+      "history": [],
+      "answerable": true,
+      "boundaries": {
+        "fr-coast": 404,
+        "fr-observatory": 0
+      }
+    },
+    {
+      "id": "fr-q07",
+      "language": "fr",
+      "question": "Quelle est la couleur de son ressort ?",
+      "goldIds": [
+        "fr-p1"
+      ],
+      "lexicalProbe": "ressort",
+      "requiredFactsEnglish": [
+        "violet"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q08",
+      "language": "fr",
+      "question": "Pourquoi le ferry est-il annulé ?",
+      "goldIds": [
+        "fr-p2"
+      ],
+      "lexicalProbe": "ferry",
+      "requiredFactsEnglish": [
+        "storm"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q09",
+      "language": "fr",
+      "question": "Quel chemin Ada emprunte-t-elle à la place ?",
+      "goldIds": [
+        "fr-p2"
+      ],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [
+        "southern road",
+        "on foot"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q10",
+      "language": "fr",
+      "question": "Pourquoi Ada choisit-elle la route la plus longue ?",
+      "goldIds": [
+        "fr-p2"
+      ],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [
+        "northern ferry cancelled",
+        "southern road passable"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q11",
+      "language": "fr",
+      "question": "Qui signe l’ordre de remplacement ?",
+      "goldIds": [
+        "fr-p3"
+      ],
+      "lexicalProbe": "Cyril",
+      "requiredFactsEnglish": [
+        "Cyril"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q12",
+      "language": "fr",
+      "question": "Quelle est l’origine du mauvais numéro de série ?",
+      "goldIds": [
+        "fr-p3"
+      ],
+      "lexicalProbe": "Cyril",
+      "requiredFactsEnglish": [
+        "old invoice",
+        "copied wrong number"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q13",
+      "language": "fr",
+      "question": "Cyril sabotait-il volontairement le phare ?",
+      "goldIds": [
+        "fr-p3",
+        "fr-p4"
+      ],
+      "lexicalProbe": "Cyril",
+      "requiredFactsEnglish": [
+        "mistake",
+        "cleared by Ada"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q14",
+      "language": "fr",
+      "question": "Que remarque Mira avant le sauvetage ?",
+      "goldIds": [
+        "fr-p4"
+      ],
+      "lexicalProbe": "Mira",
+      "requiredFactsEnglish": [
+        "gauge oscillating"
+      ],
+      "history": [],
+      "answerable": true,
+      "boundaries": {
+        "fr-coast": 980,
+        "fr-observatory": 0
+      }
+    },
+    {
+      "id": "fr-q15",
+      "language": "fr",
+      "question": "Comment Ada innocente-t-elle Cyril ?",
+      "goldIds": [
+        "fr-p3",
+        "fr-p4"
+      ],
+      "lexicalProbe": "Cyril",
+      "requiredFactsEnglish": [
+        "compared log and invoice",
+        "serial-number error"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q16",
+      "language": "fr",
+      "question": "Qui récupère le cylindre, et où ?",
+      "goldIds": [
+        "fr-p5"
+      ],
+      "lexicalProbe": "Jules",
+      "requiredFactsEnglish": [
+        "Jules",
+        "inlet"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q17",
+      "language": "fr",
+      "question": "Pourquoi Ada peut-elle encore utiliser le journal après le sauvetage ?",
+      "goldIds": [
+        "fr-p0",
+        "fr-p5"
+      ],
+      "lexicalProbe": "journal",
+      "requiredFactsEnglish": [
+        "seal held",
+        "dry"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q18",
+      "language": "fr",
+      "question": "À quelle fréquence les mesures étaient-elles notées ?",
+      "goldIds": [
+        "fr-p5"
+      ],
+      "lexicalProbe": "pression",
+      "requiredFactsEnglish": [
+        "every hour"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q19",
+      "language": "fr",
+      "question": "Citez la remarque d’Ada sur les mains patientes.",
+      "goldIds": [
+        "fr-p6"
+      ],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [
+        "A steady light needs patient hands"
+      ],
+      "history": [],
+      "answerable": true,
+      "boundaries": {
+        "fr-coast": 1349,
+        "fr-observatory": 0
+      }
+    },
+    {
+      "id": "fr-q20",
+      "language": "fr",
+      "question": "Où et quand Ada prononce-t-elle cette remarque ?",
+      "goldIds": [
+        "fr-p6"
+      ],
+      "lexicalProbe": "Mira",
+      "requiredFactsEnglish": [
+        "lighthouse steps",
+        "after turbine restored"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q21",
+      "language": "fr",
+      "question": "Quand le phare retrouve-t-il son alimentation ?",
+      "goldIds": [
+        "fr-p7"
+      ],
+      "lexicalProbe": "turbine",
+      "requiredFactsEnglish": [
+        "eight that evening"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q22",
+      "language": "fr",
+      "question": "Qui reste pour le dernier essai ?",
+      "goldIds": [
+        "fr-p7"
+      ],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [
+        "Ada",
+        "Mira"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q23",
+      "language": "fr",
+      "question": "Que fait Jules après la réparation ?",
+      "goldIds": [
+        "fr-p7"
+      ],
+      "lexicalProbe": "Jules",
+      "requiredFactsEnglish": [
+        "returns to harbour",
+        "dry log"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q24",
+      "language": "fr",
+      "question": "Que Neri ouvre-t-il et avec quel outil ?",
+      "goldIds": [
+        "fr-p8"
+      ],
+      "lexicalProbe": "Neri",
+      "requiredFactsEnglish": [
+        "ventilation hatch",
+        "copper lever"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q25",
+      "language": "fr",
+      "question": "Comparez les causes des blocages de Mira et de Neri.",
+      "goldIds": [
+        "fr-p1",
+        "fr-p8"
+      ],
+      "lexicalProbe": "Mira",
+      "requiredFactsEnglish": [
+        "salt crystals",
+        "dust"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q26",
+      "language": "fr",
+      "question": "Pourquoi Mira et Neri utilisent-ils des méthodes différentes ?",
+      "goldIds": [
+        "fr-p1",
+        "fr-p8"
+      ],
+      "lexicalProbe": "Mira",
+      "requiredFactsEnglish": [
+        "warm water dissolves salt",
+        "dry brush protects instruments"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q27",
+      "language": "fr",
+      "question": "Le retard de Neri est-il causé par la tempête côtière ?",
+      "goldIds": [
+        "fr-p2",
+        "fr-p9"
+      ],
+      "lexicalProbe": "inspection",
+      "requiredFactsEnglish": [
+        "cooling lens mount",
+        "unrelated to storm"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q28",
+      "language": "fr",
+      "question": "Que continue-t-on pendant la nuit à l’observatoire ?",
+      "goldIds": [
+        "fr-p9"
+      ],
+      "lexicalProbe": "observatoire",
+      "requiredFactsEnglish": [
+        "temperature recording"
+      ],
+      "history": [],
+      "answerable": true
+    },
+    {
+      "id": "fr-q29",
+      "language": "fr",
+      "question": "Quel âge a Ada ?",
+      "goldIds": [],
+      "lexicalProbe": "Ada",
+      "requiredFactsEnglish": [],
+      "history": [],
+      "answerable": false
+    },
+    {
+      "id": "fr-q30",
+      "language": "fr",
+      "question": "Et comment le prouve-t-elle ?",
+      "goldIds": [
+        "fr-p3",
+        "fr-p4"
+      ],
+      "lexicalProbe": "Cyril",
+      "requiredFactsEnglish": [
+        "log",
+        "invoice",
+        "serial-number error"
+      ],
+      "history": [
+        {
+          "question": "Cyril était-il responsable ?",
+          "answer": "Ada l’a innocenté de tout sabotage volontaire."
+        }
+      ],
+      "answerable": true
+    }
+  ]
+}

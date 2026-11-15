@@ -1,5 +1,6 @@
 import 'dart:typed_data';
-import 'dart:math' as math;
+import 'dart:io';
+import 'rag_native_database.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as path;
 import '../models/rag_chunk.dart';
@@ -13,31 +14,37 @@ class RagLexicalHit {
 }
 
 class RagDatabaseService {
-  static const int schemaVersion = 4;
-  static const int indexVersion = 3;
+  static const int schemaVersion = 6;
+  static const int indexVersion = 4;
   static final RagDatabaseService _instance = RagDatabaseService._internal();
   factory RagDatabaseService() => _instance;
   RagDatabaseService._internal();
 
   Database? _database;
-  String _ftsMode = 'none';
+  Future<Database>? _opening;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDatabase();
+    try {
+      _database = await (_opening ??= _initDatabase());
+    } catch (_) {
+      _opening = null;
+      rethrow;
+    }
     return _database!;
   }
 
   Future<Database> _initDatabase() async {
     final dbPath = await getDatabasesPath();
-    final dbFile = path.join(dbPath, 'rag.db');
+    final dbFile = path.join(dbPath, 'rag-v5.db');
 
-    return await openDatabase(
+    return await ragDatabaseFactory.openDatabase(
       dbFile,
-      version: schemaVersion,
-      onCreate: (db, version) async {
-        // Create rag_chunks table
-        await db.execute('''
+      options: OpenDatabaseOptions(
+        version: schemaVersion,
+        onCreate: (db, version) async {
+          // Create rag_chunks table
+          await db.execute('''
           CREATE TABLE rag_chunks (
             chunkId TEXT PRIMARY KEY,
             bookId TEXT NOT NULL,
@@ -53,12 +60,15 @@ class RagDatabaseService {
             tokenStart INTEGER NOT NULL,
             tokenEnd INTEGER NOT NULL,
             createdAt TEXT NOT NULL,
+            tokenCount INTEGER NOT NULL DEFAULT 0,
+            previousChunkId TEXT,
+            nextChunkId TEXT,
             UNIQUE(bookId, charStart)
           )
         ''');
 
-        // Create rag_index_status table
-        await db.execute('''
+          // Create rag_index_status table
+          await db.execute('''
           CREATE TABLE rag_index_status (
             bookId TEXT PRIMARY KEY,
             status TEXT NOT NULL,
@@ -77,39 +87,86 @@ class RagDatabaseService {
           )
         ''');
 
-        // Create indices for better query performance
-        await db.execute('''
+          // Create indices for better query performance
+          await db.execute('''
           CREATE INDEX idx_rag_book ON rag_chunks(bookId)
         ''');
 
-        await db.execute('''
+          await db.execute('''
           CREATE INDEX idx_rag_char_range ON rag_chunks(bookId, charStart, charEnd)
         ''');
-        await _createFtsTable(db);
-        await _createStagingTable(db);
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        if (oldVersion < 2) {
-          await _addColumn(db, 'rag_chunks', 'chapterTitle TEXT');
-          await _addColumn(db, 'rag_chunks', 'sectionIndex INTEGER');
-          await _addColumn(db, 'rag_chunks', 'contentFileKey TEXT');
-          await _addColumn(db, 'rag_index_status', 'embeddingProvider TEXT');
-          await _addColumn(db, 'rag_index_status', 'contentHash TEXT');
-          await _addColumn(db, 'rag_index_status', 'extractionVersion INTEGER');
-          await _addColumn(db, 'rag_index_status', 'chunkingVersion INTEGER');
-          await _addColumn(db, 'rag_index_status', 'configHash TEXT');
-          await _addColumn(db, 'rag_index_status', 'indexVersion INTEGER');
-        }
-        if (oldVersion < 3) {
           await _createFtsTable(db);
-          await _rebuildFts(db);
-        }
-        if (oldVersion < 4) await _createStagingTable(db);
-      },
-      onOpen: (db) async {
-        await _createFtsTable(db);
-        await _createStagingTable(db);
-      },
+          await _createStagingTable(db);
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          if (oldVersion < 2) {
+            await _addColumn(db, 'rag_chunks', 'chapterTitle TEXT');
+            await _addColumn(db, 'rag_chunks', 'sectionIndex INTEGER');
+            await _addColumn(db, 'rag_chunks', 'contentFileKey TEXT');
+            await _addColumn(db, 'rag_index_status', 'embeddingProvider TEXT');
+            await _addColumn(db, 'rag_index_status', 'contentHash TEXT');
+            await _addColumn(
+              db,
+              'rag_index_status',
+              'extractionVersion INTEGER',
+            );
+            await _addColumn(db, 'rag_index_status', 'chunkingVersion INTEGER');
+            await _addColumn(db, 'rag_index_status', 'configHash TEXT');
+            await _addColumn(db, 'rag_index_status', 'indexVersion INTEGER');
+          }
+          if (oldVersion < 3) {
+            await _createFtsTable(db);
+            await _rebuildFts(db);
+          }
+          if (oldVersion < 4) await _createStagingTable(db);
+          if (oldVersion < 6) {
+            for (final table in ['rag_chunks', 'rag_chunks_staging']) {
+              await _addColumn(
+                db,
+                table,
+                'tokenCount INTEGER NOT NULL DEFAULT 0',
+              );
+              await _addColumn(db, table, 'previousChunkId TEXT');
+              await _addColumn(db, table, 'nextChunkId TEXT');
+            }
+          }
+        },
+        onOpen: (db) async {
+          await db.execute('PRAGMA recursive_triggers = ON');
+          await db.execute('PRAGMA busy_timeout = 10000');
+          await db.execute(
+            'CREATE TABLE IF NOT EXISTS rag_leases(bookId TEXT PRIMARY KEY,owner TEXT,expires INTEGER)',
+          );
+          await db.execute(
+            'CREATE TABLE IF NOT EXISTS rag_generations(bookId TEXT PRIMARY KEY,generationId TEXT)',
+          );
+          await db.execute('PRAGMA journal_mode = WAL');
+          await db.execute(
+            'CREATE TABLE IF NOT EXISTS rag_readers(id TEXT PRIMARY KEY,expires INTEGER)',
+          );
+          await _createFtsTable(db);
+          await _createStagingTable(db);
+          await db.execute(
+            'CREATE TABLE IF NOT EXISTS rag_active_status AS SELECT * FROM rag_index_status WHERE 0',
+          );
+          await db.execute(
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_active_book ON rag_active_status(bookId)',
+          );
+          await db.execute(
+            'CREATE TABLE IF NOT EXISTS rag_jobs(bookId TEXT PRIMARY KEY, fileSize INTEGER, fileModified INTEGER, configIdentity TEXT, state TEXT, updated TEXT)',
+          );
+          await db.execute(
+            'CREATE TABLE IF NOT EXISTS rag_prefix_vectors(bookId TEXT, boundary INTEGER, identity TEXT, chunkId TEXT, embedding BLOB, PRIMARY KEY(bookId,boundary,identity,chunkId))',
+          );
+          await _migrateLegacy(db, path.join(dbPath, 'rag.db'));
+          final dimensions = await db.rawQuery(
+            'SELECT DISTINCT embeddingDimension FROM rag_chunks WHERE embeddingDimension > 0',
+          );
+          for (final row in dimensions) {
+            await _ensureVectorTable(db, row['embeddingDimension'] as int);
+          }
+        },
+      ),
     );
   }
 
@@ -128,31 +185,48 @@ class RagDatabaseService {
   }
 
   static Future<void> _createStagingTable(Database db) async {
-    await db.execute('CREATE TABLE IF NOT EXISTS rag_chunks_staging '
-        'AS SELECT * FROM rag_chunks WHERE 0');
-    await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_stage_range '
-        'ON rag_chunks_staging(bookId, charStart)');
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS rag_chunks_staging '
+      'AS SELECT * FROM rag_chunks WHERE 0',
+    );
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_stage_range '
+      'ON rag_chunks_staging(bookId, charStart)',
+    );
   }
 
   Future<int> getStagedChunkCount(String bookId) async {
     final rows = await (await database).rawQuery(
-        'SELECT COUNT(*) AS count FROM rag_chunks_staging WHERE bookId = ?', [bookId]);
+      'SELECT COUNT(*) AS count FROM rag_chunks_staging WHERE bookId = ?',
+      [bookId],
+    );
     return rows.first['count'] as int;
   }
 
   Future<void> clearStagingBook(String bookId) async {
-    await (await database).delete('rag_chunks_staging',
-        where: 'bookId = ?', whereArgs: [bookId]);
+    await (await database).delete(
+      'rag_chunks_staging',
+      where: 'bookId = ?',
+      whereArgs: [bookId],
+    );
   }
 
   Future<void> saveStagedChunks(List<RagChunk> chunks) async {
     if (chunks.isEmpty) return;
+    for (final chunk in chunks) {
+      if (chunk.embeddingDimension != chunk.embedding.length ||
+          chunk.embedding.isEmpty ||
+          chunk.embedding.any((v) => !v.isFinite)) {
+        throw ArgumentError('Invalid passage vector');
+      }
+    }
     final db = await database;
     await db.transaction((txn) async {
       final batch = txn.batch();
       for (final chunk in chunks) {
         batch.insert('rag_chunks_staging', {
-          ...chunk.toJson(), 'embedding': chunk.embeddingToBlob(),
+          ...chunk.toJson(),
+          'embedding': chunk.embeddingToBlob(),
         }, conflictAlgorithm: ConflictAlgorithm.replace);
       }
       await batch.commit(noResult: true);
@@ -161,64 +235,415 @@ class RagDatabaseService {
 
   Future<void> activateStagedBook(String bookId) async {
     final db = await database;
+    final dimensions = await db.rawQuery(
+      'SELECT DISTINCT embeddingDimension FROM rag_chunks_staging WHERE bookId = ?',
+      [bookId],
+    );
+    for (final row in dimensions) {
+      await _ensureVectorTable(db, row['embeddingDimension'] as int);
+    }
     await db.transaction((txn) async {
-      await txn.delete('rag_chunks_fts', where: 'bookId = ?', whereArgs: [bookId]);
+      final expected = await txn.query(
+        'rag_index_status',
+        where: 'bookId = ?',
+        whereArgs: [bookId],
+      );
+      final count = await txn.rawQuery(
+        'SELECT count(*) AS n FROM rag_chunks_staging WHERE bookId = ?',
+        [bookId],
+      );
+      if (count.first['n'] == 0 ||
+          (expected.isNotEmpty &&
+              expected.first['totalChunks'] != count.first['n'])) {
+        throw StateError('Incomplete staged generation');
+      }
+
+      await txn.delete(
+        'rag_chunks_fts',
+        where: 'bookId = ?',
+        whereArgs: [bookId],
+      );
       await txn.delete('rag_chunks', where: 'bookId = ?', whereArgs: [bookId]);
-      await txn.rawInsert('INSERT INTO rag_chunks SELECT * FROM rag_chunks_staging '
-          'WHERE bookId = ?', [bookId]);
-      await txn.rawInsert('INSERT INTO rag_chunks_fts(chunkId, bookId, text, chapterTitle) '
-          'SELECT chunkId, bookId, text, COALESCE(chapterTitle, \'\') '
-          'FROM rag_chunks_staging WHERE bookId = ?', [bookId]);
-      await txn.delete('rag_chunks_staging', where: 'bookId = ?', whereArgs: [bookId]);
+      await txn.rawInsert(
+        'INSERT INTO rag_chunks SELECT * FROM rag_chunks_staging '
+        'WHERE bookId = ?',
+        [bookId],
+      );
+      await txn.rawInsert(
+        'INSERT INTO rag_chunks_fts(chunkId, bookId, text, chapterTitle) '
+        'SELECT chunkId, bookId, text, COALESCE(chapterTitle, \'\') '
+        'FROM rag_chunks_staging WHERE bookId = ?',
+        [bookId],
+      );
+      await txn.delete(
+        'rag_chunks_staging',
+        where: 'bookId = ?',
+        whereArgs: [bookId],
+      );
+      await txn.execute(
+        "INSERT OR REPLACE INTO rag_active_status SELECT * FROM rag_index_status WHERE bookId = ?",
+        [bookId],
+      );
+      final manifest = expected.firstOrNull;
+      await txn.insert('rag_generations', {
+        'bookId': bookId,
+        'generationId':
+            '${manifest?['contentHash']}:${manifest?['configHash']}:${DateTime.now().microsecondsSinceEpoch}',
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await txn.delete(
+        'rag_prefix_vectors',
+        where: 'bookId = ?',
+        whereArgs: [bookId],
+      );
+      await txn.update(
+        'rag_active_status',
+        {'status': 'completed'},
+        where: 'bookId = ?',
+        whereArgs: [bookId],
+      );
     });
   }
 
   Future<void> _createFtsTable(Database db) async {
-    if (_ftsMode != 'none') return;
-    final existing = await db.query(
-      'sqlite_master',
-      columns: ['sql'],
-      where: 'type = ? AND name = ?',
-      whereArgs: ['table', 'rag_chunks_fts'],
-      limit: 1,
+    await db.execute(
+      "CREATE VIRTUAL TABLE IF NOT EXISTS rag_chunks_fts USING fts5(chunkId UNINDEXED, bookId UNINDEXED, text, chapterTitle, tokenize = 'unicode61 remove_diacritics 2')",
     );
-    if (existing.isNotEmpty) {
-      final sql = (existing.first['sql'] as String? ?? '').toLowerCase();
-      if (sql.contains('using fts5')) {
-        _ftsMode = 'fts5';
-        return;
-      }
-      if (sql.contains('using fts4')) {
-        _ftsMode = 'fts4';
-        return;
-      }
+  }
+
+  static Future<void> _migrateLegacy(Database db, String legacy) async {
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS rag_metadata(key TEXT PRIMARY KEY,value TEXT)',
+    );
+    if ((await db.query(
+      'rag_metadata',
+      where: 'key = ?',
+      whereArgs: ['legacyImported'],
+    )).isNotEmpty) {
+      return;
     }
+    if (!await File(legacy).exists()) {
+      await db.insert('rag_metadata', {
+        'key': 'legacyImported',
+        'value': 'none',
+      });
+      return;
+    }
+    final rows = await db.rawQuery(
+      'SELECT count(*) AS n FROM rag_index_status',
+    );
+    if (rows.first['n'] != 0) return;
+    await db.execute('ATTACH DATABASE ? AS legacy', [legacy]);
     try {
-      await db.execute('''
-        CREATE VIRTUAL TABLE IF NOT EXISTS rag_chunks_fts USING fts5(
-          chunkId UNINDEXED,
-          bookId UNINDEXED,
-          text,
-          chapterTitle,
-          tokenize = 'unicode61 remove_diacritics 2'
-        )
-      ''');
-      _ftsMode = 'fts5';
-    } on DatabaseException {
-      await db.execute('''
-        CREATE VIRTUAL TABLE IF NOT EXISTS rag_chunks_fts USING fts4(
-          chunkId,
-          bookId,
-          text,
-          chapterTitle,
-          tokenize=unicode61
-        )
-      ''');
-      _ftsMode = 'fts4';
+      final tables = await db.rawQuery(
+        "SELECT name FROM legacy.sqlite_master WHERE name = 'rag_index_status'",
+      );
+      if (tables.isEmpty) return;
+      await db.transaction((txn) async {
+        for (final table in ['rag_chunks', 'rag_index_status']) {
+          final old = await txn.rawQuery('PRAGMA legacy.table_info($table)');
+          final current = await txn.rawQuery('PRAGMA main.table_info($table)');
+          final oldNames = old.map((r) => r['name']).toSet();
+          final columns = current
+              .map((r) => r['name'])
+              .where(oldNames.contains)
+              .join(',');
+          await txn.execute(
+            'INSERT OR IGNORE INTO $table($columns) SELECT $columns FROM legacy.$table',
+          );
+        }
+        await _rebuildFts(txn);
+        await txn.insert('rag_metadata', {
+          'key': 'legacyImported',
+          'value': 'complete',
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+        await txn.execute(
+          "INSERT OR REPLACE INTO rag_active_status SELECT * FROM rag_index_status WHERE status = 'completed'",
+        );
+      });
+    } finally {
+      await db.execute('DETACH DATABASE legacy');
     }
   }
 
-  static Future<void> _rebuildFts(Database db) async {
+  static Future<void> _ensureVectorTable(Database db, int dimensions) async {
+    if (dimensions <= 0 || dimensions > 65536) {
+      throw ArgumentError('Invalid vector dimensions');
+    }
+    final name = 'rag_vec_$dimensions';
+    final exists = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE name = ?",
+      [name],
+    );
+    if (exists.isNotEmpty) return;
+    await db.transaction((txn) async {
+      if ((await txn.rawQuery('SELECT name FROM sqlite_master WHERE name = ?', [
+        name,
+      ])).isNotEmpty) {
+        return;
+      }
+      await txn.execute(
+        'CREATE VIRTUAL TABLE $name USING vec0(chunkRowid INTEGER PRIMARY KEY, embedding float[$dimensions] distance_metric=cosine, bookId TEXT, charEnd INTEGER)',
+      );
+      await txn.execute(
+        'CREATE TRIGGER ${name}_insert AFTER INSERT ON rag_chunks WHEN new.embeddingDimension = $dimensions BEGIN INSERT INTO $name(chunkRowid, embedding, bookId, charEnd) VALUES(new.rowid,new.embedding,new.bookId,new.charEnd); END',
+      );
+      await txn.execute(
+        'CREATE TRIGGER ${name}_delete AFTER DELETE ON rag_chunks WHEN old.embeddingDimension = $dimensions BEGIN DELETE FROM $name WHERE chunkRowid = old.rowid; END',
+      );
+      await txn.execute(
+        'INSERT INTO $name(chunkRowid,embedding,bookId,charEnd) SELECT rowid,embedding,bookId,charEnd FROM rag_chunks WHERE embeddingDimension = $dimensions',
+      );
+    });
+  }
+
+  static (String, List<Object?>) _eligibleScope(
+    List<String> books,
+    Map<String, int?> boundaries, {
+    String prefix = '',
+  }) {
+    if (boundaries.isEmpty) {
+      return (
+        '${prefix}bookId IN (${List.filled(books.length, '?').join(',')})',
+        books,
+      );
+    }
+    final clauses = <String>[];
+    final args = <Object?>[];
+    for (final book in books) {
+      if (boundaries.containsKey(book)) {
+        final end = boundaries[book];
+        if (end == null || end <= 0) continue;
+        clauses.add('(${prefix}bookId = ? AND ${prefix}charEnd <= ?)');
+        args.addAll([book, end]);
+      } else {
+        clauses.add('${prefix}bookId = ?');
+        args.add(book);
+      }
+    }
+    return (clauses.join(' OR '), args);
+  }
+
+  Future<List<RagLexicalHit>> searchSemantic({
+    required Float32List vector,
+    required List<String> bookIds,
+    Map<String, int?> boundaries = const {},
+    int limit = 40,
+  }) async {
+    if (vector.isEmpty || bookIds.isEmpty) return [];
+    final db = await database;
+    await _ensureVectorTable(db, vector.length);
+    final scope = _eligibleScope(bookIds, boundaries);
+    if (scope.$1.isEmpty) return [];
+    final matches = await db.rawQuery(
+      'SELECT chunkRowid,distance FROM rag_vec_${vector.length} WHERE embedding MATCH ? AND k = ? AND chunkRowid IN (SELECT rowid FROM rag_chunks WHERE ${scope.$1}) ORDER BY distance',
+      [
+        Uint8List.view(
+          vector.buffer,
+          vector.offsetInBytes,
+          vector.lengthInBytes,
+        ),
+        limit,
+        ...scope.$2,
+      ],
+    );
+    final ranked = matches
+        .map(
+          (r) => (
+            rowid: r['chunkRowid'] as int,
+            score: 1 - (r['distance'] as num).toDouble(),
+          ),
+        )
+        .toList();
+    final best = ranked.take(limit).toList();
+    if (best.isEmpty) return [];
+    final placeholders = List.filled(best.length, '?').join(',');
+    final rows = await db.rawQuery(
+      "SELECT chunkId, bookId, text, embeddingDimension, chapterIndex, chapterTitle, sectionIndex, contentFileKey, charStart, charEnd, tokenStart, tokenEnd, createdAt, X'' AS embedding FROM rag_chunks WHERE rowid IN ($placeholders)",
+      best.map((r) => r.rowid).toList(),
+    );
+    final byId = {
+      for (final r in rows)
+        r['chunkId'] as String: RagChunk.fromJson(r, Uint8List(0)),
+    };
+    // rowids are loaded separately to avoid transporting embedding BLOBs.
+    final ids = await db.rawQuery(
+      'SELECT rowid,chunkId FROM rag_chunks WHERE rowid IN ($placeholders)',
+      best.map((r) => r.rowid).toList(),
+    );
+    final rowToId = {
+      for (final r in ids) r['rowid'] as int: r['chunkId'] as String,
+    };
+    return best
+        .map(
+          (r) => RagLexicalHit(chunk: byId[rowToId[r.rowid]]!, score: r.score),
+        )
+        .toList();
+  }
+
+  Future<Map<String, Float32List>> prefixVectors(
+    String bookId,
+    int boundary,
+    String identity,
+  ) async {
+    final rows = await (await database).query(
+      'rag_prefix_vectors',
+      where: 'bookId = ? AND boundary = ? AND identity = ?',
+      whereArgs: [bookId, boundary, identity],
+    );
+    return {
+      for (final r in rows)
+        r['chunkId'] as String: RagChunk.embeddingFromBlob(
+          r['embedding'] as Uint8List,
+        ),
+    };
+  }
+
+  Future<void> savePrefixVector(
+    String bookId,
+    int boundary,
+    String identity,
+    String chunkId,
+    Float32List vector,
+  ) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      // Retain only the latest prepared boundary per book/provider.
+      await txn.delete(
+        'rag_prefix_vectors',
+        where: 'bookId = ? AND (boundary != ? OR identity != ?)',
+        whereArgs: [bookId, boundary, identity],
+      );
+      await txn.insert('rag_prefix_vectors', {
+        'bookId': bookId,
+        'boundary': boundary,
+        'identity': identity,
+        'chunkId': chunkId,
+        'embedding': Uint8List.view(
+          vector.buffer,
+          vector.offsetInBytes,
+          vector.lengthInBytes,
+        ),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    });
+  }
+
+  Future<void> beginInteractive(String id) async => (await database)
+      .insert('rag_readers', {
+        'id': id,
+        'expires': DateTime.now().millisecondsSinceEpoch + 180000,
+      }, conflictAlgorithm: ConflictAlgorithm.replace)
+      .then((_) {});
+  Future<void> endInteractive(String id) async => (await database)
+      .delete('rag_readers', where: 'id = ?', whereArgs: [id])
+      .then((_) {});
+  Future<bool> hasInteractiveReaders() async =>
+      (await (await database).rawQuery(
+        'SELECT id FROM rag_readers WHERE expires > ? LIMIT 1',
+        [DateTime.now().millisecondsSinceEpoch],
+      )).isNotEmpty;
+
+  Future<bool> acquireLease(String bookId, String owner) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final db = await database;
+    return db.transaction((txn) async {
+      await txn.rawInsert(
+        'INSERT INTO rag_leases(bookId,owner,expires) VALUES(?,?,?) ON CONFLICT(bookId) DO UPDATE SET owner=excluded.owner,expires=excluded.expires WHERE rag_leases.expires < ?',
+        [bookId, owner, now + 180000, now],
+      );
+      final rows = await txn.query(
+        'rag_leases',
+        where: 'bookId = ? AND owner = ?',
+        whereArgs: [bookId, owner],
+      );
+      return rows.isNotEmpty;
+    });
+  }
+
+  Future<void> releaseLease(String bookId, String owner) async =>
+      (await database).execute(
+        'DELETE FROM rag_leases WHERE bookId = ? AND owner = ?',
+        [bookId, owner],
+      );
+
+  Future<List<RagChunk>> adjacentPassages(
+    RagChunk passage, {
+    int? boundary,
+  }) async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      "WITH scoped AS (SELECT * FROM rag_chunks WHERE bookId = ? AND sectionIndex IS ?) SELECT chunkId, bookId, text, embeddingDimension, chapterIndex, chapterTitle, sectionIndex, contentFileKey, charStart, charEnd, tokenStart, tokenEnd, createdAt, X'' AS embedding FROM scoped WHERE charStart >= COALESCE((SELECT MAX(charStart) FROM scoped WHERE charStart < ?), ?) AND charStart <= COALESCE((SELECT MIN(charStart) FROM scoped WHERE charStart >= ?), ?) ORDER BY charStart",
+      [
+        passage.bookId,
+        passage.sectionIndex,
+        passage.charStart,
+        passage.charStart,
+        passage.charEnd,
+        passage.charEnd,
+      ],
+    );
+    return rows
+        .where((r) => boundary == null || (r['charStart'] as int) < boundary)
+        .map((r) {
+          final c = RagChunk.fromJson(r, Uint8List(0));
+          return boundary != null && c.charEnd > boundary
+              ? c.copyWith(
+                  text: c.text.substring(0, boundary - c.charStart),
+                  charEnd: boundary,
+                )
+              : c;
+        })
+        .toList();
+  }
+
+  Future<List<RagChunk>> crossingPassages(String bookId, int boundary) async {
+    final rows = await (await database).rawQuery(
+      "SELECT chunkId, bookId, text, embeddingDimension, chapterIndex, chapterTitle, sectionIndex, contentFileKey, charStart, charEnd, tokenStart, tokenEnd, createdAt, X'' AS embedding FROM rag_chunks WHERE bookId = ? AND charStart < ? AND charEnd > ?",
+      [bookId, boundary, boundary],
+    );
+    return rows.map((r) {
+      final c = RagChunk.fromJson(r, Uint8List(0));
+      return c.copyWith(
+        text: c.text.substring(0, boundary - c.charStart),
+        charEnd: boundary,
+      );
+    }).toList();
+  }
+
+  Future<List<Map<String, Object?>>> activeManifests(List<String> books) async {
+    if (books.isEmpty) return [];
+    return (await database).rawQuery(
+      'SELECT s.*,g.generationId FROM rag_active_status s LEFT JOIN rag_generations g ON s.bookId=g.bookId WHERE s.bookId IN (${List.filled(books.length, '?').join(',')})',
+      books,
+    );
+  }
+
+  Future<RagIndexProgress?> getActiveIndexStatus(String bookId) async {
+    final rows = await (await database).query(
+      'rag_active_status',
+      where: 'bookId = ?',
+      whereArgs: [bookId],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : RagIndexProgress.fromJson(rows.first);
+  }
+
+  Future<Map<String, Object?>?> getJob(String bookId) async {
+    final rows = await (await database).query(
+      'rag_jobs',
+      where: 'bookId = ?',
+      whereArgs: [bookId],
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<void> saveJob(String bookId, Map<String, Object?> job) async {
+    await (await database).insert('rag_jobs', {
+      'bookId': bookId,
+      ...job,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static Future<void> _rebuildFts(DatabaseExecutor db) async {
     await db.delete('rag_chunks_fts');
     await db.rawInsert('''
       INSERT INTO rag_chunks_fts(chunkId, bookId, text, chapterTitle)
@@ -231,6 +656,7 @@ class RagDatabaseService {
   /// Save a chunk with its embedding
   Future<void> saveChunk(RagChunk chunk) async {
     final db = await database;
+    await _ensureVectorTable(db, chunk.embeddingDimension);
     await db.transaction((txn) async {
       final replaced = await txn.query(
         'rag_chunks',
@@ -246,20 +672,8 @@ class RagDatabaseService {
         );
       }
       await txn.insert('rag_chunks', {
-        'chunkId': chunk.chunkId,
-        'bookId': chunk.bookId,
-        'text': chunk.text,
+        ...chunk.toJson(),
         'embedding': chunk.embeddingToBlob(),
-        'embeddingDimension': chunk.embeddingDimension,
-        'chapterIndex': chunk.chapterIndex,
-        'chapterTitle': chunk.chapterTitle,
-        'sectionIndex': chunk.sectionIndex,
-        'contentFileKey': chunk.contentFileKey,
-        'charStart': chunk.charStart,
-        'charEnd': chunk.charEnd,
-        'tokenStart': chunk.tokenStart,
-        'tokenEnd': chunk.tokenEnd,
-        'createdAt': chunk.createdAt.toIso8601String(),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
       await txn.insert('rag_chunks_fts', {
         'chunkId': chunk.chunkId,
@@ -275,6 +689,9 @@ class RagDatabaseService {
     if (chunks.isEmpty) return;
 
     final db = await database;
+    for (final d in chunks.map((c) => c.embeddingDimension).toSet()) {
+      await _ensureVectorTable(db, d);
+    }
     final batch = db.batch();
 
     // Remove FTS rows for chunks replaced through UNIQUE(bookId, charStart),
@@ -297,20 +714,8 @@ class RagDatabaseService {
 
     for (final chunk in chunks) {
       batch.insert('rag_chunks', {
-        'chunkId': chunk.chunkId,
-        'bookId': chunk.bookId,
-        'text': chunk.text,
+        ...chunk.toJson(),
         'embedding': chunk.embeddingToBlob(),
-        'embeddingDimension': chunk.embeddingDimension,
-        'chapterIndex': chunk.chapterIndex,
-        'chapterTitle': chunk.chapterTitle,
-        'sectionIndex': chunk.sectionIndex,
-        'contentFileKey': chunk.contentFileKey,
-        'charStart': chunk.charStart,
-        'charEnd': chunk.charEnd,
-        'tokenStart': chunk.tokenStart,
-        'tokenEnd': chunk.tokenEnd,
-        'createdAt': chunk.createdAt.toIso8601String(),
       }, conflictAlgorithm: ConflictAlgorithm.replace);
       batch.insert('rag_chunks_fts', {
         'chunkId': chunk.chunkId,
@@ -398,9 +803,9 @@ class RagDatabaseService {
   /// Returns a Set of (charStart, charEnd) tuples for existing chunks
   Future<Set<(int, int)>> chunksExist(
     String bookId,
-    List<(int charStart, int charEnd)> chunkRanges,
-    {bool staging = false}
-  ) async {
+    List<(int charStart, int charEnd)> chunkRanges, {
+    bool staging = false,
+  }) async {
     if (chunkRanges.isEmpty) return {};
 
     final db = await database;
@@ -459,6 +864,10 @@ class RagDatabaseService {
   /// Save or update index status
   Future<void> saveIndexStatus(RagIndexProgress progress) async {
     final db = await database;
+    await db.execute('UPDATE rag_leases SET expires = ? WHERE bookId = ?', [
+      DateTime.now().millisecondsSinceEpoch + 180000,
+      progress.bookId,
+    ]);
     final existingRows = await db.query(
       'rag_index_status',
       where: 'bookId = ?',
@@ -567,7 +976,7 @@ class RagDatabaseService {
     final db = await database;
     final placeholders = bookIds.map((_) => '?').join(', ');
     final results = await db.rawQuery(
-      'SELECT * FROM rag_chunks WHERE bookId IN ($placeholders) ORDER BY bookId, charStart ASC',
+      "SELECT chunkId, bookId, text, embeddingDimension, chapterIndex, chapterTitle, sectionIndex, contentFileKey, charStart, charEnd, tokenStart, tokenEnd, createdAt, X'' AS embedding FROM rag_chunks WHERE bookId IN ($placeholders) ORDER BY bookId, charStart ASC",
       bookIds,
     );
     return results.map((row) {
@@ -586,80 +995,58 @@ class RagDatabaseService {
   }) async {
     if (matchQuery.trim().isEmpty || bookIds.isEmpty) return [];
     final db = await database;
+    final scope = _eligibleScope(bookIds, boundaries, prefix: 'c.');
+    if (scope.$1.isEmpty) return [];
+    final rows = await db.rawQuery(
+      'SELECT c.chunkId,bm25(rag_chunks_fts) AS lexicalRank FROM rag_chunks_fts JOIN rag_chunks c ON c.chunkId=rag_chunks_fts.chunkId WHERE rag_chunks_fts MATCH ? AND (${scope.$1}) ORDER BY lexicalRank LIMIT ?',
+      [matchQuery, ...scope.$2, limit],
+    );
+    final ranked = rows
+        .map(
+          (r) => (
+            id: r['chunkId'] as String,
+            score: -(r['lexicalRank'] as num).toDouble(),
+          ),
+        )
+        .toList();
+    final prefixes = <RagLexicalHit>[];
+    for (final book in bookIds) {
+      final end = boundaries[book];
+      if (end == null || end <= 0) continue;
+      final terms = RegExp(
+        r'"([^"]+)"',
+      ).allMatches(matchQuery).map((m) => m[1]!.toLowerCase()).toList();
+      for (final c in await crossingPassages(book, end)) {
+        if (terms.any((t) => c.text.toLowerCase().contains(t))) {
+          prefixes.add(RagLexicalHit(chunk: c, score: 0));
+        }
+      }
+    }
+    ranked.sort((a, b) => b.score.compareTo(a.score));
+    final best = ranked.take(limit).toList();
     final hits = <RagLexicalHit>[];
-    final perBookLimit = math.min(limit, math.max(1, limit ~/ bookIds.length));
-
-    for (final bookId in bookIds) {
-      final boundary = boundaries[bookId];
-      final rankExpression = _ftsMode == 'fts5'
-          ? 'bm25(rag_chunks_fts)'
-          : "matchinfo(rag_chunks_fts, 'pcx')";
-      // FTS4 cannot order by matchinfo in SQL. Page matches and retain only
-      // the strongest hits, rather than applying LIMIT before scoring.
-      var offset = 0;
-      final bookHits = <RagLexicalHit>[];
-      while (true) {
-        final rows = await db.rawQuery(
-          '''
-          SELECT c.*, $rankExpression AS lexicalRank
-          FROM rag_chunks_fts
-          JOIN rag_chunks c ON c.chunkId = rag_chunks_fts.chunkId
-          WHERE rag_chunks_fts MATCH ? AND c.bookId = ?
-            ${boundary == null ? '' : 'AND c.charStart < ?'}
-          ${_ftsMode == 'fts5' ? 'ORDER BY lexicalRank ASC LIMIT ?' : 'LIMIT ? OFFSET ?'}
-          ''',
-          [matchQuery, bookId, if (boundary != null) boundary,
-            if (_ftsMode == 'fts5') perBookLimit else ...[200, offset]],
-        );
-        for (final row in rows) {
-          final rawRank = _ftsMode == 'fts5'
-              ? (row['lexicalRank'] as num?)?.toDouble() ?? 0
-              : _scoreFts4MatchInfo(row['lexicalRank'] as Uint8List?);
-          bookHits.add(RagLexicalHit(
-            chunk: RagChunk.fromJson(row, row['embedding'] as Uint8List),
-            score: _ftsMode == 'fts5' ? -rawRank : rawRank,
-          ));
-        }
-        bookHits.sort((a, b) => b.score.compareTo(a.score));
-        if (bookHits.length > perBookLimit) {
-          bookHits.removeRange(perBookLimit, bookHits.length);
-        }
-        if (_ftsMode == 'fts5' || rows.length < 200) break;
-        offset += rows.length;
-      }
-      hits.addAll(bookHits);
+    if (best.isNotEmpty) {
+      final placeholders = List.filled(best.length, '?').join(',');
+      final rows = await db.rawQuery(
+        "SELECT chunkId,bookId,text,embeddingDimension,chapterIndex,chapterTitle,sectionIndex,contentFileKey,charStart,charEnd,tokenStart,tokenEnd,createdAt,tokenCount,previousChunkId,nextChunkId FROM rag_chunks WHERE chunkId IN ($placeholders)",
+        best.map((r) => r.id).toList(),
+      );
+      final byId = {
+        for (final r in rows)
+          r['chunkId'] as String: RagChunk.fromJson(r, Uint8List(0)),
+      };
+      hits.addAll(
+        best.map((r) => RagLexicalHit(chunk: byId[r.id]!, score: r.score)),
+      );
     }
-    hits.sort((a, b) => b.score.compareTo(a.score));
-    return hits.take(limit).toList();
+    hits.addAll(prefixes);
+    return hits.take(limit + prefixes.length).toList();
   }
 
-  static double _scoreFts4MatchInfo(Uint8List? bytes) {
-    if (bytes == null || bytes.length < 8) return 0;
-    final data = ByteData.sublistView(bytes);
-    final phraseCount = data.getUint32(0, Endian.host);
-    final columnCount = data.getUint32(4, Endian.host);
-    var offset = 8;
-    var score = 0.0;
-    for (var phrase = 0; phrase < phraseCount; phrase++) {
-      for (var column = 0; column < columnCount; column++) {
-        if (offset + 12 > bytes.length) return score;
-        final hitsHere = data.getUint32(offset, Endian.host);
-        final hitsAllRows = data.getUint32(offset + 4, Endian.host);
-        final rowsWithHits = data.getUint32(offset + 8, Endian.host);
-        if (hitsHere > 0) {
-          score += hitsHere / (1 + hitsAllRows) + 1 / (1 + rowsWithHits);
-        }
-        offset += 12;
-      }
-    }
-    return score;
-  }
-
-  /// Get all book IDs that have been fully indexed
   Future<List<String>> getAllIndexedBookIds() async {
     final db = await database;
     final results = await db.query(
-      'rag_index_status',
+      'rag_active_status',
       columns: ['bookId'],
       where: 'status = ?',
       whereArgs: ['completed'],
@@ -685,23 +1072,42 @@ class RagDatabaseService {
   /// Clear all RAG data (chunks and status)
   Future<void> clearAll() async {
     final db = await database;
-    await db.delete('rag_chunks_fts');
-    await db.delete('rag_chunks');
-    await db.delete('rag_chunks_staging');
-    await db.delete('rag_index_status');
+    await db.transaction((txn) async {
+      for (final table in [
+        'rag_chunks_fts',
+        'rag_chunks',
+        'rag_chunks_staging',
+        'rag_index_status',
+        'rag_active_status',
+        'rag_jobs',
+        'rag_generations',
+        'rag_prefix_vectors',
+        'rag_leases',
+        'rag_readers',
+      ]) {
+        await txn.delete(table);
+      }
+    });
   }
 
-  /// Clear RAG data for a specific book
+  /// Delete the active generation, pending work, and derived caches together.
   Future<void> clearBook(String bookId) async {
     final db = await database;
-    await db.delete('rag_chunks_fts', where: 'bookId = ?', whereArgs: [bookId]);
-    await db.delete('rag_chunks', where: 'bookId = ?', whereArgs: [bookId]);
-    await db.delete('rag_chunks_staging', where: 'bookId = ?', whereArgs: [bookId]);
-    await db.delete(
-      'rag_index_status',
-      where: 'bookId = ?',
-      whereArgs: [bookId],
-    );
+    await db.transaction((txn) async {
+      for (final table in [
+        'rag_chunks_fts',
+        'rag_chunks',
+        'rag_chunks_staging',
+        'rag_index_status',
+        'rag_active_status',
+        'rag_jobs',
+        'rag_generations',
+        'rag_prefix_vectors',
+        'rag_leases',
+      ]) {
+        await txn.delete(table, where: 'bookId = ?', whereArgs: [bookId]);
+      }
+    });
   }
 
   /// Close the database
@@ -709,7 +1115,7 @@ class RagDatabaseService {
     if (_database != null) {
       await _database!.close();
       _database = null;
-      _ftsMode = 'none';
+      _opening = null;
     }
   }
 }

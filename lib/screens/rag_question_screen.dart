@@ -1,3 +1,11 @@
+import '../services/rag_progress.dart';
+import '../services/rag_answer_style.dart';
+import 'dart:typed_data';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:uuid/uuid.dart';
+import '../services/rag_generation.dart';
+import '../services/rag_history_store.dart';
+import 'rag_history_screen.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -41,7 +49,8 @@ class RagQuestionScreen extends StatefulWidget {
   State<RagQuestionScreen> createState() => _RagQuestionScreenState();
 }
 
-class _RagQuestionScreenState extends State<RagQuestionScreen> {
+class _RagQuestionScreenState extends State<RagQuestionScreen>
+    with WidgetsBindingObserver {
   final TextEditingController _questionController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final RagQueryService _ragQueryService = RagQueryService();
@@ -66,17 +75,38 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
   int _retrievalRound = 0;
   String? _pendingQuestion;
   String _partialAnswer = '';
+  final _history = RagHistoryStore.instance;
+  SummaryConfigService? _summaryConfig;
+  String? _conversationId, _activeTurnId, _attemptId;
+  String _conversationTitle = '';
+  Map<String, String> _savedTitles = {};
+  Stopwatch _elapsed = Stopwatch();
+  Timer? _ticker, _checkpoint;
+  RagStage _stage = RagStage.planning;
+  DateTime? _lastActivity;
+  List<RagChunk> _activeSources = [], _retryCandidates = [];
+  String? _attemptQuestion;
+  String _continuationPrefix = '';
+  String _t(String en, String fr) =>
+      Localizations.localeOf(context).languageCode == 'fr' ? fr : en;
+  Set<String> get _missing =>
+      _selectedBookIds.where((id) => !_indexedBookIds.contains(id)).toSet();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _questionController.addListener(_handleQuestionChanged);
     unawaited(_loadInitialState());
   }
 
   @override
   void dispose() {
+    _saveActive('interrupted');
     _cancellation?.cancel();
+    _ticker?.cancel();
+    _checkpoint?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _questionController.removeListener(_handleQuestionChanged);
     _questionController.dispose();
     _scrollController.dispose();
@@ -154,6 +184,8 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
         _selectedBookIds.remove(bookId);
       }
       _turns.clear();
+      _conversationId = null;
+      _conversationTitle = '';
     });
     unawaited(_saveSelection());
   }
@@ -163,6 +195,8 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
     setState(() {
       _selectedBookIds = _indexedBookIds.toSet();
       _turns.clear();
+      _conversationId = null;
+      _conversationTitle = '';
     });
     unawaited(_saveSelection());
   }
@@ -172,130 +206,349 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
     setState(() {
       _selectedBookIds = {};
       _turns.clear();
+      _conversationId = null;
+      _conversationTitle = '';
     });
     unawaited(_saveSelection());
   }
 
-  Future<void> _submitQuestion() async {
-    final question = _questionController.text.trim();
-    if (question.isEmpty || _selectedBookIds.isEmpty || _isProcessing) return;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _saveActive('running');
+  }
+
+  Map<String, dynamic> _turnData(String status) => {
+    'question': _attemptQuestion,
+    'answer': _continuationPrefix + _partialAnswer,
+    'status': status,
+    'elapsedMs': _elapsed.elapsedMilliseconds,
+    'attemptId': _attemptId,
+    'boundaries': widget.bookReadPositions,
+    'onlyReadSoFar': _onlyReadSoFar,
+    'retryCandidates': _retryCandidates.map((c) => c.toJson()).toList(),
+  };
+  Future<void> _saveActive(String status) async {
+    if (_activeTurnId == null || _attemptQuestion == null) return;
+    try {
+      await _history.saveTurn(
+        _activeTurnId!,
+        _turnData(status),
+        _activeSources,
+      );
+    } catch (_) {
+      if (mounted)
+        setState(
+          () => _error = _t(
+            'Could not save conversation history',
+            'Impossible d’enregistrer la discussion',
+          ),
+        );
+    }
+  }
+
+  Future<void> _submitQuestion({
+    RagChatTurn? retry,
+    bool continuation = false,
+  }) async {
+    final question = retry?.question ?? _questionController.text.trim();
+    if (question.isEmpty ||
+        _selectedBookIds.isEmpty ||
+        _missing.isNotEmpty ||
+        _isProcessing)
+      return;
     final epoch = ++_requestEpoch;
     final token = RagCancellationToken();
     _cancellation = token;
-
+    _elapsed = Stopwatch()..start();
+    final attemptWatch = _elapsed;
+    _attemptId = const Uuid().v4();
+    _activeTurnId = retry?.turnId ?? const Uuid().v4();
+    _conversationId ??= const Uuid().v4();
+    if (_conversationTitle.isEmpty) _conversationTitle = question;
+    _attemptQuestion = question;
+    _continuationPrefix = continuation ? retry!.answer : '';
+    _activeSources = retry?.sources ?? [];
+    _retryCandidates = retry?.retryCandidates ?? [];
+    _lastActivity = null;
+    final conversationId = _conversationId!,
+        turnId = _activeTurnId!,
+        attempt = _attemptId!;
+    final titles = {
+      ..._savedTitles,
+      for (final b in widget.books) b.id: b.title,
+    };
+    _savedTitles = titles;
     setState(() {
       _isProcessing = true;
       _error = null;
       _retrievalRound = 0;
+      _stage = continuation ? RagStage.generation : RagStage.planning;
       _pendingQuestion = question;
       _partialAnswer = '';
+      if (retry != null) _turns.removeWhere((t) => t.turnId == retry.turnId);
     });
     _questionController.clear();
-
-    // Scroll past the question field to show progress
-    await Future.delayed(const Duration(milliseconds: 100));
-    if (_scrollController.hasClients) {
-      unawaited(
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        ),
-      );
-    }
-
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+    _checkpoint?.cancel();
+    _checkpoint = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (_isProcessing) unawaited(_saveActive('running'));
+    });
     try {
+      await _history.begin(conversationId, turnId, {
+        'title': _conversationTitle,
+        'books': _selectedBookIds.toList(),
+        'bookTitles': titles,
+        'onlyReadSoFar': _onlyReadSoFar,
+      }, _turnData('running'));
+      await _saveActive('running');
+      final info = await PackageInfo.fromPlatform();
+      await _history.event(conversationId, turnId, attempt, 'attempt_started', {
+        'question': question,
+        'kind': continuation
+            ? 'continuation'
+            : retry == null
+            ? 'question'
+            : 'retry',
+        'appVersion': info.version,
+        'build': info.buildNumber,
+        'boundaries': widget.bookReadPositions,
+      });
+      final trace = RagTrace(
+        (type, data) {
+          if (type == 'sources' || type == 'candidates') {
+            final chunks = (data['passages'] as List? ?? [])
+                .map(
+                  (p) => RagChunk.fromJson(
+                    Map<String, dynamic>.from(p as Map),
+                    Uint8List(0),
+                  ),
+                )
+                .toList();
+            if (epoch == _requestEpoch) {
+              if (type == 'sources') {
+                _activeSources = chunks;
+              } else {
+                _retryCandidates = chunks;
+              }
+            }
+          }
+          unawaited(
+            _history.event(conversationId, turnId, attempt, type, {
+              'elapsedMs': attemptWatch.elapsedMilliseconds,
+              ...data,
+            }),
+          );
+          if (type == 'request' ||
+              type == 'scope' ||
+              type == 'context_compacted' ||
+              type == 'decision' ||
+              type == 'query_completed' ||
+              type == 'response' ||
+              type == 'headers' ||
+              type.endsWith('failure')) {
+            debugPrint(
+              '[RAG] attempt=$attempt stage=${data['stage']} event=$type elapsedMs=${attemptWatch.elapsedMilliseconds} status=${data['status']} kind=${data['kind']} finish=${data['finishReason']} usage=${data['usage']} model=${data['model']} effort=${data['effort']} budget=${data['maxOutputTokens']} round=${data['round']} inputTokens=${data['uniqueInputTokens']} passages=${data['newPassages']} selected=${(data['keep'] as List?)?.length} gaps=${(data['gaps'] as List?)?.length} sufficient=${data['sufficient']} planningSkipped=${data['planningSkipped']}',
+            );
+          }
+        },
+        onActivity: () {
+          if (epoch == _requestEpoch) _lastActivity = DateTime.now();
+        },
+      );
       final prefs = await SharedPreferences.getInstance();
-      final configService = SummaryConfigService(prefs);
-      final baseService = await configService.getSummaryService();
-      if (baseService == null) {
-        throw Exception(
-          'Summary service not available. Please configure an API key in settings.',
+      final service = await (_summaryConfig ??= SummaryConfigService(
+        prefs,
+      )).getSummaryService();
+      if (service == null)
+        throw StateError(
+          _t(
+            'Configure a generation provider in settings.',
+            'Configurez un fournisseur dans les paramètres.',
+          ),
+        );
+      if (!mounted || epoch != _requestEpoch) return;
+      final language = Localizations.localeOf(context).languageCode;
+      void delta(String text) {
+        if (mounted && epoch == _requestEpoch)
+          setState(() => _partialAnswer += text);
+      }
+
+      RagQueryResult result;
+      if (continuation) {
+        final generated = await RagTrace.run(
+          trace,
+          () => _ragQueryService.continueAnswer(
+            turn: retry!,
+            bookTitles: titles,
+            summaryService: service,
+            language: language,
+            cancellationToken: token,
+            onAnswerDelta: delta,
+          ),
+        );
+        result = RagQueryResult(
+          answer: retry!.answer + generated.text,
+          status: generated.status,
+          sourceChunks: retry.sources,
+        );
+      } else {
+        result = await RagTrace.run(
+          trace,
+          () => _ragQueryService.queryMultipleBooks(
+            bookIds: _selectedBookIds.toList(),
+            bookTitles: titles,
+            bookReadPositions: widget.bookReadPositions,
+            onlyReadSoFar: _onlyReadSoFar,
+            question: question,
+            summaryService: service,
+            language: language,
+            history: List<RagChatTurn>.from(_turns),
+            cancellationToken: token,
+            retryCandidates: retry?.retryCandidates ?? [],
+            onStage: (stage) {
+              if (mounted && epoch == _requestEpoch)
+                setState(() => _stage = stage);
+            },
+            onRetrievalRound: (round) {
+              if (mounted && epoch == _requestEpoch)
+                setState(() => _retrievalRound = round);
+            },
+            onAnswerDelta: delta,
+          ),
         );
       }
-
-      if (!mounted) return;
-      final language = AppLocalizations.of(context)!.localeName.split('_')[0];
-
-      final bookTitles = <String, String>{};
-      for (final book in widget.books) {
-        bookTitles[book.id] = book.title;
+      if (epoch != _requestEpoch) return;
+      _elapsed.stop();
+      _partialAnswer = result.answer;
+      _continuationPrefix = '';
+      _activeSources = result.sourceChunks;
+      _retryCandidates = result.retryCandidates;
+      await _saveActive(result.status);
+      await _history
+          .event(conversationId, turnId, attempt, 'attempt_finished', {
+            'status': result.status,
+            'elapsedMs': _elapsed.elapsedMilliseconds,
+            'diagnostics': result.diagnostics,
+          });
+      if (!mounted || epoch != _requestEpoch) return;
+      setState(() {
+        _turns.add(
+          RagChatTurn(
+            question,
+            result.answer,
+            result.sourceChunks,
+            status: result.status,
+            elapsedMs: _elapsed.elapsedMilliseconds,
+            turnId: turnId,
+            attemptId: attempt,
+            retryCandidates: result.retryCandidates,
+            usedCompatibilityFallback: result.usedCompatibilityFallback,
+          ),
+        );
+        _isProcessing = false;
+        _pendingQuestion = null;
+        _partialAnswer = '';
+      });
+      if (_scrollController.hasClients) {
+        unawaited(
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          ),
+        );
       }
-
-      final result = await _ragQueryService.queryMultipleBooks(
-        bookIds: _selectedBookIds.toList(),
-        bookTitles: bookTitles,
-        bookReadPositions: widget.bookReadPositions,
-        onlyReadSoFar: _onlyReadSoFar,
-        question: question,
-        summaryService: baseService,
-        language: language,
-        history: List<RagChatTurn>.from(_turns),
-        cancellationToken: token,
-        onRetrievalRound: (round) {
-          if (mounted && epoch == _requestEpoch) {
-            setState(() => _retrievalRound = round);
-          }
-        },
-        onAnswerDelta: (delta) {
-          if (mounted && epoch == _requestEpoch) {
-            setState(() => _partialAnswer += delta);
-          }
-        },
-      );
-
-      if (mounted && epoch == _requestEpoch && !token.cancelled) {
+    } catch (error) {
+      if (epoch != _requestEpoch) return;
+      _elapsed.stop();
+      final cancelled = token.cancelled || error is RagCancelledException;
+      final status = cancelled
+          ? 'cancelled'
+          : _partialAnswer.isNotEmpty || _continuationPrefix.isNotEmpty
+          ? 'incomplete'
+          : 'failed';
+      await _saveActive(status);
+      await _history.event(conversationId, turnId, attempt, 'attempt_failed', {
+        'kind': cancelled
+            ? 'user_cancellation'
+            : error is RagGenerationException
+            ? error.kind
+            : error is FormatException
+            ? 'malformed_output'
+            : 'application_error',
+        'elapsedMs': _elapsed.elapsedMilliseconds,
+      });
+      if (mounted && epoch == _requestEpoch)
         setState(() {
           _turns.add(
             RagChatTurn(
               question,
-              result.answer,
-              result.sourceChunks,
-              usedCompatibilityFallback: result.usedCompatibilityFallback,
+              _continuationPrefix + _partialAnswer,
+              _activeSources,
+              status: status,
+              elapsedMs: _elapsed.elapsedMilliseconds,
+              turnId: turnId,
+              attemptId: attempt,
+              retryCandidates: _retryCandidates,
             ),
           );
           _isProcessing = false;
           _pendingQuestion = null;
           _partialAnswer = '';
         });
-        // Scroll to answer
-        await Future.delayed(const Duration(milliseconds: 100));
-        if (_scrollController.hasClients) {
-          unawaited(
-            _scrollController.animateTo(
-              _scrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeOut,
-            ),
-          );
-        }
-      }
-    } on RagCancelledException {
-      if (mounted && epoch == _requestEpoch) {
-        setState(() => _isProcessing = false);
-      }
-    } catch (e) {
-      debugPrint('[RAG] Question error: $e');
-      if (mounted && epoch == _requestEpoch) {
-        setState(() {
-          _error = e.toString();
-          _isProcessing = false;
-          _pendingQuestion = null;
-          _partialAnswer = '';
-        });
-        _questionController.text = question;
+    } finally {
+      if (epoch == _requestEpoch) {
+        _ticker?.cancel();
+        _checkpoint?.cancel();
+        _activeTurnId = null;
+        _attemptQuestion = null;
       }
     }
   }
 
   void _stop() {
+    if (!_isProcessing) return;
+    _elapsed.stop();
+    _ticker?.cancel();
+    _checkpoint?.cancel();
+    unawaited(_saveActive('cancelled'));
+    if (_conversationId != null &&
+        _activeTurnId != null &&
+        _attemptId != null) {
+      unawaited(
+        _history.event(
+          _conversationId!,
+          _activeTurnId!,
+          _attemptId!,
+          'attempt_cancelled',
+          {'elapsedMs': _elapsed.elapsedMilliseconds},
+        ),
+      );
+    }
     _cancellation?.cancel();
+    final question = _attemptQuestion ?? _pendingQuestion ?? '';
+    _turns.add(
+      RagChatTurn(
+        question,
+        _continuationPrefix + _partialAnswer,
+        _activeSources,
+        status: 'cancelled',
+        elapsedMs: _elapsed.elapsedMilliseconds,
+        turnId: _activeTurnId,
+        attemptId: _attemptId,
+        retryCandidates: _retryCandidates,
+      ),
+    );
     _requestEpoch++;
-    if (_pendingQuestion != null) _questionController.text = _pendingQuestion!;
     setState(() {
       _isProcessing = false;
       _partialAnswer = '';
       _pendingQuestion = null;
+      _activeTurnId = null;
+      _attemptQuestion = null;
     });
   }
 
@@ -304,8 +557,56 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
     setState(() {
       _turns.clear();
       _error = null;
+      _conversationId = null;
+      _conversationTitle = '';
     });
   }
+
+  Future<void> _openHistory() async {
+    if (_isProcessing) return;
+    final selected = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(builder: (_) => RagHistoryScreen(store: _history)),
+    );
+    if (selected == null || !mounted) return;
+    final turns = await _history.turns(selected['id'] as String);
+    if (!mounted) return;
+    setState(() {
+      _conversationId = selected['id'] as String;
+      _conversationTitle = selected['title'] as String;
+      _savedTitles = Map<String, String>.from(
+        selected['bookTitles'] as Map? ?? {},
+      );
+      _selectedBookIds = (selected['books'] as List).cast<String>().toSet();
+      _onlyReadSoFar = selected['onlyReadSoFar'] as bool? ?? true;
+      _turns
+        ..clear()
+        ..addAll(
+          turns.map(
+            (t) => RagChatTurn(
+              t['question'] as String? ?? '',
+              t['answer'] as String? ?? '',
+              RagHistoryStore.decodeSources(t),
+              status: t['status'] as String? ?? 'interrupted',
+              elapsedMs: t['elapsedMs'] as int? ?? 0,
+              turnId: t['id'] as String,
+              attemptId: t['attemptId'] as String?,
+              retryCandidates: RagHistoryStore.decodeSources({
+                'sources': t['retryCandidates'] ?? [],
+              }),
+            ),
+          ),
+        );
+      _error = null;
+    });
+  }
+
+  String get _progressLabel => ragProgressLabel(
+    french: Localizations.localeOf(context).languageCode == 'fr',
+    stage: _stage,
+    round: _retrievalRound,
+    elapsed: _elapsed.elapsed,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -319,22 +620,70 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
         leading: const BackButton(),
         actions: [
           IconButton(
+            tooltip: _t('Recent conversations', 'Discussions récentes'),
+            onPressed: _isProcessing ? null : _openHistory,
+            icon: const Icon(Icons.history),
+          ),
+          IconButton(
             tooltip: l10n.ragNewChat,
             onPressed: _newChat,
             icon: const Icon(Icons.add_comment_outlined),
           ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildQuestionField(l10n),
-              const SizedBox(height: 8),
-              _buildSubmitButton(l10n),
-            ],
+      bottomNavigationBar: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isProcessing) ...[
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(_progressLabel)),
+                    ],
+                  ),
+                  if (_elapsed.elapsed.inSeconds >= 15)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        _lastActivity == null
+                            ? _t(
+                                'Waiting for the provider. You can stop at any time.',
+                                'En attente du fournisseur. Vous pouvez arrêter à tout moment.',
+                              )
+                            : DateTime.now()
+                                      .difference(_lastActivity!)
+                                      .inSeconds >
+                                  15
+                            ? _t(
+                                'Waiting for more provider activity.',
+                                'En attente de nouvelles données du fournisseur.',
+                              )
+                            : _t(
+                                'The provider is still working.',
+                                'Le fournisseur est toujours actif.',
+                              ),
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                ],
+                _buildQuestionField(l10n),
+                const SizedBox(height: 8),
+                _buildSubmitButton(l10n),
+              ],
+            ),
           ),
         ),
       ),
@@ -361,19 +710,16 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
                 ),
               ),
               if (_partialAnswer.isNotEmpty)
-                MarkdownBody(data: _partialAnswer, selectable: true),
-            ],
-            if (_isProcessing) ...[
-              const SizedBox(height: 24),
-              const Center(child: CircularProgressIndicator()),
-              Center(
-                child: Text(
-                  _retrievalRound > 0
-                      ? l10n.ragSearchingBooks(_retrievalRound)
-                      : l10n.ragPreparingSearch,
+                MarkdownBody(
+                  data: ragDisplayAnswer(_continuationPrefix + _partialAnswer),
+                  selectable: true,
                 ),
-              ),
             ],
+            if (_missing.isNotEmpty)
+              Text(
+                _t('Unavailable selection: ', 'Sélection indisponible : ') +
+                    _missing.map((id) => _savedTitles[id] ?? id).join(', '),
+              ),
             if (_error != null) ...[
               const SizedBox(height: 16),
               _buildErrorCard(theme, l10n),
@@ -512,7 +858,11 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
           ? null
           : (val) => setState(() {
               _onlyReadSoFar = val;
+              _conversationId = null;
+              _conversationTitle = '';
               _turns.clear();
+              _conversationId = null;
+              _conversationTitle = '';
             }),
       contentPadding: EdgeInsets.zero,
     );
@@ -542,7 +892,11 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
   // ---------------------------------------------------------------------------
 
   Widget _buildSubmitButton(AppLocalizations l10n) {
-    final canAsk = _canSubmit && !_isProcessing && _selectedBookIds.isNotEmpty;
+    final canAsk =
+        _canSubmit &&
+        !_isProcessing &&
+        _selectedBookIds.isNotEmpty &&
+        _missing.isEmpty;
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
@@ -578,8 +932,11 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
               style: TextStyle(color: theme.colorScheme.onErrorContainer),
             ),
           ),
-          if (_canSubmit && _selectedBookIds.isNotEmpty)
-            TextButton(onPressed: _submitQuestion, child: Text(l10n.retry)),
+          if (_canSubmit && _selectedBookIds.isNotEmpty && _missing.isEmpty)
+            TextButton(
+              onPressed: () => _submitQuestion(),
+              child: Text(l10n.retry),
+            ),
         ],
       ),
     );
@@ -595,6 +952,7 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
     RagChatTurn turn,
   ) {
     final titleByBookId = {
+      ..._savedTitles,
       for (final book in widget.books) book.id: book.title,
     };
     final cited = RegExp(r'\[S(\d+)\]')
@@ -602,10 +960,7 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
         .map((match) => int.tryParse(match.group(1)!))
         .whereType<int>()
         .toSet();
-    final linkedAnswer = turn.answer.replaceAllMapped(
-      RegExp(r'\[S(\d+)\]'),
-      (match) => '[S${match.group(1)}](source:${match.group(1)})',
-    );
+    final linkedAnswer = ragDisplayAnswer(turn.answer);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -646,6 +1001,33 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
                   }
                 },
               ),
+              Text(
+                '${_statusLabel(turn.status)} · ${turn.elapsedMs ~/ 1000} s',
+                style: theme.textTheme.bodySmall,
+              ),
+              if (turn.status != 'complete')
+                Wrap(
+                  children: [
+                    TextButton(
+                      onPressed: _isProcessing || _missing.isNotEmpty
+                          ? null
+                          : () => _submitQuestion(retry: turn),
+                      child: Text(l10n.retry),
+                    ),
+                    if (turn.answer.isNotEmpty && turn.sources.isNotEmpty)
+                      TextButton(
+                        onPressed: _isProcessing || _missing.isNotEmpty
+                            ? null
+                            : () => _submitQuestion(
+                                retry: turn,
+                                continuation: true,
+                              ),
+                        child: Text(
+                          _t('Continue answer', 'Continuer la réponse'),
+                        ),
+                      ),
+                  ],
+                ),
               if (turn.usedCompatibilityFallback)
                 Text(
                   l10n.ragCompatibilityFallback,
@@ -654,7 +1036,7 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
               if (turn.sources.isNotEmpty)
                 ExpansionTile(
                   tilePadding: EdgeInsets.zero,
-                  title: Text(l10n.ragLocalSearch),
+                  title: Text(l10n.ragSourcesLabel),
                   children: [
                     for (final entry in turn.sources.asMap().entries)
                       ListTile(
@@ -682,6 +1064,14 @@ class _RagQuestionScreenState extends State<RagQuestionScreen> {
       ],
     );
   }
+
+  String _statusLabel(String status) => switch (status) {
+    'complete' => _t('Completed', 'Terminé'),
+    'cancelled' => _t('Cancelled', 'Annulé'),
+    'interrupted' => _t('Interrupted', 'Interrompu'),
+    'incomplete' => _t('Incomplete', 'Incomplet'),
+    _ => _t('Research failed', 'Recherche échouée'),
+  };
 
   void _showPassage(RagChunk chunk, Map<String, String> titles) {
     showModalBottomSheet<void>(

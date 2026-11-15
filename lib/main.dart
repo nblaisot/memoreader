@@ -11,8 +11,7 @@ import 'utils/app_colors.dart';
 import 'utils/app_route_observer.dart';
 
 import 'services/rag_indexing_service.dart';
-import 'services/rag_database_service.dart';
-import 'services/book_service.dart';
+import 'services/rag_background_jobs.dart';
 import 'services/google_drive_sync_service.dart';
 import 'widgets/compact_error_snack_bar.dart';
 
@@ -60,6 +59,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _startDriveSync();
+      _autoResumeRagIndexing();
     }
   }
 
@@ -95,47 +95,10 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   /// This runs on app startup to continue where we left off
   Future<void> _autoResumeRagIndexing() async {
     try {
-      final ragDbService = RagDatabaseService();
-      final ragIndexingService = RagIndexingService();
-      final bookService = BookService();
-
-      // Get all books from library
-      final books = await bookService.getAllBooks();
-
-      // Check each book for incomplete indexing
-      for (final book in books) {
-        if (!await RagIndexingService.hasLocalBookFile(book)) {
-          continue;
-        }
-        final status = await ragDbService.getIndexStatus(book.id);
-
-        // Resume every non-complete state after credentials/config may change.
-        if (status == null || !status.isComplete) {
-          debugPrint(
-            '[RAG] Auto-resuming indexing for book: ${book.title} (${status?.indexedChunks ?? 0}/${status?.totalChunks ?? 0})',
-          );
-
-          // Start indexing in background (non-blocking)
-          // The service will pick up from the last checkpoint
-          ragIndexingService
-              .startIndexing(book.id)
-              .listen(
-                (progress) {
-                  debugPrint(
-                    '[RAG] Auto-resume progress for ${book.title}: ${progress.indexedChunks}/${progress.totalChunks}',
-                  );
-                },
-                onError: (error) {
-                  debugPrint(
-                    '[RAG] Auto-resume error for ${book.title}: $error',
-                  );
-                },
-              );
-        }
-      }
+      await RagIndexingService().recover();
+      await RagBackgroundJobs.schedule();
     } catch (e) {
-      debugPrint('[RAG] Error during auto-resume: $e');
-      // Don't throw - this is non-critical background work
+      debugPrint('[RAG] Recovery failed: ${e.runtimeType}');
     }
   }
 

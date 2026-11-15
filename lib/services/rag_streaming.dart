@@ -20,11 +20,14 @@ Stream<String> streamResponseText({
   final response = await client.send(request);
   if (response.statusCode < 200 || response.statusCode >= 300) {
     final body = await response.stream.bytesToString();
-    throw Exception('Generation request failed (${response.statusCode}): $body');
+    throw Exception(
+      'Generation request failed (${response.statusCode}): $body',
+    );
   }
-  await for (final line in response.stream
-      .transform(utf8.decoder)
-      .transform(const LineSplitter())) {
+  await for (final line
+      in response.stream
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())) {
     if (!line.startsWith('data:')) continue;
     final data = line.substring(5).trim();
     if (data.isEmpty || data == '[DONE]') continue;
@@ -40,7 +43,9 @@ Stream<String> streamResponseText({
     if (mistral) {
       final choices = event['choices'];
       if (choices is! List || choices.isEmpty) continue;
-      final delta = choices.first is Map ? (choices.first as Map)['delta'] : null;
+      final delta = choices.first is Map
+          ? (choices.first as Map)['delta']
+          : null;
       if (delta is! Map) continue;
       final content = delta['content'];
       if (content is String && content.isNotEmpty) yield content;

@@ -1,0 +1,22 @@
+name: memoreader_sqlite_vec
+version: 0.1.6
+publish_to: none
+description: Pinned upstream sqlite-vec native extension for MemoReader.
+environment:
+  sdk: '>=3.9.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true
+      ios:
+        ffiPlugin: true
+      macos:
+        ffiPlugin: true
+      linux:
+        ffiPlugin: true
+      windows:
+        ffiPlugin: true

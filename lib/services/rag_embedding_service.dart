@@ -3,7 +3,7 @@ import 'dart:typed_data';
 /// Exception thrown when embedding API rate limit is exceeded
 class EmbeddingRateLimitException implements Exception {
   final String message;
-  
+
   /// Number of seconds to wait before retrying (from API Retry-After header)
   final int? retryAfterSeconds;
 

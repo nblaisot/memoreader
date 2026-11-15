@@ -1,3 +1,4 @@
+import 'rag_request_scope.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,8 @@ class MistralEmbeddingService implements EmbeddingService {
 
   MistralEmbeddingService(this.apiKey, {String? model})
     : model = model ?? _defaultModel;
+
+  static final http.Client _ragHttp = RagHttpClient(http.Client());
 
   @override
   String get providerName => 'Mistral AI';
@@ -70,13 +73,13 @@ class MistralEmbeddingService implements EmbeddingService {
 
         final requestPayload = {'model': model, 'input': batch};
 
-        if (kDebugMode) {
+        if (kDebugMode && !RagRequestScope.active) {
           debugPrint(
             '[RAG] Mistral embedding request: model=$model, batchSize=${batch.length}',
           );
         }
 
-        final response = await http.post(
+        final response = await _ragHttp.post(
           Uri.parse(_apiUrl),
           headers: {
             'Content-Type': 'application/json',
@@ -93,7 +96,7 @@ class MistralEmbeddingService implements EmbeddingService {
 
           allEmbeddings.addAll(embeddings);
 
-          if (kDebugMode) {
+          if (kDebugMode && !RagRequestScope.active) {
             debugPrint(
               '[RAG] Mistral embedding response: received ${embeddings.length} embeddings',
             );

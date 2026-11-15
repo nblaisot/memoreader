@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'rag_indexing_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -19,9 +21,9 @@ class SettingsService {
   static const String _ragChunkMinTokensKey = 'rag_chunk_min_tokens';
   static const String _ragChunkMaxTokensKey = 'rag_chunk_max_tokens';
   static const String _ragChunkOverlapTokensKey = 'rag_chunk_overlap_tokens';
-  static const int _defaultRagChunkMinTokens = 250;
-  static const int _defaultRagChunkMaxTokens = 350;
-  static const int _defaultRagChunkOverlapTokens = 40;
+  static const int _defaultRagChunkMinTokens = 400;
+  static const int _defaultRagChunkMaxTokens = 550;
+  static const int _defaultRagChunkOverlapTokens = 60;
   static const int _minRagChunkTokens = 50;
   static const int _maxRagChunkTokens = 2000;
 
@@ -157,7 +159,7 @@ class SettingsService {
 
   // RAG chunking configuration
 
-  /// Get RAG chunk minimum tokens (default: 250)
+  /// Get RAG chunk minimum tokens (default: 400)
   Future<int> getRagChunkMinTokens() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_ragChunkMinTokensKey) ?? _defaultRagChunkMinTokens;
@@ -168,9 +170,10 @@ class SettingsService {
     final prefs = await SharedPreferences.getInstance();
     final clamped = tokens.clamp(_minRagChunkTokens, _maxRagChunkTokens);
     await prefs.setInt(_ragChunkMinTokensKey, clamped);
+    unawaited(RagIndexingService().recover(configurationChanged: true));
   }
 
-  /// Get RAG chunk maximum tokens (default: 500)
+  /// Get RAG chunk maximum tokens (default: 550)
   Future<int> getRagChunkMaxTokens() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_ragChunkMaxTokensKey) ?? _defaultRagChunkMaxTokens;
@@ -181,9 +184,10 @@ class SettingsService {
     final prefs = await SharedPreferences.getInstance();
     final clamped = tokens.clamp(_minRagChunkTokens, _maxRagChunkTokens);
     await prefs.setInt(_ragChunkMaxTokensKey, clamped);
+    unawaited(RagIndexingService().recover(configurationChanged: true));
   }
 
-  /// Get RAG chunk overlap tokens (default: 75)
+  /// Get RAG chunk overlap tokens (default: 60)
   Future<int> getRagChunkOverlapTokens() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_ragChunkOverlapTokensKey) ??
@@ -195,6 +199,7 @@ class SettingsService {
     final prefs = await SharedPreferences.getInstance();
     final clamped = tokens.clamp(0, _maxRagChunkTokens);
     await prefs.setInt(_ragChunkOverlapTokensKey, clamped);
+    unawaited(RagIndexingService().recover(configurationChanged: true));
   }
 
   /// Save RAG chunk configuration
@@ -203,11 +208,16 @@ class SettingsService {
     required int maxTokens,
     required int overlapTokens,
   }) async {
-    await Future.wait([
-      saveRagChunkMinTokens(minTokens),
-      saveRagChunkMaxTokens(maxTokens),
-      saveRagChunkOverlapTokens(overlapTokens),
-    ]);
+    final prefs = await SharedPreferences.getInstance();
+    final minimum = minTokens.clamp(_minRagChunkTokens, _maxRagChunkTokens);
+    final maximum = maxTokens.clamp(minimum, _maxRagChunkTokens);
+    await prefs.setInt(_ragChunkMinTokensKey, minimum);
+    await prefs.setInt(_ragChunkMaxTokensKey, maximum);
+    await prefs.setInt(
+      _ragChunkOverlapTokensKey,
+      overlapTokens.clamp(0, maximum - 1),
+    );
+    unawaited(RagIndexingService().recover(configurationChanged: true));
   }
 
   /// Get default RAG chunk minimum tokens

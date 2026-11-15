@@ -1,3 +1,5 @@
+import 'rag_generation.dart';
+import 'rag_request_scope.dart';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -14,21 +16,38 @@ import 'summary_service.dart';
 import 'rag_streaming.dart';
 
 /// Summaries via ChatGPT/Codex subscription (OAuth + Codex backend).
-class CodexSummaryService implements SummaryService, RagStreamingService {
+class CodexSummaryService
+    implements SummaryService, RagStreamingService, RagGenerationService {
   CodexSummaryService({
     CodexAuthService? authService,
     http.Client? httpClient,
+    http.Client? ragClient,
     this.model = CodexAuthConstants.defaultModel,
   }) : _auth = authService ?? CodexAuthService(httpClient: httpClient),
-       _http = httpClient ?? createResolvingHttpClient();
+       _http = RagHttpClient(httpClient ?? createResolvingHttpClient()),
+       _ragHttp = RagHttpClient(
+         ragClient ??
+             httpClient ??
+             createResolvingHttpClient(
+               connectionTimeout: const Duration(seconds: 30),
+             ),
+       );
 
   static const String providerId = 'openai_codex';
 
   final CodexAuthService _auth;
   final http.Client _http;
+  final http.Client _ragHttp;
   final String model;
   bool usedCompatibilityFallback = false;
   final ApiCacheService _cacheService = ApiCacheService();
+
+  CodexSummaryService forModel(String modelId) => CodexSummaryService(
+    authService: _auth,
+    httpClient: _http,
+    ragClient: _ragHttp,
+    model: modelId,
+  );
 
   @override
   String get serviceName => 'ChatGPT/Codex';
@@ -92,7 +111,7 @@ class CodexSummaryService implements SummaryService, RagStreamingService {
       headers['ChatGPT-Account-Id'] = accountId;
     }
 
-    if (kDebugMode) {
+    if (kDebugMode && !RagRequestScope.active) {
       debugPrint(
         '[LLM] Codex request: model=$model, promptLength=${safePrompt.length}',
       );
@@ -124,7 +143,8 @@ class CodexSummaryService implements SummaryService, RagStreamingService {
         headers: headers,
         body: jsonEncode(requestPayload),
       );
-      usedCompatibilityFallback = response.statusCode >= 200 && response.statusCode < 300;
+      usedCompatibilityFallback =
+          response.statusCode >= 200 && response.statusCode < 300;
     }
 
     if (!response.statusCode.toString().startsWith('2')) {
@@ -209,7 +229,9 @@ class CodexSummaryService implements SummaryService, RagStreamingService {
     final payload = <String, dynamic>{
       'model': model,
       'instructions': 'Answer only from supplied excerpts and cite sources.',
-      'input': [{'role': 'user', 'content': prompt}],
+      'input': [
+        {'role': 'user', 'content': prompt},
+      ],
       'store': false,
       'stream': true,
       'reasoning': {'effort': 'low'},
@@ -264,5 +286,61 @@ class CodexSummaryService implements SummaryService, RagStreamingService {
       return buffer.toString();
     }
     return data['output_text'] as String? ?? '';
+  }
+
+  @override
+  Stream<RagGenerationEvent> generateRag(RagGenerationRequest request) async* {
+    var credentials = await _auth.getValidCredentials();
+    var actualModel = request.model ?? model;
+    usedCompatibilityFallback = false;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        yield* streamRagHttp(
+          client: _ragHttp,
+          endpoint: Uri.parse(CodexAuthConstants.codexResponsesUrl),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+            'Authorization': 'Bearer ${credentials.accessToken}',
+            if (credentials.accountId != null)
+              'ChatGPT-Account-Id': credentials.accountId!,
+          },
+          payload: {
+            'model': actualModel,
+            'input': [
+              {'role': 'user', 'content': request.prompt},
+            ],
+            'instructions':
+                'Use only supplied evidence. Return compact JSON when requested; cite sources in answers.',
+            if (!usedCompatibilityFallback)
+              'reasoning': {'effort': request.effort},
+            'store': false,
+            'stream': true,
+          },
+          mistral: false,
+          generation: request,
+        );
+        return;
+      } on RagGenerationException catch (e) {
+        if (attempt == 0 && e.message == 'HTTP 401') {
+          credentials = await _auth.refreshTokens();
+          RagTrace.record('authentication_refresh', {
+            'stage': request.stage.name,
+          });
+        } else if (!usedCompatibilityFallback &&
+            e.kind == 'unsupported_model' &&
+            (e.message == 'HTTP 400' || e.message == 'HTTP 404')) {
+          actualModel = CodexAuthConstants.compatibilityModel;
+          usedCompatibilityFallback = true;
+          RagTrace.record('model_fallback', {
+            'requested': model,
+            'actual': actualModel,
+            'stage': request.stage.name,
+          });
+        } else {
+          rethrow;
+        }
+      }
+    }
   }
 }

@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.10)
+project(sqlite_vec_library LANGUAGES C)
+add_library(sqlite_vec SHARED sqlite-vec.c)
+target_compile_definitions(sqlite_vec PRIVATE SQLITE_VEC_OMIT_FS SQLITE_VEC_OMIT_AVX)
+if(ANDROID)
+  target_link_options(sqlite_vec PRIVATE "-Wl,-z,max-page-size=16384")
+endif()

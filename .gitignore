@@ -46,3 +46,4 @@ app.*.map.json
 
 # Xcode local build data (should never be committed)
 macos/DerivedData/
+**/.derived-data-log-*

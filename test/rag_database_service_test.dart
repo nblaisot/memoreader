@@ -1,3 +1,4 @@
+import 'package:memoreader/services/rag_native_database.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -34,15 +35,20 @@ RagChunk _ragSampleChunk({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(() {
+  setUpAll(() async {
     sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
+    databaseFactory = ragDatabaseFactory;
+    await databaseFactory.setDatabasesPath(
+      (await Directory.systemTemp.createTemp('memoreader-rag-test-')).path,
+    );
   });
 
   setUp(() async {
     final svc = RagDatabaseService();
     await svc.close();
     final dir = await getDatabasesPath();
+    final next = File(p.join(dir, 'rag-v5.db'));
+    if (next.existsSync()) next.deleteSync();
     final file = File(p.join(dir, 'rag.db'));
     if (file.existsSync()) {
       file.deleteSync();
@@ -182,21 +188,36 @@ void main() {
   test('FTS5 ranks a repeated exact match ahead of a weak match', () async {
     final db = RagDatabaseService();
     await db.saveChunks([
-      _ragSampleChunk(bookId: 'rank', chunkId: 'weak', charStart: 0,
-          charEnd: 100, text: 'quasar followed by unrelated words and a long explanation'),
-      _ragSampleChunk(bookId: 'rank', chunkId: 'strong', charStart: 101,
-          charEnd: 200, text: 'quasar quasar quasar quasar'),
+      _ragSampleChunk(
+        bookId: 'rank',
+        chunkId: 'weak',
+        charStart: 0,
+        charEnd: 100,
+        text: 'quasar followed by unrelated words and a long explanation',
+      ),
+      _ragSampleChunk(
+        bookId: 'rank',
+        chunkId: 'strong',
+        charStart: 101,
+        charEnd: 200,
+        text: 'quasar quasar quasar quasar',
+      ),
     ]);
-    final hits = await db.searchLexical(matchQuery: '"quasar"',
-        bookIds: ['rank'], limit: 2);
+    final hits = await db.searchLexical(
+      matchQuery: '"quasar"',
+      bookIds: ['rank'],
+      limit: 2,
+    );
     expect(hits.first.chunk.chunkId, 'strong');
   });
 
   test('FTS4 pages and ranks matches with a reading boundary', () async {
     final dbPath = p.join(await getDatabasesPath(), 'rag.db');
     final initialDb = await databaseFactoryFfi.openDatabase(dbPath);
-    await initialDb.execute('CREATE VIRTUAL TABLE rag_chunks_fts USING fts4('
-        'chunkId, bookId, text, chapterTitle, tokenize=unicode61)');
+    await initialDb.execute(
+      'CREATE VIRTUAL TABLE rag_chunks_fts USING fts4('
+      'chunkId, bookId, text, chapterTitle, tokenize=unicode61)',
+    );
     await initialDb.close();
 
     final db = RagDatabaseService();
@@ -224,10 +245,20 @@ void main() {
 
   test('staged rebuild preserves the old index until activation', () async {
     final db = RagDatabaseService();
-    final old = _ragSampleChunk(bookId: 'swap', chunkId: 'old',
-        charStart: 0, charEnd: 10, text: 'old quasar');
-    final replacement = _ragSampleChunk(bookId: 'swap', chunkId: 'new',
-        charStart: 0, charEnd: 10, text: 'new nebula');
+    final old = _ragSampleChunk(
+      bookId: 'swap',
+      chunkId: 'old',
+      charStart: 0,
+      charEnd: 10,
+      text: 'old quasar',
+    );
+    final replacement = _ragSampleChunk(
+      bookId: 'swap',
+      chunkId: 'new',
+      charStart: 0,
+      charEnd: 10,
+      text: 'new nebula',
+    );
     await db.saveChunk(old);
     await db.saveStagedChunks([replacement]);
     expect((await db.getChunks('swap')).single.chunkId, 'old');
@@ -235,10 +266,14 @@ void main() {
     await db.activateStagedBook('swap');
     expect((await db.getChunks('swap')).single.chunkId, 'new');
     expect(await db.getStagedChunkCount('swap'), 0);
-    expect(await db.searchLexical(matchQuery: '"quasar"', bookIds: ['swap']),
-        isEmpty);
-    expect(await db.searchLexical(matchQuery: '"nebula"', bookIds: ['swap']),
-        isNotEmpty);
+    expect(
+      await db.searchLexical(matchQuery: '"quasar"', bookIds: ['swap']),
+      isEmpty,
+    );
+    expect(
+      await db.searchLexical(matchQuery: '"nebula"', bookIds: ['swap']),
+      isNotEmpty,
+    );
   });
 
   test('partial progress updates preserve the index manifest', () async {
@@ -298,10 +333,7 @@ void main() {
     );
 
     expect(
-      await db.searchLexical(
-        matchQuery: '"quasar"',
-        bookIds: ['replace'],
-      ),
+      await db.searchLexical(matchQuery: '"quasar"', bookIds: ['replace']),
       isEmpty,
     );
     final current = await db.searchLexical(
@@ -340,13 +372,18 @@ void main() {
     await legacy.close();
 
     final migrated = await RagDatabaseService().database;
-    final columns = await migrated.rawQuery('PRAGMA table_info(rag_index_status)');
-    expect(columns.map((row) => row['name']), containsAll([
-      'embeddingProvider',
-      'contentHash',
-      'chunkingVersion',
-      'indexVersion',
-    ]));
+    final columns = await migrated.rawQuery(
+      'PRAGMA table_info(rag_index_status)',
+    );
+    expect(
+      columns.map((row) => row['name']),
+      containsAll([
+        'embeddingProvider',
+        'contentHash',
+        'chunkingVersion',
+        'indexVersion',
+      ]),
+    );
     final fts = await migrated.query(
       'sqlite_master',
       where: 'name = ?',

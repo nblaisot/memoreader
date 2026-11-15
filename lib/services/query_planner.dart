@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'summary_service.dart';
+import 'rag_research_policy.dart';
 
 class QueryPlan {
   const QueryPlan({
@@ -9,8 +10,14 @@ class QueryPlan {
     required this.lexicalQuery,
     required this.intent,
     required this.isComplex,
+    this.lexicalAlternatives = const [],
+    this.facets = const [],
   });
 
+  final List<String> lexicalAlternatives;
+  final List<String> facets;
+  List<String> get lexicalQueries =>
+      lexicalAlternatives.isEmpty ? [lexicalQuery] : lexicalAlternatives;
   final String originalQuery;
   final List<String> semanticQueries;
   final String lexicalQuery;
@@ -38,18 +45,21 @@ class ModelQueryPlanner implements QueryPlanner {
 
   @override
   Future<QueryPlan> plan(String question) async {
-    final cacheKey = '$language:${summaryService.serviceName}:${question.trim().toLowerCase()}';
+    final cacheKey =
+        '$language:${summaryService.serviceName}:${question.trim().toLowerCase()}';
     final cached = _cache[cacheKey];
     if (cached != null) return cached;
     final baseline = await _fallback.plan(question);
     try {
-      final raw = await summaryService.generateSummary(
-        '''Return JSON only for retrieval planning. Never answer the question.
+      final raw = await summaryService
+          .generateSummary(
+            '''Return JSON only for retrieval planning. Never answer the question.
 Schema: {"semantic_queries":[string],"lexical_phrases":[string],"intent":string}.
 Keep the original meaning, add at most 2 rewrites, and at most 8 short exact names/phrases.
 Question: $question''',
-        language,
-      ).timeout(const Duration(seconds: 12));
+            language,
+          )
+          .timeout(const Duration(seconds: 12));
       final normalized = raw
           .replaceFirst(RegExp(r'^\s*```(?:json)?\s*'), '')
           .replaceFirst(RegExp(r'\s*```\s*$'), '');
@@ -169,7 +179,12 @@ class DeterministicQueryPlanner implements QueryPlanner {
         .toList();
 
     String escape(String value) => '"${value.replaceAll('"', '""')}"';
+    final names = RegExp(
+      r"\b[A-ZÀ-Ý][\p{L}’'-]+(?:\s+[A-ZÀ-Ý][\p{L}’'-]+)+",
+      unicode: true,
+    ).allMatches(question).map((m) => m[0]!).toList();
     final lexicalParts = <String>{...quoted.map(escape), ...words.map(escape)};
+    final exactNames = <String>{...quoted, ...names};
     final lower = question.toLowerCase();
     final comparison =
         lower.contains('compare') ||
@@ -187,7 +202,12 @@ class DeterministicQueryPlanner implements QueryPlanner {
     return QueryPlan(
       originalQuery: question,
       semanticQueries: [question],
-      lexicalQuery: lexicalParts.join(' OR '),
+      lexicalQuery: exactNames.isNotEmpty
+          ? exactNames.map(escape).join(' OR ')
+          : lexicalParts.join(' OR '),
+      lexicalAlternatives: exactNames.isEmpty
+          ? const []
+          : [exactNames.map(escape).join(' OR '), lexicalParts.join(' OR ')],
       intent: comparison
           ? 'comparison'
           : chronology
@@ -196,6 +216,7 @@ class DeterministicQueryPlanner implements QueryPlanner {
           ? 'quotation'
           : 'factual',
       isComplex: comparison || chronology || question.length > 180,
+      facets: RagResearchPolicy.requiredFacets(question),
     );
   }
 }

@@ -16,6 +16,10 @@ class RagChunk {
   final int tokenStart; // Token index for overlap tracking
   final int tokenEnd; // Token index for overlap tracking
   final DateTime createdAt;
+  final int? storedTokenCount;
+  final String? previousChunkId;
+  final String? nextChunkId;
+  int get tokenCount => storedTokenCount ?? tokenEnd - tokenStart;
 
   RagChunk({
     required this.chunkId,
@@ -32,11 +36,18 @@ class RagChunk {
     required this.tokenStart,
     required this.tokenEnd,
     required this.createdAt,
+    this.storedTokenCount,
+    this.previousChunkId,
+    this.nextChunkId,
   });
 
   /// Convert Float32List to Uint8List for BLOB storage
   Uint8List embeddingToBlob() {
-    return Uint8List.view(embedding.buffer);
+    return Uint8List.view(
+      embedding.buffer,
+      embedding.offsetInBytes,
+      embedding.lengthInBytes,
+    );
   }
 
   /// Create Float32List from Uint8List (BLOB)
@@ -71,6 +82,9 @@ class RagChunk {
       'tokenStart': tokenStart,
       'tokenEnd': tokenEnd,
       'createdAt': createdAt.toIso8601String(),
+      'tokenCount': tokenCount,
+      'previousChunkId': previousChunkId,
+      'nextChunkId': nextChunkId,
     };
   }
 
@@ -94,6 +108,9 @@ class RagChunk {
       tokenStart: json['tokenStart'] as int,
       tokenEnd: json['tokenEnd'] as int,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      storedTokenCount: json['tokenCount'] as int?,
+      previousChunkId: json['previousChunkId'] as String?,
+      nextChunkId: json['nextChunkId'] as String?,
     );
   }
 
@@ -113,6 +130,9 @@ class RagChunk {
     int? tokenStart,
     int? tokenEnd,
     DateTime? createdAt,
+    int? storedTokenCount,
+    String? previousChunkId,
+    String? nextChunkId,
   }) {
     return RagChunk(
       chunkId: chunkId ?? this.chunkId,
@@ -129,6 +149,9 @@ class RagChunk {
       tokenStart: tokenStart ?? this.tokenStart,
       tokenEnd: tokenEnd ?? this.tokenEnd,
       createdAt: createdAt ?? this.createdAt,
+      storedTokenCount: storedTokenCount ?? this.storedTokenCount,
+      previousChunkId: previousChunkId ?? this.previousChunkId,
+      nextChunkId: nextChunkId ?? this.nextChunkId,
     );
   }
 }

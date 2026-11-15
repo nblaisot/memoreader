@@ -1,3 +1,4 @@
+import 'rag_request_scope.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -23,6 +24,8 @@ class OpenAIEmbeddingService implements EmbeddingService {
 
   OpenAIEmbeddingService(this.apiKey, {String? model})
     : model = model ?? _defaultModel;
+
+  static final http.Client _ragHttp = RagHttpClient(http.Client());
 
   @override
   String get providerName => 'OpenAI';
@@ -65,13 +68,13 @@ class OpenAIEmbeddingService implements EmbeddingService {
       // Batch embedding request (up to 2048 inputs per request)
       final requestPayload = {'model': model, 'input': texts};
 
-      if (kDebugMode) {
+      if (kDebugMode && !RagRequestScope.active) {
         debugPrint(
           '[RAG] OpenAI embedding request: model=$model, batchSize=${texts.length}',
         );
       }
 
-      final response = await http.post(
+      final response = await _ragHttp.post(
         Uri.parse(_apiUrl),
         headers: {
           'Content-Type': 'application/json',
@@ -86,7 +89,7 @@ class OpenAIEmbeddingService implements EmbeddingService {
             .map((item) => _parseEmbedding(item['embedding'] as List))
             .toList();
 
-        if (kDebugMode) {
+        if (kDebugMode && !RagRequestScope.active) {
           debugPrint(
             '[RAG] OpenAI embedding response: received ${embeddings.length} embeddings',
           );

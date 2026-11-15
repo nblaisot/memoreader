@@ -51,23 +51,29 @@ Future<InternetAddress> resolveHostViaGoogleDoh(String hostname) async {
 /// hostname resolution fails). Codex/OpenAI calls then fail with
 /// "Failed host lookup". This client resolves via Google Public DNS (8.8.8.8)
 /// when [InternetAddress.lookup] fails.
-http.Client createResolvingHttpClient() {
-  final ioHttp = HttpClient();
+http.Client createResolvingHttpClient({Duration? connectionTimeout}) {
+  final ioHttp = HttpClient()..connectionTimeout = connectionTimeout;
   ioHttp.findProxy = (_) => 'DIRECT';
   ioHttp
       .connectionFactory = (Uri url, String? proxyHost, int? proxyPort) async {
     InternetAddress address;
     try {
-      final results = await InternetAddress.lookup(
+      final lookup = InternetAddress.lookup(
         url.host,
         type: InternetAddressType.IPv4,
       );
+      final results = await (connectionTimeout == null
+          ? lookup
+          : lookup.timeout(connectionTimeout));
       if (results.isEmpty) {
         throw const SocketException('No IPv4 address');
       }
       address = results.first;
     } on SocketException {
-      address = await resolveHostViaGoogleDoh(url.host);
+      final lookup = resolveHostViaGoogleDoh(url.host);
+      address = await (connectionTimeout == null
+          ? lookup
+          : lookup.timeout(connectionTimeout));
       if (kDebugMode) {
         debugPrint('[Network] DoH resolved ${url.host} -> ${address.address}');
       }
@@ -76,10 +82,11 @@ http.Client createResolvingHttpClient() {
     final port =
         proxyPort ??
         (url.hasPort ? url.port : (url.scheme == 'https' ? 443 : 80));
-    final socket = Socket.connect(address, port).then<Socket>((socket) {
-      if (url.scheme != 'https') return socket;
-      return SecureSocket.secure(socket, host: url.host);
-    });
+    final socket = Socket.connect(address, port, timeout: connectionTimeout)
+        .then<Socket>((socket) {
+          if (url.scheme != 'https') return socket;
+          return SecureSocket.secure(socket, host: url.host);
+        });
     return ConnectionTask.fromSocket(socket, () {});
   };
 

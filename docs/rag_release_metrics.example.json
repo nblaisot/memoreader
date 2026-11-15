@@ -1,0 +1,31 @@
+{
+  "questionCount": 60,
+  "android": {
+    "device": null,
+    "buildMode": "release",
+    "books": 100,
+    "readyUiP95Ms": null,
+    "hybridP95Ms": null,
+    "recallAt24": null,
+    "spoilerLeaks": null,
+    "answerCoverage": null,
+    "baselineAnswerCoverage": null,
+    "citationSupport": null,
+    "baselineCitationSupport": null,
+    "corpusVectorsLoadedIntoDart": null
+  },
+  "ios": {
+    "device": null,
+    "buildMode": "release",
+    "books": 100,
+    "readyUiP95Ms": null,
+    "hybridP95Ms": null,
+    "recallAt24": null,
+    "spoilerLeaks": null,
+    "answerCoverage": null,
+    "baselineAnswerCoverage": null,
+    "citationSupport": null,
+    "baselineCitationSupport": null,
+    "corpusVectorsLoadedIntoDart": null
+  }
+}

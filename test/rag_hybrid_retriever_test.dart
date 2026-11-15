@@ -1,3 +1,4 @@
+import 'package:memoreader/services/rag_native_database.dart';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -45,13 +46,18 @@ RagChunk _chunk(String id, String text, Float32List embedding, int start) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(() {
+  setUpAll(() async {
     sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
+    databaseFactory = ragDatabaseFactory;
+    await databaseFactory.setDatabasesPath(
+      (await Directory.systemTemp.createTemp('memoreader-rag-test-')).path,
+    );
   });
 
   setUp(() async {
     await RagDatabaseService().close();
+    final next = File(p.join(await getDatabasesPath(), 'rag-v5.db'));
+    if (next.existsSync()) next.deleteSync();
     final file = File(p.join(await getDatabasesPath(), 'rag.db'));
     if (file.existsSync()) file.deleteSync();
   });

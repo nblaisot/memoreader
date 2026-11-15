@@ -3,13 +3,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart';
 import '../models/book.dart';
 import '../models/reading_progress.dart';
 import '../services/book_service.dart';
 import '../services/app_state_service.dart';
 import '../services/sharing_service.dart';
 import '../services/rag_indexing_service.dart';
+import '../widgets/rag_preparation_status.dart';
 import '../services/rag_database_service.dart';
 import '../services/google_drive_sync_service.dart';
 import '../utils/import_extensions.dart';
@@ -156,9 +157,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         final status = await ragDbService.getIndexStatus(book.id);
         
         // Skip if already completed
-        if (status != null && status.isComplete) {
-          continue;
-        }
+
 
         // Check if indexing is actually running (not just marked as indexing in DB)
         // If status says indexing but no isolate is running, restart indexing
@@ -248,23 +247,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     try {
       debugPrint('Starting file picker...');
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: allowedBookImportExtensions,
-        withData: false,
-        withReadStream: false,
+      final pickedFile = await openFile(
+        acceptedTypeGroups: [
+          XTypeGroup(
+            label: 'Books',
+            extensions: allowedBookImportExtensions,
+            mimeTypes: const ['application/epub+zip', 'text/plain', 'application/pdf'],
+            uniformTypeIdentifiers: const [
+              'org.idpf.epub-container',
+              'public.plain-text',
+              'com.adobe.pdf',
+            ],
+          ),
+        ],
       );
 
-      debugPrint('File picker result: ${result?.files.length ?? 0} files');
+      debugPrint('File picker result: ${pickedFile?.name ?? 'none'}');
       
-      if (result != null && result.files.isNotEmpty) {
-        final pickedFile = result.files.single;
+      if (pickedFile != null) {
         debugPrint('Picked file: ${pickedFile.name}, path: ${pickedFile.path}');
-        
-        if (pickedFile.path == null) {
-          throw Exception('File path is null. This may be a macOS permissions issue.');
-        }
-        final filePath = pickedFile.path!;
+        final filePath = pickedFile.path;
         final file = File(filePath);
         
         debugPrint('Checking if file exists: $filePath');
@@ -805,6 +807,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+            RagPreparationStatus(bookId:book.id,onDarkBackground:true),
             if (progressInfo != null) ...[
               const SizedBox(height: 8),
               ClipRRect(
@@ -895,6 +898,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    RagPreparationStatus(bookId:book.id),
                     if (progressInfo != null) ...[
                       const SizedBox(height: 12),
                       ClipRRect(

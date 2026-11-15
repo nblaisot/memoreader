@@ -237,7 +237,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   void _startListeningToRagIndexing() {
     // Listen to RAG indexing progress
     _ragIndexingSubscription = _ragIndexingService
-        .startIndexing(widget.book.id)
+        .observe(widget.book.id)
         .listen(
           (progress) {
             if (mounted) {

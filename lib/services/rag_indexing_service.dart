@@ -1,3 +1,4 @@
+import 'rag_background_jobs.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -100,6 +101,142 @@ class RagIndexingService {
     }
   }
 
+  final _changes = StreamController<RagIndexProgress>.broadcast();
+  final Map<String, RagIndexProgress> _snapshots = {};
+  final _bookLimiter = _RateLimiter(1);
+  final _leaseOwner = '$pid:${DateTime.now().microsecondsSinceEpoch}';
+  int interactiveQueries = 0;
+  final Set<String> _heldSlots = {};
+  final Set<String> _leasedBooks = {};
+  final Set<String> _rerunBooks = {};
+  Isolate? _workerIsolate;
+  SendPort? _workerRequests;
+  void _releaseSlot(String bookId) {
+    if (!_heldSlots.remove(bookId)) return;
+    () async {
+      try {
+        if (_leasedBooks.remove(bookId)) {
+          await _databaseService.releaseLease(bookId, _leaseOwner);
+        }
+      } catch (e) {
+        debugPrint('[RAG] Lease release failed: ${e.runtimeType}');
+      } finally {
+        _bookLimiter.release();
+      }
+    }();
+  }
+
+  Future<void> _recordFailure(String bookId, Object error) async {
+    if (_snapshots[bookId]?.isComplete == true) return;
+    final failed = RagIndexProgress(
+      bookId: bookId,
+      status: RagIndexStatus.error,
+      totalChunks: _snapshots[bookId]?.totalChunks ?? 0,
+      indexedChunks: _snapshots[bookId]?.indexedChunks ?? 0,
+      lastUpdated: DateTime.now(),
+      errorMessage: error.toString(),
+    );
+    _snapshots[bookId] = failed;
+    _changes.add(failed);
+    try {
+      await _databaseService.saveIndexStatus(failed);
+    } catch (_) {
+      /* Retry remains available even when storage initialization failed. */
+    }
+  }
+
+  RagIndexProgress? snapshot(String bookId) => _snapshots[bookId];
+
+  /// Observing never queues work. Subscribe before loading to avoid missed events.
+  Stream<RagIndexProgress> observe(String bookId) => Stream.multi((sink) {
+    var cancelled = false;
+    final sub = _changes.stream
+        .where((p) => p.bookId == bookId)
+        .listen(sink.add, onError: sink.addError);
+    final cached = _snapshots[bookId];
+    if (cached != null) {
+      sink.add(cached);
+    } else {
+      () async {
+        try {
+          final stored =
+              await _databaseService.getActiveIndexStatus(bookId) ??
+              await _databaseService.getIndexStatus(bookId);
+          if (!cancelled && stored != null) {
+            final latest = _snapshots.putIfAbsent(bookId, () => stored);
+            sink.add(latest);
+          }
+        } catch (e, st) {
+          if (!cancelled) sink.addError(e, st);
+        }
+      }();
+    }
+    sink.onCancel = () async {
+      cancelled = true;
+      await sub.cancel();
+    };
+  });
+
+  Future<String> _configurationIdentity() async {
+    final prefs = await SharedPreferences.getInstance();
+    final embedding = await RagEmbeddingServiceFactory.create(prefs);
+    final settings = SettingsService();
+    return '${embedding?.providerName}:${embedding?.modelName}:${embedding?.embeddingDimensions}:${RagChunkingService.chunkingVersion}:${RagDatabaseService.indexVersion}:${await settings.getRagChunkMinTokens()}:${await settings.getRagChunkMaxTokens()}:${await settings.getRagChunkOverlapTokens()}';
+  }
+
+  Future<bool> _alreadyReady(String bookId) async {
+    final book = (await _bookServiceInstance.getAllBooks())
+        .where((b) => b.id == bookId)
+        .firstOrNull;
+    if (book == null || !await hasLocalBookFile(book)) return false;
+    final stat = await File(book.filePath).stat();
+    final job = await _databaseService.getJob(bookId);
+    final active = await _databaseService.getActiveIndexStatus(bookId);
+    if (active == null || job == null || job['state'] != 'ready') {
+      _snapshots.remove(bookId);
+      return false;
+    }
+    final configuration = await _configurationIdentity();
+    final sameFile =
+        job['fileSize'] == stat.size &&
+        job['fileModified'] == stat.modified.millisecondsSinceEpoch;
+    final identityPrefix = configuration.split(':').take(3).join(':');
+    final compatible =
+        sameFile &&
+        (job['configIdentity'] as String? ?? '').startsWith('$identityPrefix:');
+    final ready = compatible && job['configIdentity'] == configuration;
+    if (compatible) {
+      _snapshots[bookId] = active;
+      _changes.add(active);
+    } else {
+      _snapshots.remove(bookId);
+    }
+    return ready;
+  }
+
+  Future<void> recover({
+    bool waitForCompletion = false,
+    bool configurationChanged = false,
+  }) async {
+    for (final book in await _bookServiceInstance.getAllBooks()) {
+      if (!await hasLocalBookFile(book)) continue;
+      if (configurationChanged && _progressControllers.containsKey(book.id)) {
+        _rerunBooks.add(book.id);
+      }
+      final stream = startIndexing(book.id);
+      if (waitForCompletion) {
+        await stream.drain<void>();
+      } else {
+        stream.listen(
+          (_) {},
+          onError: (Object e) {
+            debugPrint('[RAG] Preparation failed: ${e.runtimeType}');
+          },
+        );
+      }
+    }
+  }
+
   /// Load current status from database and send to controller
   void _loadAndSendStatus(
     String bookId,
@@ -181,15 +318,71 @@ class RagIndexingService {
           return;
         }
 
+        final local = (await _bookServiceInstance.getAllBooks())
+            .where((b) => b.id == bookId)
+            .firstOrNull;
+        if (local == null || !await hasLocalBookFile(local)) {
+          _startingBooks.remove(bookId);
+          _progressControllers.remove(bookId);
+          await controller.close();
+          return;
+        }
+        if (await _alreadyReady(bookId)) {
+          controller.add(_snapshots[bookId]!);
+          _startingBooks.remove(bookId);
+          _progressControllers.remove(bookId);
+          await controller.close();
+          return;
+        }
+        final pending = RagIndexProgress(
+          bookId: bookId,
+          status: RagIndexStatus.pending,
+          totalChunks: 0,
+          indexedChunks: 0,
+          lastUpdated: DateTime.now(),
+        );
+        if (_snapshots[bookId]?.isComplete != true) {
+          _snapshots[bookId] = pending;
+          _changes.add(pending);
+        }
+        if (await _databaseService.getIndexStatus(bookId) == null) {
+          await _databaseService.saveIndexStatus(pending);
+        }
+        unawaited(RagBackgroundJobs.schedule());
+        await _bookLimiter.acquire();
+        _heldSlots.add(bookId);
+        if (!await _databaseService.acquireLease(bookId, _leaseOwner)) {
+          _releaseSlot(bookId);
+          _startingBooks.remove(bookId);
+          _progressControllers.remove(bookId);
+          await controller.close();
+          return;
+        }
+        _leasedBooks.add(bookId);
+        while (interactiveQueries > 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+        final preparing = RagIndexProgress(
+          bookId: bookId,
+          status: RagIndexStatus.indexing,
+          totalChunks: 0,
+          indexedChunks: 0,
+          lastUpdated: DateTime.now(),
+        );
+        if (_snapshots[bookId]?.isComplete != true) _changes.add(preparing);
+        controller.add(preparing);
         // Start indexing isolate
         debugPrint('[RAG] Starting indexing isolate for $bookId');
         final started = await _startIndexingIsolate(bookId);
         _startingBooks.remove(bookId);
         if (!started) {
+          _releaseSlot(bookId);
           _progressControllers.remove(bookId);
           await controller.close();
         }
       } catch (error) {
+        _releaseSlot(bookId);
+        await _recordFailure(bookId, error);
         debugPrint('[RAG] Failed to start indexing for book $bookId: $error');
         controller.addError(error);
         await controller.close();
@@ -200,6 +393,38 @@ class RagIndexingService {
     }();
 
     return controller.stream;
+  }
+
+  Future<Isolate> _ensureWorker() async {
+    if (_workerIsolate != null) return _workerIsolate!;
+    final ready = ReceivePort();
+    final errors = ReceivePort();
+    errors.listen((message) {
+      for (final book in _activeIndexes.keys.toList()) {
+        unawaited(_recordFailure(book, StateError('Indexing worker stopped.')));
+        _releaseSlot(book);
+        final controller = _progressControllers.remove(book);
+        controller?.addError(
+          StateError('Indexing worker stopped; preparation will resume.'),
+        );
+        controller?.close();
+        _progressPorts.remove(book)?.close();
+        _startingBooks.remove(book);
+      }
+      _activeIndexes.clear();
+      _workerIsolate = null;
+      _workerRequests = null;
+      errors.close();
+    });
+    _workerIsolate = await Isolate.spawn(
+      _indexingWorkerLoop,
+      ready.sendPort,
+      onError: errors.sendPort,
+      onExit: errors.sendPort,
+    );
+    _workerRequests = await ready.first as SendPort;
+    ready.close();
+    return _workerIsolate!;
   }
 
   /// Start indexing in background isolate
@@ -241,8 +466,8 @@ class RagIndexingService {
 
     // Spawn isolate
     debugPrint('[RAG] Spawning indexing isolate for book $bookId');
-    final isolate = await Isolate.spawn(
-      _indexingWorker,
+    final isolate = await _ensureWorker();
+    _workerRequests!.send(
       _IndexingWorkerParams(
         bookId: bookId,
         bookFilePath: bookFile.path,
@@ -259,8 +484,13 @@ class RagIndexingService {
     // Listen for progress updates
     receivePort.listen((message) {
       if (message is RagIndexProgress) {
+        if (message.isComplete || _snapshots[bookId]?.isComplete != true) {
+          _snapshots[bookId] = message;
+          _changes.add(message);
+        }
         _progressControllers[bookId]?.add(message);
       } else if (message is String && message == 'done') {
+        _releaseSlot(bookId);
         debugPrint(
           '[RAG] Indexing completed for book $bookId, cleaning up isolate',
         );
@@ -270,7 +500,20 @@ class RagIndexingService {
         _startingBooks.remove(bookId);
         final finished = _progressControllers.remove(bookId);
         finished?.close();
+        if (_rerunBooks.remove(bookId)) {
+          Future.microtask(
+            () => startIndexing(bookId).listen(
+              (_) {},
+              onError: (Object e) {
+                debugPrint(
+                  '[RAG] Reconfigured preparation failed: ${e.runtimeType}',
+                );
+              },
+            ),
+          );
+        }
       } else if (message is Map && message['error'] != null) {
+        _releaseSlot(bookId);
         final error = message['error'] as String;
         debugPrint('[RAG] Indexing error for book $bookId: $error');
         _progressControllers[bookId]?.addError(Exception(error));
@@ -290,6 +533,9 @@ class RagIndexingService {
     final isolate = _activeIndexes[bookId];
     if (isolate != null) {
       isolate.kill(priority: Isolate.immediate);
+      _workerIsolate = null;
+      _workerRequests = null;
+      _releaseSlot(bookId);
       _activeIndexes.remove(bookId);
       _progressPorts[bookId]?.close();
       _progressPorts.remove(bookId);
@@ -311,9 +557,13 @@ class RagIndexingService {
 
   /// Clean up resources
   void dispose() {
-    for (final isolate in _activeIndexes.values) {
-      isolate.kill(priority: Isolate.immediate);
+    for (final bookId in _activeIndexes.keys.toList()) {
+      _activeIndexes[bookId]!.kill(priority: Isolate.immediate);
+      _releaseSlot(bookId);
     }
+    _workerIsolate?.kill(priority: Isolate.immediate);
+    _workerIsolate = null;
+    _workerRequests = null;
     _activeIndexes.clear();
     for (final port in _progressPorts.values) {
       port.close();
@@ -346,7 +596,15 @@ class _IndexingWorkerParams {
 
 /// Worker function for indexing (runs in isolate)
 /// Must be top-level or static
-void _indexingWorker(_IndexingWorkerParams params) async {
+void _indexingWorkerLoop(SendPort ready) async {
+  final jobs = ReceivePort();
+  ready.send(jobs.sendPort);
+  await for (final params in jobs) {
+    if (params is _IndexingWorkerParams) await _indexingWorker(params);
+  }
+}
+
+Future<void> _indexingWorker(_IndexingWorkerParams params) async {
   // Initialize background isolate binary messenger for SQLite (if token available)
   if (params.rootIsolateToken != null) {
     BackgroundIsolateBinaryMessenger.ensureInitialized(
@@ -360,20 +618,10 @@ void _indexingWorker(_IndexingWorkerParams params) async {
   int batchesCompleted = 0; // Track batches for error reporting
 
   try {
-    // Send initial status (no total yet)
-    params.sendPort.send(
-      RagIndexProgress(
-        bookId: params.bookId,
-        status: RagIndexStatus.indexing,
-        totalChunks: 0,
-        indexedChunks: 0,
-        lastUpdated: DateTime.now(),
-      ),
-    );
-
     // Resolve embedding service early so we can derive safe chunk sizes that
     // respect provider limits.
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
     final embeddingService = await RagEmbeddingServiceFactory.create(prefs);
 
     if (embeddingService == null) {
@@ -409,6 +657,7 @@ void _indexingWorker(_IndexingWorkerParams params) async {
       modelMaxTokens - safetyMargin,
     ));
 
+    final inputStat = await bookFile.stat();
     final canonicalProjection = await const CanonicalBookTextService().fromFile(
       bookFile,
     );
@@ -416,6 +665,7 @@ void _indexingWorker(_IndexingWorkerParams params) async {
       minTokens: configuredMinTokens,
       maxTokens: effectiveMaxTokens,
       overlapTokens: overlapTokens,
+      conservativeTokenCount: embeddingService.providerName != 'OpenAI',
     );
 
     // Chunk the book
@@ -475,7 +725,7 @@ void _indexingWorker(_IndexingWorkerParams params) async {
     final configHash = sha256
         .convert(
           utf8.encode(
-            'word-v3:book-chapter-prefix-v1:$configuredMinTokens:$effectiveMaxTokens:$overlapTokens:'
+            'model-token-v4:book-chapter-prefix-v1:$configuredMinTokens:$effectiveMaxTokens:$overlapTokens:'
             '${embeddingService.providerName}:${embeddingService.modelName}:'
             '${embeddingService.embeddingDimensions}',
           ),
@@ -498,6 +748,15 @@ void _indexingWorker(_IndexingWorkerParams params) async {
         existingChunkCount == totalChunks;
 
     if (existingStatus?.isComplete == true && compatible) {
+      final stat = await bookFile.stat();
+      await databaseService.saveJob(params.bookId, {
+        'fileSize': stat.size,
+        'fileModified': stat.modified.millisecondsSinceEpoch,
+        'configIdentity':
+            '${embeddingService.providerName}:${embeddingService.modelName}:${embeddingService.embeddingDimensions}:${RagChunkingService.chunkingVersion}:${RagDatabaseService.indexVersion}:$configuredMinTokens:$configuredMaxTokens:$overlapTokens',
+        'state': 'ready',
+        'updated': DateTime.now().toIso8601String(),
+      });
       params.sendPort.send(existingStatus);
       params.sendPort.send('done');
       return;
@@ -584,6 +843,15 @@ void _indexingWorker(_IndexingWorkerParams params) async {
       );
 
       await databaseService.activateStagedBook(params.bookId);
+      final stat = await bookFile.stat();
+      await databaseService.saveJob(params.bookId, {
+        'fileSize': stat.size,
+        'fileModified': stat.modified.millisecondsSinceEpoch,
+        'configIdentity':
+            '${embeddingService.providerName}:${embeddingService.modelName}:${embeddingService.embeddingDimensions}:${RagChunkingService.chunkingVersion}:${RagDatabaseService.indexVersion}:$configuredMinTokens:$configuredMaxTokens:$overlapTokens',
+        'state': 'ready',
+        'updated': DateTime.now().toIso8601String(),
+      });
       await databaseService.saveIndexStatus(completedProgress);
       params.sendPort.send(completedProgress);
       params.sendPort.send('done');
@@ -663,6 +931,9 @@ void _indexingWorker(_IndexingWorkerParams params) async {
             // Generate embeddings with retry logic
             List<Float32List> embeddings = [];
             try {
+              while (await databaseService.hasInteractiveReaders()) {
+                await Future<void>.delayed(const Duration(milliseconds: 250));
+              }
               embeddings = await _generateEmbeddingsWithRetry(
                 embeddingService,
                 batch
@@ -813,7 +1084,7 @@ void _indexingWorker(_IndexingWorkerParams params) async {
     await databaseService.saveIndexStatus(finalProgress);
     params.sendPort.send(finalProgress);
 
-    if (hadFailures) {
+    if (hadFailures || finalChunkCount != totalChunks) {
       // Build detailed error message
       final errorParts = <String>[];
       if (skippedChunks > 0) {
@@ -868,7 +1139,21 @@ void _indexingWorker(_IndexingWorkerParams params) async {
       apiCalls: batchesCompleted,
     );
 
+    final finalInputStat = await bookFile.stat();
+    if (finalInputStat.size != inputStat.size ||
+        finalInputStat.modified != inputStat.modified) {
+      throw StateError('Book changed while indexing; retry preparation.');
+    }
     await databaseService.activateStagedBook(params.bookId);
+    final stat = await bookFile.stat();
+    await databaseService.saveJob(params.bookId, {
+      'fileSize': stat.size,
+      'fileModified': stat.modified.millisecondsSinceEpoch,
+      'configIdentity':
+          '${embeddingService.providerName}:${embeddingService.modelName}:${embeddingService.embeddingDimensions}:${RagChunkingService.chunkingVersion}:${RagDatabaseService.indexVersion}:$configuredMinTokens:$configuredMaxTokens:$overlapTokens',
+      'state': 'ready',
+      'updated': DateTime.now().toIso8601String(),
+    });
     await databaseService.saveIndexStatus(completedProgress);
     params.sendPort.send(completedProgress);
     params.sendPort.send('done');

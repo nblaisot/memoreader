@@ -4,7 +4,6 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:memoreader/l10n/app_localizations.dart';
-import '../../services/rag_database_service.dart';
 import '../../services/rag_indexing_service.dart';
 import '../../models/rag_index_progress.dart';
 
@@ -81,11 +80,9 @@ class _ReaderMenuDialog extends StatefulWidget {
 
 class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
   late double _currentFontScale;
-  final RagDatabaseService _ragDbService = RagDatabaseService();
   final RagIndexingService _ragIndexingService = RagIndexingService();
   RagIndexProgress? _ragIndexProgress;
   StreamSubscription<RagIndexProgress>? _ragIndexingSubscription;
-  bool _toastShownForCompletion = false;
 
   // Base font size used in reader_screen.dart
   static const double _baseFontSize = 18.0;
@@ -94,7 +91,7 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
   void initState() {
     super.initState();
     _currentFontScale = widget.initialFontScale;
-    _loadRagIndexStatus();
+    _ragIndexProgress = _ragIndexingService.snapshot(widget.bookId);
     _startListeningToRagIndexing();
   }
 
@@ -104,62 +101,24 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
     super.dispose();
   }
 
-  Future<void> _loadRagIndexStatus() async {
-    final status = await _ragDbService.getIndexStatus(widget.bookId);
-    if (mounted) {
-      setState(() {
-        _ragIndexProgress = status;
-      });
-    }
-  }
-
   void _startListeningToRagIndexing() {
     // Listen to RAG indexing progress updates in real-time
     _ragIndexingSubscription = _ragIndexingService
-        .startIndexing(widget.bookId)
+        .observe(widget.bookId)
         .listen(
           (progress) {
             if (mounted) {
               setState(() {
                 _ragIndexProgress = progress;
               });
-              _maybeShowCompletionToast(progress);
             }
           },
           onError: (error) {
             debugPrint(
               '[RAG Menu] Error listening to indexing progress: $error',
             );
-            // Reload status from database to preserve error state
-            if (mounted) {
-              _loadRagIndexStatus();
-            }
-          },
-          onDone: () {
-            debugPrint('[RAG Menu] Indexing progress stream completed');
-            // Reload status from database when stream completes to ensure we have latest state
-            if (mounted) {
-              _loadRagIndexStatus();
-            }
           },
         );
-  }
-
-  void _maybeShowCompletionToast(RagIndexProgress progress) {
-    if (!progress.isComplete || _toastShownForCompletion) return;
-    _toastShownForCompletion = true;
-    final chunks = progress.indexedChunks;
-    final apiCalls = progress.apiCalls ?? 0;
-    final l10n = AppLocalizations.of(context);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          l10n?.ragIndexingCompleted(chunks, apiCalls) ??
-              'Indexation terminée: $chunks chunks indexés, $apiCalls appels API',
-        ),
-        duration: const Duration(seconds: 3),
-      ),
-    );
   }
 
   void _updateFontScale(double newScale) {
@@ -376,22 +335,10 @@ class _ReaderMenuDialogState extends State<_ReaderMenuDialog> {
   Widget _buildRagQuestionMenuItem(ThemeData theme) {
     final l10n = AppLocalizations.of(context);
     if (_ragIndexProgress == null) {
-      final progressLabel =
-          l10n?.ragIndexingInitializing ?? 'Indexation en cours (...)';
       return ListTile(
-        leading: const SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        title: Text(
-          progressLabel,
-          style: TextStyle(
-            fontStyle: FontStyle.italic,
-            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-          ),
-        ),
-        enabled: false,
+        leading: const Icon(Icons.question_answer_outlined),
+        title: Text(l10n?.ragQuestionScreenTitle ?? 'Questions'),
+        onTap: () => _selectAction(ReaderMenuAction.askQuestion),
         contentPadding: EdgeInsets.zero,
       );
     }

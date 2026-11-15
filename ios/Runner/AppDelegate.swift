@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import workmanager_apple
 import open_file_handler
 import webview_flutter_wkwebview
 
@@ -9,6 +10,10 @@ import webview_flutter_wkwebview
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    WorkmanagerPlugin.setPluginRegistrantCallback { registry in
+      GeneratedPluginRegistrant.register(with: registry)
+    }
+    WorkmanagerPlugin.registerBGProcessingTask(withIdentifier: "com.blaisotbalette.memoreader.rag.prepare")
     GeneratedPluginRegistrant.register(with: self)
     MemoreaderWebViewSelectionMenu.installIfNeeded()
     let didFinish = super.application(application, didFinishLaunchingWithOptions: launchOptions)

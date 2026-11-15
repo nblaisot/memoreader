@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:uuid/uuid.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'rag_token_budget.dart';
 
 import '../models/rag_chunk.dart';
 import '../utils/sentence_segmenter.dart';
@@ -14,17 +16,18 @@ class RagChunkingService {
     required this.minTokens,
     required this.maxTokens,
     required this.overlapTokens,
+    this.conservativeTokenCount = false,
     CanonicalBookTextService? canonicalTextService,
   }) : _canonicalTextService =
            canonicalTextService ?? const CanonicalBookTextService();
 
-  static const int chunkingVersion = 3;
+  static const int chunkingVersion = 4;
 
-  final Uuid _uuid = const Uuid();
   final CanonicalBookTextService _canonicalTextService;
   final int minTokens;
   final int maxTokens;
   final int overlapTokens;
+  final bool conservativeTokenCount;
 
   Future<List<RagChunk>> chunkBook({
     required File epubFile,
@@ -60,7 +63,20 @@ class RagChunkingService {
         'hash=${projection.contentHash.length > 12 ? projection.contentHash.substring(0, 12) : projection.contentHash}',
       );
     }
-    return chunks;
+    return [
+      for (var i = 0; i < chunks.length; i++)
+        chunks[i].copyWith(
+          previousChunkId:
+              i > 0 && chunks[i - 1].sectionIndex == chunks[i].sectionIndex
+              ? chunks[i - 1].chunkId
+              : null,
+          nextChunkId:
+              i + 1 < chunks.length &&
+                  chunks[i + 1].sectionIndex == chunks[i].sectionIndex
+              ? chunks[i + 1].chunkId
+              : null,
+        ),
+    ];
   }
 
   List<RagChunk> _chunkSection({
@@ -102,8 +118,10 @@ class RagChunkingService {
         final next = counts[endSentence];
         if (tokenCount >= minTokens &&
             RegExp(r'^\s*\n\s*\n').hasMatch(
-              section.text.substring(spans[endSentence].start,
-                  spans[endSentence].end),
+              section.text.substring(
+                spans[endSentence].start,
+                spans[endSentence].end,
+              ),
             )) {
           break;
         }
@@ -161,27 +179,62 @@ class RagChunkingService {
     required SentenceSpan span,
     required int globalTokenOffset,
   }) {
-    final tokens = RegExp(r'\S+').allMatches(span.text).toList();
     final chunks = <RagChunk>[];
-    var startToken = 0;
-    while (startToken < tokens.length) {
-      final endToken = (startToken + maxTokens).clamp(0, tokens.length);
-      final localStart = span.start + tokens[startToken].start;
-      final localEnd = span.start + tokens[endToken - 1].end;
+    final text = span.text;
+    int safeBoundary(int offset) {
+      if (offset > 0 &&
+          offset < text.length &&
+          text.codeUnitAt(offset) >= 0xDC00 &&
+          text.codeUnitAt(offset) <= 0xDFFF) {
+        return offset - 1;
+      }
+      return offset;
+    }
+
+    var start = 0;
+    while (start < text.length) {
+      var low = start + 1, high = text.length, end = start + 1;
+      while (low <= high) {
+        final mid = (low + high) ~/ 2;
+        if (_wordCount(text.substring(start, mid)) <= maxTokens) {
+          end = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      end = safeBoundary(end);
+      if (end <= start) end = (start + 2).clamp(0, text.length);
       chunks.add(
         _createChunk(
           bookId: bookId,
           section: section,
-          localStart: localStart,
-          localEnd: localEnd,
-          tokenStart: globalTokenOffset + startToken,
+          localStart: span.start + start,
+          localEnd: span.start + end,
+          tokenStart: globalTokenOffset + _wordCount(text.substring(0, start)),
         ),
       );
-      if (endToken == tokens.length) break;
-      startToken = (endToken - overlapTokens).clamp(startToken + 1, endToken);
+      if (end >= text.length) break;
+      low = start + 1;
+      high = end;
+      var next = end;
+      while (low <= high) {
+        final mid = (low + high) ~/ 2;
+        if (_wordCount(text.substring(mid, end)) <= overlapTokens) {
+          next = mid;
+          high = mid - 1;
+        } else {
+          low = mid + 1;
+        }
+      }
+      next = safeBoundary(next);
+      start = next <= start ? end : next;
     }
     return chunks;
   }
+
+  static String projectionIdentity(CanonicalBookSection s) =>
+      '${s.sectionIndex}:${s.contentFileKey}';
 
   RagChunk _createChunk({
     required String bookId,
@@ -192,7 +245,13 @@ class RagChunkingService {
   }) {
     final text = section.text.substring(localStart, localEnd);
     return RagChunk(
-      chunkId: _uuid.v4(),
+      chunkId: sha256
+          .convert(
+            utf8.encode(
+              '$bookId:${projectionIdentity(section)}:${section.charStart + localStart}:${section.charStart + localEnd}:$chunkingVersion:$text',
+            ),
+          )
+          .toString(),
       bookId: bookId,
       text: text,
       embedding: Float32List(0),
@@ -209,5 +268,6 @@ class RagChunkingService {
     );
   }
 
-  static int _wordCount(String text) => RegExp(r'\S+').allMatches(text).length;
+  int _wordCount(String text) =>
+      RagTokenBudget.count(text, conservative: conservativeTokenCount);
 }

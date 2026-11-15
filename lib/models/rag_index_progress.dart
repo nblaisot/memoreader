@@ -1,3 +1,12 @@
+enum RagReadiness { unknown, preparing, ready, failed }
+
+RagReadiness readinessOf(RagIndexProgress? progress) {
+  if (progress == null) return RagReadiness.unknown;
+  if (progress.isComplete) return RagReadiness.ready;
+  if (progress.hasError) return RagReadiness.failed;
+  return RagReadiness.preparing;
+}
+
 /// Status of RAG indexing for a book
 enum RagIndexStatus {
   pending, // Indexing not started

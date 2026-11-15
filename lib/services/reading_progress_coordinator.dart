@@ -1,3 +1,4 @@
+import 'rag_prefix_cache.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -97,6 +98,12 @@ class ReadingProgressCoordinator {
         );
         if (!ok) throw StateError('SharedPreferences rejected progress write');
         _updates.add(progress);
+        RagPrefixCache.prepare(
+          progress.bookId,
+          progress.lastVisibleCharacterIndex ??
+              progress.currentCharacterIndex ??
+              0,
+        );
         await _logDecision(
           'progress_saved',
           progress.bookId,
