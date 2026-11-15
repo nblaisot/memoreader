@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:io';
 import 'rag_native_database.dart';
+import 'embedding_throttle_store.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as path;
 import '../models/rag_chunk.dart';
@@ -41,6 +42,8 @@ class RagDatabaseService {
     return await ragDatabaseFactory.openDatabase(
       dbFile,
       options: OpenDatabaseOptions(
+        singleInstance:
+            false, // Each isolate owns its connection and transaction lifetime.
         version: schemaVersion,
         onCreate: (db, version) async {
           // Create rag_chunks table
@@ -158,6 +161,10 @@ class RagDatabaseService {
           await db.execute(
             'CREATE TABLE IF NOT EXISTS rag_prefix_vectors(bookId TEXT, boundary INTEGER, identity TEXT, chunkId TEXT, embedding BLOB, PRIMARY KEY(bookId,boundary,identity,chunkId))',
           );
+          await SqliteEmbeddingThrottleStore.create(db);
+          await _addColumn(db, 'rag_jobs', 'nextEligibleAt INTEGER');
+          await _addColumn(db, 'rag_jobs', 'waitReason TEXT');
+          await _addColumn(db, 'rag_jobs', 'waitIdentity TEXT');
           await _migrateLegacy(db, path.join(dbPath, 'rag.db'));
           final dimensions = await db.rawQuery(
             'SELECT DISTINCT embeddingDimension FROM rag_chunks WHERE embeddingDimension > 0',
@@ -637,10 +644,18 @@ class RagDatabaseService {
   }
 
   Future<void> saveJob(String bookId, Map<String, Object?> job) async {
-    await (await database).insert('rag_jobs', {
-      'bookId': bookId,
-      ...job,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.rawInsert('INSERT OR IGNORE INTO rag_jobs(bookId) VALUES(?)', [
+        bookId,
+      ]);
+      await txn.update(
+        'rag_jobs',
+        job,
+        where: 'bookId = ?',
+        whereArgs: [bookId],
+      );
+    });
   }
 
   static Future<void> _rebuildFts(DatabaseExecutor db) async {
@@ -910,7 +925,13 @@ class RagDatabaseService {
     );
 
     if (results.isEmpty) return null;
-    return RagIndexProgress.fromJson(results.first);
+    final json = Map<String, dynamic>.from(results.first);
+    if (json['status'] == 'waiting' || json['status'] == 'error') {
+      final job = await getJob(bookId);
+      json['nextRetryAt'] = job?['nextEligibleAt'];
+      json['waitReason'] = job?['waitReason'];
+    }
+    return RagIndexProgress.fromJson(json);
   }
 
   /// Update index status status field

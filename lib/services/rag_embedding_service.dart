@@ -45,3 +45,8 @@ abstract class EmbeddingService {
   /// Check if the service is available (API key configured)
   Future<bool> isAvailable();
 }
+
+/// Prevents outer indexing retry loops from multiplying provider-managed retries.
+abstract interface class RetryManagedEmbeddingService {
+  String get schedulingIdentity;
+}

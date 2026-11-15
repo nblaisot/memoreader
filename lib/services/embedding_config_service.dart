@@ -3,6 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'mistral_embedding_service.dart';
 import 'openai_embedding_service.dart';
 import 'rag_embedding_service.dart';
+import 'rag_database_service.dart';
+import 'embedding_throttle_store.dart';
 
 /// Configuration for the semantic-index provider.
 ///
@@ -61,9 +63,17 @@ class EmbeddingConfigService {
   EmbeddingService? createService() {
     switch (getProvider()) {
       case providerOpenAI:
-        return OpenAIEmbeddingService(_prefs.getString(_openaiApiKeyKey)!);
+        return OpenAIEmbeddingService(
+          _prefs.getString(_openaiApiKeyKey)!,
+          throttleStore: () async =>
+              SqliteEmbeddingThrottleStore(await RagDatabaseService().database),
+        );
       case providerMistral:
-        return MistralEmbeddingService(_prefs.getString(_mistralApiKeyKey)!);
+        return MistralEmbeddingService(
+          _prefs.getString(_mistralApiKeyKey)!,
+          throttleStore: () async =>
+              SqliteEmbeddingThrottleStore(await RagDatabaseService().database),
+        );
       default:
         return null;
     }

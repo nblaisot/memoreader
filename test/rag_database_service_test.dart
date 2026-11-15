@@ -391,4 +391,80 @@ void main() {
     );
     expect(fts, isNotEmpty);
   });
+  test(
+    'waiting checkpoint resumes only the last 50 chunks and publishes atomically',
+    () async {
+      final db = RagDatabaseService();
+      const book = 'throttled-book';
+      await db.saveChunks([
+        _ragSampleChunk(
+          bookId: book,
+          chunkId: 'old-generation',
+          charStart: 0,
+          charEnd: 11,
+        ),
+      ]);
+      final replacement = [
+        for (var i = 0; i < 3653; i++)
+          _ragSampleChunk(
+            bookId: book,
+            chunkId: 'new-$i',
+            charStart: i * 20,
+            charEnd: i * 20 + 11,
+          ),
+      ];
+      await db.saveStagedChunks(replacement.take(3603).toList());
+      final retryAt = DateTime.now().add(const Duration(minutes: 20));
+      await db.saveJob(book, {
+        'fileSize': 123,
+        'configIdentity': 'frozen-config',
+        'state': 'preparing',
+      });
+      await db.saveJob(book, {
+        'state': 'waiting',
+        'nextEligibleAt': retryAt.millisecondsSinceEpoch,
+        'waitReason': 'provider_limit',
+      });
+      await db.saveIndexStatus(
+        RagIndexProgress(
+          bookId: book,
+          status: RagIndexStatus.waiting,
+          totalChunks: 3653,
+          indexedChunks: 3603,
+          lastUpdated: DateTime.now(),
+          embeddingModel: 'test',
+          embeddingProvider: 'OpenAI',
+          embeddingDimension: 3,
+          contentHash: 'frozen-content',
+          configHash: 'frozen-config',
+        ),
+      );
+      await expectLater(db.activateStagedBook(book), throwsStateError);
+      expect((await db.getChunks(book)).single.chunkId, 'old-generation');
+      await db.close();
+      final restored = await db.getIndexStatus(book);
+      expect(restored!.isWaiting, true);
+      expect(restored.hasError, false);
+      expect(
+        restored.nextRetryAt!.millisecondsSinceEpoch,
+        retryAt.millisecondsSinceEpoch,
+      );
+      expect(restored.contentHash, 'frozen-content');
+      expect((await db.getJob(book))!['fileSize'], 123);
+      final ranges = replacement.map((c) => (c.charStart, c.charEnd)).toList();
+      final existing = await db.chunksExist(book, ranges, staging: true);
+      final missing = replacement
+          .where((c) => !existing.contains((c.charStart, c.charEnd)))
+          .toList();
+      expect(missing.length, 50);
+      await db.saveStagedChunks(missing);
+      expect(await db.getStagedChunkCount(book), 3653);
+      await db.activateStagedBook(book);
+      expect(await db.getChunkCount(book), 3653);
+      expect(
+        (await db.getChunks(book)).any((c) => c.chunkId == 'old-generation'),
+        false,
+      );
+    },
+  );
 }

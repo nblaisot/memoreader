@@ -1,4 +1,5 @@
 import 'rag_background_jobs.dart';
+import 'embedding_scheduler.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -109,6 +110,21 @@ class RagIndexingService {
   final Set<String> _heldSlots = {};
   final Set<String> _leasedBooks = {};
   final Set<String> _rerunBooks = {};
+  final Map<String, Timer> _retryTimers = {};
+
+  void _scheduleRetry(String bookId, DateTime until) {
+    _retryTimers.remove(bookId)?.cancel();
+    final delay = until.difference(DateTime.now());
+    final boundedDelay = delay.isNegative
+        ? const Duration(seconds: 1)
+        : delay + const Duration(seconds: 1);
+    unawaited(RagBackgroundJobs.schedule(initialDelay: boundedDelay));
+    _retryTimers[bookId] = Timer(boundedDelay, () {
+      _retryTimers.remove(bookId);
+      startIndexing(bookId).listen((_) {}, onError: (Object _) {});
+    });
+  }
+
   Isolate? _workerIsolate;
   SendPort? _workerRequests;
   void _releaseSlot(String bookId) {
@@ -223,6 +239,8 @@ class RagIndexingService {
       if (configurationChanged && _progressControllers.containsKey(book.id)) {
         _rerunBooks.add(book.id);
       }
+      final job = await _databaseService.getJob(book.id);
+      if (!configurationChanged && job?['state'] == 'blocked') continue;
       final stream = startIndexing(book.id);
       if (waitForCompletion) {
         await stream.drain<void>();
@@ -254,6 +272,7 @@ class RagIndexingService {
   /// This method is idempotent - safe to call multiple times
   /// The start decision is made synchronously to avoid race conditions
   Stream<RagIndexProgress> startIndexing(String bookId) {
+    _retryTimers.remove(bookId)?.cancel();
     // Synchronous check: If already indexing, return existing stream
     if (_progressControllers.containsKey(bookId)) {
       debugPrint('[RAG] Returning existing progress stream for $bookId');
@@ -334,6 +353,31 @@ class RagIndexingService {
           await controller.close();
           return;
         }
+        final job = await _databaseService.getJob(bookId);
+        final next = job?['nextEligibleAt'] as int?;
+        if (job?['state'] == 'waiting' &&
+            next != null &&
+            next > DateTime.now().millisecondsSinceEpoch) {
+          final prefs = await SharedPreferences.getInstance();
+          final service = await RagEmbeddingServiceFactory.create(prefs);
+          if (service is RetryManagedEmbeddingService &&
+              job?['waitIdentity'] ==
+                  (service as RetryManagedEmbeddingService)
+                      .schedulingIdentity) {
+            final stored = await _databaseService.getIndexStatus(bookId);
+            if (stored != null) {
+              _snapshots[bookId] = stored;
+              _changes.add(stored);
+              controller.add(stored);
+            }
+            _scheduleRetry(bookId, DateTime.fromMillisecondsSinceEpoch(next));
+            _startingBooks.remove(bookId);
+            _progressControllers.remove(bookId);
+            await controller.close();
+            return;
+          }
+        }
+        await _databaseService.saveJob(bookId, {'state': 'preparing'});
         final pending = RagIndexProgress(
           bookId: bookId,
           status: RagIndexStatus.pending,
@@ -353,6 +397,10 @@ class RagIndexingService {
         _heldSlots.add(bookId);
         if (!await _databaseService.acquireLease(bookId, _leaseOwner)) {
           _releaseSlot(bookId);
+          _scheduleRetry(
+            bookId,
+            DateTime.now().add(const Duration(seconds: 30)),
+          );
           _startingBooks.remove(bookId);
           _progressControllers.remove(bookId);
           await controller.close();
@@ -498,6 +546,10 @@ class RagIndexingService {
         _activeIndexes.remove(bookId);
         _progressPorts.remove(bookId);
         _startingBooks.remove(bookId);
+        if (_snapshots[bookId]?.isWaiting == true &&
+            _snapshots[bookId]?.nextRetryAt != null) {
+          _scheduleRetry(bookId, _snapshots[bookId]!.nextRetryAt!);
+        }
         final finished = _progressControllers.remove(bookId);
         finished?.close();
         if (_rerunBooks.remove(bookId)) {
@@ -530,6 +582,7 @@ class RagIndexingService {
 
   /// Stop indexing for a book
   Future<void> stopIndexing(String bookId) async {
+    _retryTimers.remove(bookId)?.cancel();
     final isolate = _activeIndexes[bookId];
     if (isolate != null) {
       isolate.kill(priority: Isolate.immediate);
@@ -615,6 +668,7 @@ Future<void> _indexingWorker(_IndexingWorkerParams params) async {
   final databaseService = RagDatabaseService();
   final bookFile = File(params.bookFilePath);
   RagIndexProgress? existingStatus;
+  String? waitIdentity;
   int batchesCompleted = 0; // Track batches for error reporting
 
   try {
@@ -764,7 +818,16 @@ Future<void> _indexingWorker(_IndexingWorkerParams params) async {
 
     // A stored credential only proves configuration. Probe the exact endpoint
     // and model before deleting or replacing an existing index.
-    await EmbeddingCapabilityService(prefs).ensureAvailable(embeddingService);
+    waitIdentity = embeddingService is RetryManagedEmbeddingService
+        ? (embeddingService as RetryManagedEmbeddingService).schedulingIdentity
+        : null;
+    await EmbeddingSchedulingContext.run(
+      action: () =>
+          EmbeddingCapabilityService(prefs).ensureAvailable(embeddingService),
+      onWait: (until, reason) async =>
+          throw EmbeddingDeferredException(until, reason),
+      onResume: () async {},
+    );
 
     final resumable =
         existingStatus != null &&
@@ -861,8 +924,12 @@ Future<void> _indexingWorker(_IndexingWorkerParams params) async {
     // Index chunks in batches with dynamic batch sizing
     // Use embedding service's actual limits for accurate batch sizing
     final configuredBatchSize = await settingsService.getRagBatchSize();
-    final maxConcurrentBatches = await settingsService
+    final configuredConcurrency = await settingsService
         .getRagConcurrentBatches();
+    final maxConcurrentBatches =
+        embeddingService is RetryManagedEmbeddingService
+        ? 1
+        : configuredConcurrency;
     final progressUpdateFrequency = await settingsService
         .getRagProgressUpdateFrequency();
 
@@ -883,6 +950,8 @@ Future<void> _indexingWorker(_IndexingWorkerParams params) async {
     bool hadFailures = false;
     int skippedChunks = 0;
     int currentIndex = 0;
+    EmbeddingDeferredException? deferred;
+    bool terminalFailure = false;
     final List<String> errorDetails = []; // Track specific error details
     batchesCompleted = 0; // Reset for this indexing run
 
@@ -890,7 +959,9 @@ Future<void> _indexingWorker(_IndexingWorkerParams params) async {
     final activeBatches = <Future<void>>{};
     final semaphore = _RateLimiter(maxConcurrentBatches);
 
-    while (currentIndex < chunksToIndex.length || activeBatches.isNotEmpty) {
+    while ((currentIndex < chunksToIndex.length || activeBatches.isNotEmpty) &&
+        deferred == null &&
+        !terminalFailure) {
       // Start new batches up to concurrency limit
       while (currentIndex < chunksToIndex.length &&
           activeBatches.length < maxConcurrentBatches) {
@@ -934,16 +1005,76 @@ Future<void> _indexingWorker(_IndexingWorkerParams params) async {
               while (await databaseService.hasInteractiveReaders()) {
                 await Future<void>.delayed(const Duration(milliseconds: 250));
               }
-              embeddings = await _generateEmbeddingsWithRetry(
-                embeddingService,
-                batch
-                    .map(
-                      (c) => c.chapterTitle?.isNotEmpty == true
-                          ? 'Book: ${params.bookTitle}\nChapter: ${c.chapterTitle}\n${c.text}'
-                          : 'Book: ${params.bookTitle}\n${c.text}',
-                    )
-                    .toList(),
+              embeddings = await EmbeddingSchedulingContext.run(
+                onWait: (until, reason) async {
+                  final current = await databaseService.getIndexStatus(
+                    params.bookId,
+                  );
+                  if (current == null) return;
+                  await databaseService.saveJob(params.bookId, {
+                    'state': 'waiting',
+                    'nextEligibleAt': until.millisecondsSinceEpoch,
+                    'waitReason': reason,
+                    'waitIdentity':
+                        embeddingService is RetryManagedEmbeddingService
+                        ? (embeddingService as RetryManagedEmbeddingService)
+                              .schedulingIdentity
+                        : null,
+                  });
+                  final waiting = current.copyWith(
+                    status: RagIndexStatus.waiting,
+                    nextRetryAt: until,
+                    waitReason: reason,
+                    lastUpdated: DateTime.now(),
+                  );
+                  await databaseService.saveIndexStatus(
+                    waiting,
+                  ); // renew the indexing lease while actively waiting
+                  params.sendPort.send(waiting);
+                },
+                onResume: () async {
+                  final current = await databaseService.getIndexStatus(
+                    params.bookId,
+                  );
+                  if (current?.isWaiting != true) return;
+                  await databaseService.saveJob(params.bookId, {
+                    'state': 'preparing',
+                    'nextEligibleAt': null,
+                    'waitReason': null,
+                  });
+                  final resumed = RagIndexProgress.fromJson({
+                    ...current!.toJson(),
+                    'status': 'indexing',
+                    'nextRetryAt': null,
+                    'waitReason': null,
+                  });
+                  await databaseService.saveIndexStatus(resumed);
+                  params.sendPort.send(resumed);
+                },
+                action: () => _generateEmbeddingsWithRetry(
+                  embeddingService,
+                  batch
+                      .map(
+                        (c) => c.chapterTitle?.isNotEmpty == true
+                            ? 'Book: ${params.bookTitle}\nChapter: ${c.chapterTitle}\n${c.text}'
+                            : 'Book: ${params.bookTitle}\n${c.text}',
+                      )
+                      .toList(),
+                ),
               );
+            } on EmbeddingDeferredException catch (e) {
+              deferred = e;
+              return;
+            } on EmbeddingProviderException catch (e) {
+              terminalFailure = true;
+              hadFailures = true;
+              errorDetails.add(e.toString());
+              await databaseService.saveJob(params.bookId, {
+                'state': 'blocked',
+                'waitReason': e.kind,
+                'nextEligibleAt': null,
+              });
+              return;
             } catch (e) {
               final errorMsg = 'Embedding generation failed: ${e.toString()}';
               debugPrint(
@@ -1069,6 +1200,31 @@ Future<void> _indexingWorker(_IndexingWorkerParams params) async {
       '[RAG] Final stats for ${params.bookId}: indexed=$indexedCount/$totalChunks, batches=$batchesCompleted, dbCount=$finalChunkCount',
     );
 
+    if (deferred != null) {
+      final current = await databaseService.getIndexStatus(params.bookId);
+      final until = deferred!.nextEligibleAt;
+      await databaseService.saveJob(params.bookId, {
+        'state': 'waiting',
+        'nextEligibleAt': until.millisecondsSinceEpoch,
+        'waitReason': deferred!.reason,
+        'waitIdentity': embeddingService is RetryManagedEmbeddingService
+            ? (embeddingService as RetryManagedEmbeddingService)
+                  .schedulingIdentity
+            : null,
+      });
+      final waiting = (current ?? chunkingProgress).copyWith(
+        status: RagIndexStatus.waiting,
+        indexedChunks: finalChunkCount,
+        nextRetryAt: until,
+        waitReason: deferred!.reason,
+        lastUpdated: DateTime.now(),
+      );
+      await databaseService.saveIndexStatus(waiting);
+      params.sendPort.send(waiting);
+      params.sendPort.send('done');
+      return;
+    }
+
     // Always send final progress update to ensure UI is up to date
     final finalProgress = RagIndexProgress(
       bookId: params.bookId,
@@ -1157,9 +1313,34 @@ Future<void> _indexingWorker(_IndexingWorkerParams params) async {
     await databaseService.saveIndexStatus(completedProgress);
     params.sendPort.send(completedProgress);
     params.sendPort.send('done');
+  } on EmbeddingDeferredException catch (e) {
+    final current = await databaseService.getIndexStatus(params.bookId);
+    await databaseService.saveJob(params.bookId, {
+      'state': 'waiting',
+      'nextEligibleAt': e.nextEligibleAt.millisecondsSinceEpoch,
+      'waitReason': e.reason,
+      'waitIdentity': waitIdentity,
+    });
+    if (current != null) {
+      final waiting = current.copyWith(
+        status: RagIndexStatus.waiting,
+        nextRetryAt: e.nextEligibleAt,
+        waitReason: e.reason,
+      );
+      await databaseService.saveIndexStatus(waiting);
+      params.sendPort.send(waiting);
+    }
+    params.sendPort.send('done');
   } catch (e, stackTrace) {
     debugPrint('[RAG] Indexing error: $e');
     debugPrint('[RAG] Stack trace: $stackTrace');
+    if (e is EmbeddingProviderException) {
+      await databaseService.saveJob(params.bookId, {
+        'state': 'blocked',
+        'waitReason': e.kind,
+        'nextEligibleAt': null,
+      });
+    }
 
     // Get current status to preserve totalChunks and skippedChunks if available
     final currentStatus = await databaseService.getIndexStatus(params.bookId);
@@ -1195,6 +1376,8 @@ Future<List<Float32List>> _generateEmbeddingsWithRetry(
   EmbeddingService embeddingService,
   List<String> texts,
 ) async {
+  if (embeddingService is RetryManagedEmbeddingService)
+    return embeddingService.embedTexts(texts);
   int maxRetries = 5; // Increased from 3 for better resilience
   int attempt = 0;
   Duration delay = const Duration(seconds: 2);

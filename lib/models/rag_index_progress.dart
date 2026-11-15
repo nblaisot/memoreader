@@ -13,6 +13,7 @@ enum RagIndexStatus {
   indexing, // Currently indexing
   completed, // Indexing finished successfully
   error, // Indexing failed
+  waiting, // Durable provider cooldown, not an indexing failure
 }
 
 /// Represents the progress of indexing a book for RAG
@@ -23,6 +24,8 @@ class RagIndexProgress {
   final int indexedChunks;
   final DateTime lastUpdated;
   final String? errorMessage;
+  final DateTime? nextRetryAt;
+  final String? waitReason;
   final String?
   embeddingModel; // 'text-embedding-3-small', 'mistral-embed', etc.
   final String? embeddingProvider;
@@ -43,6 +46,8 @@ class RagIndexProgress {
     required this.indexedChunks,
     required this.lastUpdated,
     this.errorMessage,
+    this.nextRetryAt,
+    this.waitReason,
     this.embeddingModel,
     this.embeddingProvider,
     this.embeddingDimension,
@@ -66,6 +71,7 @@ class RagIndexProgress {
 
   /// Check if indexing is in progress
   bool get isIndexing => status == RagIndexStatus.indexing;
+  bool get isWaiting => status == RagIndexStatus.waiting;
 
   /// Check if indexing has error
   bool get hasError => status == RagIndexStatus.error;
@@ -79,6 +85,8 @@ class RagIndexProgress {
       'indexedChunks': indexedChunks,
       'lastUpdated': lastUpdated.toIso8601String(),
       'errorMessage': errorMessage,
+      'nextRetryAt': nextRetryAt?.millisecondsSinceEpoch,
+      'waitReason': waitReason,
       'embeddingModel': embeddingModel,
       'embeddingProvider': embeddingProvider,
       'embeddingDimension': embeddingDimension,
@@ -104,6 +112,10 @@ class RagIndexProgress {
       indexedChunks: json['indexedChunks'] as int,
       lastUpdated: DateTime.parse(json['lastUpdated'] as String),
       errorMessage: json['errorMessage'] as String?,
+      nextRetryAt: json['nextRetryAt'] is int
+          ? DateTime.fromMillisecondsSinceEpoch(json['nextRetryAt'] as int)
+          : null,
+      waitReason: json['waitReason'] as String?,
       embeddingModel: json['embeddingModel'] as String?,
       embeddingProvider: json['embeddingProvider'] as String?,
       embeddingDimension: json['embeddingDimension'] as int?,
@@ -125,6 +137,8 @@ class RagIndexProgress {
     int? indexedChunks,
     DateTime? lastUpdated,
     String? errorMessage,
+    DateTime? nextRetryAt,
+    String? waitReason,
     String? embeddingModel,
     String? embeddingProvider,
     int? embeddingDimension,
@@ -143,6 +157,8 @@ class RagIndexProgress {
       indexedChunks: indexedChunks ?? this.indexedChunks,
       lastUpdated: lastUpdated ?? this.lastUpdated,
       errorMessage: errorMessage ?? this.errorMessage,
+      nextRetryAt: nextRetryAt ?? this.nextRetryAt,
+      waitReason: waitReason ?? this.waitReason,
       embeddingModel: embeddingModel ?? this.embeddingModel,
       embeddingProvider: embeddingProvider ?? this.embeddingProvider,
       embeddingDimension: embeddingDimension ?? this.embeddingDimension,
@@ -155,4 +171,39 @@ class RagIndexProgress {
       apiCalls: apiCalls ?? this.apiCalls,
     );
   }
+}
+
+/// Provider cooldowns and transport recovery are different user-visible waits.
+String embeddingWaitLabel(
+  String? reason, {
+  required bool french,
+  required int remainingSeconds,
+}) {
+  final label = switch (reason) {
+    'network' =>
+      french
+          ? 'Préparation en pause — nouvelle tentative de connexion'
+          : 'Preparation paused — retrying connection',
+    'timeout' =>
+      french
+          ? 'Préparation en pause — délai du fournisseur dépassé'
+          : 'Preparation paused — provider response timed out',
+    'provider_busy' =>
+      french
+          ? 'Préparation en pause — fournisseur occupé'
+          : 'Preparation paused — provider busy',
+    'interactive_priority' || 'active_request' =>
+      french
+          ? 'Préparation en pause — requête en cours'
+          : 'Preparation paused — another request is active',
+    'retry_budget' =>
+      french
+          ? 'Préparation en pause — reprise programmée'
+          : 'Preparation paused — retry scheduled',
+    _ =>
+      french
+          ? 'Préparation en pause — limite du fournisseur'
+          : 'Preparation paused — waiting for provider limits',
+  };
+  return '$label${remainingSeconds > 0 ? ' · $remainingSeconds s' : ''}';
 }

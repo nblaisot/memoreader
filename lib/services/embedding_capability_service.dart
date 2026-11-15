@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'rag_embedding_service.dart';
+import 'embedding_scheduler.dart';
 
 enum ProviderFailureKind {
   authentication,
@@ -42,10 +43,15 @@ class EmbeddingCapabilityService {
 
     late final List<double> vector;
     try {
-      vector = await service
-          .embedText('MemoReader capability check')
-          .timeout(const Duration(seconds: 20));
+      vector = service is RetryManagedEmbeddingService
+          ? await service.embedText('MemoReader capability check')
+          : await service
+                .embedText('MemoReader capability check')
+                .timeout(const Duration(seconds: 20));
     } catch (error) {
+      if (error is EmbeddingDeferredException ||
+          error is EmbeddingProviderException)
+        rethrow;
       final message = error.toString();
       throw ProviderCapabilityException(_classify(message), message);
     }
@@ -68,13 +74,18 @@ class EmbeddingCapabilityService {
     if (lower.contains('403') || lower.contains('permission')) {
       return ProviderFailureKind.authorization;
     }
-    if (lower.contains('429') || lower.contains('rate limit') || lower.contains('quota')) {
+    if (lower.contains('429') ||
+        lower.contains('rate limit') ||
+        lower.contains('quota')) {
       return ProviderFailureKind.quota;
     }
-    if (lower.contains('model') && (lower.contains('not found') || lower.contains('unavailable'))) {
+    if (lower.contains('model') &&
+        (lower.contains('not found') || lower.contains('unavailable'))) {
       return ProviderFailureKind.modelUnavailable;
     }
-    if (lower.contains('socket') || lower.contains('network') || lower.contains('connection')) {
+    if (lower.contains('socket') ||
+        lower.contains('network') ||
+        lower.contains('connection')) {
       return ProviderFailureKind.network;
     }
     return ProviderFailureKind.unknown;
